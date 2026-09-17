@@ -2,7 +2,8 @@
 #
 # Schema: cua-driver capability manifest version 3
 # (https://cua.ai/docs/how-to-guides/driver/write-a-bounded-manifest).
-# Pinned driver: cua-driver-rs v0.28.1.
+# Pinned driver: cua-driver-rs v0.28.2 (deliberate selection, recorded;
+# the stable channel moved past the spec's 0.28.1 reference).
 #
 # This is an APPLICATION-SCOPED manifest (generic desktop input). Per the
 # Cua docs, typed-browser manifests are separate and cannot coexist with
@@ -46,21 +47,21 @@ allow:
     - press_key
     - hotkey
     - set_value
-  resources:
-    apps:
-      - bundle_id: com.apple.calculator
-        launch: true
-        windows: all
-        terminate: driver_launched
-      - bundle_id: com.google.Chrome
-        launch: true
-        windows: all
-        terminate: driver_launched
-      - bundle_id: com.apple.Terminal
-        launch: true
-        windows: all
-        terminate: driver_launched
-    desktop:
-      # Window-scoped observation/input only; no unfiltered desktop
-      # capture or desktop-coordinate input in Phase 1.
-      display: false
+resources:
+  apps:
+    - bundle_id: com.apple.calculator
+      launch: true
+      windows: all
+      terminate: driver_launched
+    - bundle_id: com.google.Chrome
+      launch: true
+      windows: all
+      terminate: driver_launched
+    - bundle_id: com.apple.Terminal
+      launch: true
+      windows: all
+      terminate: driver_launched
+  desktop:
+    # Window-scoped observation/input only; no unfiltered desktop
+    # capture or desktop-coordinate input in Phase 1.
+    display: false
