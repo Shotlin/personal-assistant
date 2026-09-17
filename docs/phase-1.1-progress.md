@@ -1,5 +1,24 @@
 # Phase 1.1 implementation progress
 
+## Round-9 checkpoint
+
+Committed through `eaefbd6`. The one offline-verifiable gap from the
+live probes is fixed: with macOS permissions pending, the real chain
+raises DesktopDriverError('start_session failed: Error:
+permissions_pending: ...') and the executor discarded that text, so the
+user saw only 'launch_app failed: DesktopDriverError'. RecipeFailure now
+carries the driver's own message (300-char bound); pinned by
+test_permissions_pending_error.py, which mirrors the production chain
+(raising session-start denial) and was verified red against the pre-fix
+executor via git stash. Suite: 297 passed, 1 skipped; ruff/mypy clean.
+Cursor lifecycle ordering/idempotence was already covered and green
+(test_desktop_session.py, 13 tests). Live desktop verification remains
+paused pending the permission grant; once granted, failures (if any)
+will now be self-explaining. Remaining: planner route persistence parity
+(flag-gated rollout), constraints/preferences gating (approved_context),
+provider-wire capture, disconnect/wall-clock truth, WP8 negative tests,
+calculator e2e, rollback docs, WebUI auxiliary generation, caching decision.
+
 ## Round-8 checkpoint
 
 Committed through `1e85bc7`. Two WP7 review items fixed, both TDD:
