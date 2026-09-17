@@ -28,12 +28,21 @@ def match_local_command(
         return None
     if re.search(r"[,;&`\n\r]|\b(?:and|then|never|not|also|don't|do\s+not)\b", text, re.I):
         return None
+    denied = (approved_context or {}).get("denied_apps", frozenset())
+    if not isinstance(denied, (set, frozenset, list, tuple)) or any(
+        not isinstance(app_id, str) for app_id in denied
+    ):
+        return None  # malformed context must not authorize a fast path
     lower = normalized.lower()
     app = re.fullmatch(r"open ([a-z]+)", lower)
     if app and app[1] in APP_IDS:
+        if app[1] in denied:
+            return None
         return RecipeRequest("open_app.v1", {"app_id": app[1]})
     arithmetic = re.fullmatch(r"(?:what is|calculate|compute) (.+)", lower)
     if arithmetic:
+        if "calculator" in denied:
+            return None
         from assistant.runtime.recipe_errors import RecipeFailure
         from assistant.runtime.recipes import evaluate_expression
 
@@ -44,6 +53,8 @@ def match_local_command(
         return RecipeRequest("calculator.evaluate.v1", {"expression": arithmetic[1]})
     search = re.fullmatch(r"search(?: for)? (.+)", normalized, re.I)
     if search:
+        if "chrome" in denied:
+            return None
         query = search[1]
         if query.lower() == "for":
             return None

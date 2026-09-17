@@ -1,5 +1,34 @@
 # Phase 1.1 implementation progress
 
+## Round-11 checkpoint — router contract only
+
+Implemented and verified supplied `approved_context['denied_apps']` in
+`match_local_command`: explicit open-app, implicit Calculator arithmetic,
+and implicit Chrome search all fall back on a denied app. Malformed denial
+collections also fall back; absent/empty context retains existing routing.
+TDD evidence: explicit Terminal denial failed first (recipe returned), then
+passed; the two implicit-app cases failed first, then passed. Focused suite:
+10 passed. Full gates: 314 passed, 1 skipped (Starlette deprecation warning),
+ruff/mypy clean (45 source files), git diff --check clean.
+
+This is NOT end-to-end standing-preference enforcement: the gateway still
+passes `{}`; memory loading, conservative treatment of unfamiliar constraints,
+and the planner's post-validation gate remain unwired. The speculative regex
+memory extractor was removed rather than shipping an unverified assumption
+about stored memory format. Returning None defers to the agent; it is not a
+hard native authorization deny. Next integration must cover BOTH recipe and
+planner paths and actual stored-memory schemas with production-path tests.
+
+Correction to round 10: 'WP8 offline scope COMPLETE' and 'everything offline
+verifiable ... pinned' were too broad and are retracted. Provider-wire,
+constraints, disconnect/wall-clock, planner-memory parity and other offline
+work remain. The negative tests lack a direct model-call assertion and the
+Calculator test lacks a direct zero-model-call assertion; their existing
+assertions are narrower than the previous final report described. No measured
+live latency improvement is claimed. A permission probe earlier this round
+returned PENDING; further live probing is paused. Model configuration and
+permission policy were not changed.
+
 ## Round-10 checkpoint
 
 Committed through `33875d8` — WP8 offline scope COMPLETE:
