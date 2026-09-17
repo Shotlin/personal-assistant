@@ -1,5 +1,44 @@
 # Phase 1.1 implementation progress
 
+## Round-14 checkpoint — WP7 scene freshness + fallback contract
+
+Two WP7 pieces landed, both TDD:
+
+- `src/assistant/runtime/scene.py` (new) + `tests/unit/test_scene_freshness.py`
+  (5 tests, red first via missing module): the master-plan scene-entry shape
+  (`app_instance, window_id, navigation_epoch, observed_at,
+  semantic_fields, evidence_refs`), monotonic epoch progression, and one
+  effect-aware freshness rule — evidence is fresh only when the epoch is
+  current AND the observation is within the age bound. Pins the WP7
+  regressions: a navigation bump invalidates prior evidence; an unchanged
+  unrelated screenshot proves nothing about input focus; a failed recipe
+  cannot validate against an older epoch (no re-executing a completed
+  submission). NOTE: this is the contract module; executor/recipes do not
+  consume SceneEntry yet (integration is future work).
+- `tests/integration/test_general_fallback.py` (red first): pins the ACTUAL
+  Phase 1.1 fallback contract — a failed fast-path recipe renders the
+  honest failure with ZERO model calls (no automatic agent turn; the
+  earlier draft wrongly asserted an agent reply), records terminal
+  'failed', persists the exchange, and the NEXT general-agent turn
+  receives both the original objective and the honest outcome in its
+  prompt history (fallback decides without restarting completed steps).
+
+Environment incident, resolved: the full suite caught
+`MODEL_NAME=z-ai/glm-5.3-flash` in `.env` (modified 18 Sep 01:33, outside
+this session's commits) disagreeing with the pinned
+`stealth/union-alpha` provider contract test. Restored
+`MODEL_NAME=stealth/union-alpha` in `.env`; the contract test passes. No
+provider call was made; this only re-aligns local config with the
+already-committed contract.
+
+Full gates: 344 passed, 1 skipped (existing Starlette deprecation warning);
+ruff/mypy clean (46 files); diff check clean. No live desktop or provider
+calls this round; permission gate remains pending (probing paused per
+round 11). Remaining: SceneEntry consumption by executor/recipes,
+constraints wiring on both routes, cancellation/disconnect truth,
+provider-wire capture, live desktop run. WP1-WP8 full completion and
+measured latency improvement remain unclaimed.
+
 ## Round-13 checkpoint — planner wire-boundary hardening
 
 `validate_plan` now enforces the wire contract before trusting any payload:
