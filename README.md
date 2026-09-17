@@ -77,13 +77,15 @@ uv run python scripts/init_db.py
 
 ## Cua Driver (computer control)
 
-Pin: **cua-driver-rs v0.28.1** (record any deliberate update here and in
-the acceptance notes; never drift silently).
+Pin: **cua-driver-rs v0.28.2** (deliberate selection, recorded 2026-09-17:
+the stable channel had moved past the spec's v0.28.1 reference when the
+driver was installed; the capability manifest below is validated against
+v0.28.2). Any future update must be recorded here and revalidated.
 
 ```bash
 # Install (places CuaDriver.app in /Applications, symlink in ~/.local/bin).
 /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"
-cua-driver --version          # must report 0.28.1 for Phase 1
+cua-driver --version          # must report the recorded pin (0.28.2)
 
 # Grant macOS permissions (System Settings -> Privacy & Security):
 #   - Accessibility        -> enable for CuaDriver.app
