@@ -41,13 +41,22 @@ def build_test_app(
                 skills_root=SKILLS_ROOT,
             )
             app.state.agent = bundle.agent
+            app.state.scripted_model = model  # invocation counter for tests
             app.state.store = mem.store
             app.state.saver = mem.saver
             app.state.utility_model = ScriptedChatModel(responses=[AIMessage("Concise Title")])
             app.state.desktop_sessions = DesktopSessionManager(
                 desktop_driver, config=DesktopSessionConfig()
             )
-            yield
+            from assistant.runtime.runs import RunStore
+
+            run_store = await RunStore.connect(POSTGRES_URL)
+            await run_store.setup()
+            app.state.run_store = run_store
+            try:
+                yield
+            finally:
+                await run_store.close()
 
     settings = Settings(
         agent_gateway_api_key="test-gateway-key",

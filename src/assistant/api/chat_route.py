@@ -54,6 +54,40 @@ def _user_hash(user_id: str) -> str:
     return f"sha256:{hashlib.sha256(user_id.encode('utf-8')).hexdigest()[:12]}"
 
 
+def _content_digest(messages: list[ChatMessage]) -> str:
+    """Digest of the visible conversation content sent by the client."""
+    parts: list[str] = []
+    for message in messages:
+        raw = message.content if isinstance(message.content, str) else str(message.content or "")
+        parts.append(f"{message.role}:{raw}")
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:24]
+
+
+def _duplicate_response(
+    settings: SettingsDep, claim: Any, run_id: str, started: float
+) -> ChatCompletionResponse:
+    """Observe-only reply for a duplicate delivery (master plan 11.1)."""
+    status = claim.status or "running"
+    return ChatCompletionResponse(
+        id=f"chatcmpl-{run_id}",
+        created=int(time.time()),
+        model=settings.assistant_model_id,
+        choices=[
+            ChatCompletionChoice(
+                message=ChatMessage(
+                    role="assistant",
+                    content=(
+                        "[This message was already received and is being handled; "
+                        "no new actions were started. Current run status: "
+                        f"{status}.]"
+                    ),
+                )
+            )
+        ],
+        usage=UsageStats(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+    )
+
+
 def _final_assistant_text(result: dict[str, Any]) -> str:
     from assistant.api.turns import message_text
 
@@ -152,6 +186,41 @@ async def chat_completions(
     timeline = RunTimeline(run_id)
     request.app.state.last_run_timeline = timeline
     request.app.state.last_run_ledger = ledger
+
+    # WP4: claim this turn durably BEFORE any external work. Same
+    # user-message id + same content = duplicate delivery -> observe the
+    # existing run; same id + different content = identity conflict.
+    run_store = getattr(request.app.state, "run_store", None)
+    if identity.user_message_id and run_store is not None and not identity.is_utility:
+        request_digest = hashlib.sha256(
+            f"{body.model}:{_content_digest(body.messages)}".encode()
+        ).hexdigest()
+        claim = await run_store.claim(
+            user_id=identity.user_id,
+            chat_id=identity.chat_id,
+            user_message_id=identity.user_message_id,
+            request_digest=request_digest,
+            run_id=run_id,
+        )
+        if not claim.owned:
+            logger.info(
+                "run_duplicate_rejected",
+                extra={
+                    "event": "run_duplicate_rejected",
+                    "run_id": run_id,
+                    "claim_status": claim.status,
+                    "reason": claim.reason,
+                },
+            )
+            if claim.reason == "identity_conflict":
+                raise GatewayError(
+                    "missing_chat_identity",
+                    "Same user-message id delivered with different content.",
+                )
+            return _duplicate_response(
+                settings, claim, run_id, started
+            )
+
     timeline.mark("run_started")
     logger.info(
         "run_started",
