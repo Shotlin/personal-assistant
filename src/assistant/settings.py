@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     # Open WebUI integration
     openwebui_forward_headers: bool = True
 
+    # WP3: trusted desktop session ownership (feature flag, master plan 17).
+    # false disables cursor sessions entirely: runs execute without a
+    # visible agent cursor and the driver is never contacted for sessions.
+    active_cursor_persistence_enabled: bool = True
+    # Deterministic progress text in the SSE stream (WP3 section 7.4);
+    # status lines are interface output only, never model history.
+    status_events_enabled: bool = True
+    status_quiet_seconds: float = 6.0
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
@@ -94,6 +103,10 @@ class Settings(BaseSettings):
             )
         if self.model_max_tokens < 200:
             errors.append(f"MODEL_MAX_TOKENS must be >= 200, got {self.model_max_tokens}")
+        if self.status_quiet_seconds <= 0:
+            errors.append(
+                f"STATUS_QUIET_SECONDS must be > 0, got {self.status_quiet_seconds}"
+            )
 
         if self.model_provider not in SUPPORTED_MODEL_PROVIDERS:
             errors.append(

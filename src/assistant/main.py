@@ -22,6 +22,11 @@ from assistant.api import chat_route, models_route
 from assistant.memory.postgres import open_memory_resources
 from assistant.models import build_chat_model
 from assistant.observability.logging import setup_logging
+from assistant.runtime.session import (
+    DesktopSessionConfig,
+    DesktopSessionManager,
+    McpToolDesktopDriver,
+)
 from assistant.settings import Settings
 from assistant.tools.cua import open_cua_connection
 from assistant.tools.registry import assemble_tool_inventory
@@ -109,6 +114,16 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
             connection: Any = await cua_cm.__aenter__()
             extra_tools = assemble_tool_inventory(list(getattr(connection, "tools", [])))
             app.state.cua_tools_by_name = dict(getattr(connection, "tools_by_name", {}))
+            # One trusted DesktopSessionManager over the persistent
+            # connection's lifecycle tools (WP3): lazy run-scoped sessions,
+            # controller-owned cursor motion, single desktop lease. The
+            # manager never recreates the transport.
+            lifecycle = dict(getattr(connection, "lifecycle_tools_by_name", {}) or {})
+            app.state.desktop_sessions = DesktopSessionManager(
+                McpToolDesktopDriver(lifecycle),
+                config=DesktopSessionConfig(),
+                enabled=settings.active_cursor_persistence_enabled,
+            )
             bundle = build_agent(
                 model=model,
                 checkpointer=resources.saver,
@@ -118,6 +133,9 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
             )
             app.state.agent = bundle.agent
         except BaseException:
+            sessions = getattr(app.state, "desktop_sessions", None)
+            if sessions is not None:
+                await sessions.close_all()
             await cua_cm.__aexit__(None, None, None)
             await resources_cm.__aexit__(None, None, None)
             raise
@@ -125,6 +143,9 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
         try:
             yield
         finally:
+            sessions = getattr(app.state, "desktop_sessions", None)
+            if sessions is not None:
+                await sessions.close_all()
             await cua_cm.__aexit__(None, None, None)
             await resources_cm.__aexit__(None, None, None)
 

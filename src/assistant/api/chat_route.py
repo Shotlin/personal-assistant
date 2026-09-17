@@ -12,6 +12,9 @@ import hashlib
 import logging
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -40,7 +43,7 @@ from assistant.models import build_chat_model
 from assistant.observability.timing import RunTimeline
 from assistant.observability.usage import LedgerCallbackHandler, UsageLedger
 from assistant.settings import Settings
-from assistant.tools.policy import cua_current_session, cua_run_budget
+from assistant.tools.policy import cua_run_scope
 
 logger = logging.getLogger("assistant.api.chat")
 
@@ -194,6 +197,23 @@ async def chat_completions(
     return response
 
 
+@router.post("/runs/{run_id}/stop")
+async def stop_run(run_id: str, request: Request) -> dict[str, str]:
+    """Local stop: mark the run cancelled; checked before every new action.
+
+    No model round trip (master plan 7.5). Cancellation is not undo: any
+    already-dispatched effect is preserved and reported by the run.
+    """
+    manager = getattr(request.app.state, "desktop_sessions", None)
+    if manager is None or not manager.cancel(run_id):
+        raise GatewayError("run_not_found", f"No active run {run_id!r}")
+    logger.info(
+        "run_stop_requested",
+        extra={"event": "run_stop", "run_id": run_id},
+    )
+    return {"status": "cancelling", "run_id": run_id}
+
+
 async def _run_agent_turn(
     body: ChatCompletionRequest,
     request: Request,
@@ -225,30 +245,8 @@ async def _run_agent_turn(
         assistant_id=settings.assistant_id,
     )
     budget = RunBudget()
-    cua_run_budget.set(budget)
-
-    # Start a visible agent-cursor session for this run (best effort): the
-    # Cua Driver cursor animates on every observe/click/type action so the
-    # user can follow the GUI-level work.
-    start_session = (getattr(request.app.state, "cua_tools_by_name", {}) or {}).get("start_session")
-    if start_session is not None:
-        try:
-            await start_session.ainvoke({"session": f"run-{run_id}"})
-            cua_current_session.set(f"run-{run_id}")
-            enable_cursor = (getattr(request.app.state, "cua_tools_by_name", {}) or {}).get(
-                "set_agent_cursor_enabled"
-            )
-            if enable_cursor is not None:
-                await enable_cursor.ainvoke({"session": f"run-{run_id}", "enabled": True})
-        except Exception as exc:  # noqa: BLE001 -- cursor session is best-effort
-            logger.info(
-                "cua_session_start_failed",
-                extra={
-                    "event": "cua_session_start_failed",
-                    "run_id": run_id,
-                    "detail": str(exc)[:120],
-                },
-            )
+    desktop_manager = getattr(request.app.state, "desktop_sessions", None)
+    artifact_dir = str(Path(settings.cua_artifact_dir).resolve())
 
     run_config: dict[str, Any] = dict(config)
     run_config.setdefault("callbacks", [usage_handler])
@@ -285,52 +283,81 @@ async def _run_agent_turn(
                 run_id=run_id,
                 ledger=ledger,
                 timeline=timeline,
+                desktop_manager=desktop_manager,
+                budget=budget,
+                artifact_dir=artifact_dir,
+                status_events_enabled=settings.status_events_enabled,
+                status_quiet_seconds=settings.status_quiet_seconds,
             ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    try:
-        async with asyncio.timeout(MAX_RUN_WALL_CLOCK_SECONDS):
-            result = await agent.ainvoke(invoke_input, run_config, context=context)
-    except TimeoutError:
-        timeline.mark_terminal(
-            metadata={"status": "wall_clock_exceeded", "cua_mutating_actions": budget.used}
-        )
-        logger.warning(
-            "run_finished",
-            extra={
-                "event": "run_finished",
-                "run_id": run_id,
-                "status": "wall_clock_exceeded",
-                "cua_mutating_actions": budget.used,
-            },
-        )
-        raise GatewayError(
-            "agent_execution_failed",
-            "Run exceeded the wall-clock ceiling; partial state is preserved.",
-        ) from None
-    except GatewayError as exc:
-        timeline.mark_terminal(metadata={"status": "error", "error_code": exc.code})
-        raise
-    except Exception as exc:
-        timeline.mark_terminal(metadata={"status": "error"})
-        logger.exception(
-            "agent_turn_failed",
-            extra={"event": "agent_turn_failed", "run_id": run_id, "exc_type": type(exc).__name__},
-        )
-        raise _provider_error(exc) from exc
+    # Non-streaming: the request handler owns the run scope and closes the
+    # desktop session on every terminal path (result, error, timeout).
+    async with _open_desktop_run(desktop_manager, run_id) as run:
+        async with cua_run_scope(
+            budget=budget, run=run, artifact_dir=artifact_dir
+        ):
+            try:
+                async with asyncio.timeout(MAX_RUN_WALL_CLOCK_SECONDS):
+                    result = await agent.ainvoke(invoke_input, run_config, context=context)
+            except TimeoutError:
+                timeline.mark_terminal(
+                    metadata={"status": "wall_clock_exceeded", "cua_mutating_actions": budget.used}
+                )
+                logger.warning(
+                    "run_finished",
+                    extra={
+                        "event": "run_finished",
+                        "run_id": run_id,
+                        "status": "wall_clock_exceeded",
+                        "cua_mutating_actions": budget.used,
+                    },
+                )
+                raise GatewayError(
+                    "agent_execution_failed",
+                    "Run exceeded the wall-clock ceiling; partial state is preserved.",
+                ) from None
+            except GatewayError as exc:
+                timeline.mark_terminal(metadata={"status": "error", "error_code": exc.code})
+                raise
+            except Exception as exc:
+                timeline.mark_terminal(metadata={"status": "error"})
+                logger.exception(
+                    "agent_turn_failed",
+                    extra={
+                        "event": "agent_turn_failed",
+                        "run_id": run_id,
+                        "exc_type": type(exc).__name__,
+                    },
+                )
+                raise _provider_error(exc) from exc
 
-    text = _final_assistant_text(result)
-    return ChatCompletionResponse(
-        id=completion_id,
-        created=int(time.time()),
-        model=settings.assistant_model_id,
-        choices=[
-            ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))
-        ],
-        usage=_usage_from_ledger(ledger),
-    )
+            text = _final_assistant_text(result)
+            return ChatCompletionResponse(
+                id=completion_id,
+                created=int(time.time()),
+                model=settings.assistant_model_id,
+                choices=[
+                    ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))
+                ],
+                usage=_usage_from_ledger(ledger),
+            )
+
+
+@asynccontextmanager
+async def _open_desktop_run(manager: Any, run_id: str) -> AsyncIterator[Any]:
+    """Open the run-scoped desktop handle when a manager is installed.
+
+    Yields ``None`` when desktop sessions are absent (tests, disabled
+    builds): the run scope still binds, just without a desktop handle.
+    """
+    if manager is None:
+        yield None
+        return
+    async with manager.open(run_id) as run:
+        yield run
 
 
 def _usage_from_ledger(ledger: UsageLedger) -> UsageStats:
