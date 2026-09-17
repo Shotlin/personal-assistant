@@ -142,6 +142,16 @@ async def chat_completions(
     if body.model != settings.assistant_model_id:
         raise GatewayError("unsupported_model", f"Unknown model {body.model!r}")
 
+    # Header-name receipt diagnostics (names only -- values are never logged).
+    # Operational evidence for the Open WebUI header-lineage verification.
+    logger.info(
+        "received_header_names",
+        extra={
+            "event": "received_header_names",
+            "names": sorted(k.lower() for k in request.headers.keys()),
+        },
+    )
+
     identity = extract_identity(request.headers, is_production=settings.is_production)
     run_id = uuid.uuid4().hex
     started = time.monotonic()

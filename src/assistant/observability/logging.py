@@ -94,6 +94,12 @@ class JsonFormatter(logging.Formatter):
                 continue
             if isinstance(value, str | int | float | bool) or value is None:
                 payload[key] = value if not isinstance(value, str) else redact(value)
+            elif isinstance(value, list | tuple | dict):
+                try:
+                    # Structured extras (e.g. header-name lists); redacted as text.
+                    payload[key] = redact(orjson.dumps(value).decode("utf-8"))
+                except (TypeError, ValueError):
+                    payload[key] = "<unserializable>"
         return orjson.dumps(payload).decode("utf-8")
 
 

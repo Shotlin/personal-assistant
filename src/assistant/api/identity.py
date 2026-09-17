@@ -10,12 +10,15 @@ tests can drive the gateway without Open WebUI.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
 from assistant.api.schemas import GatewayError
 from assistant.memory.namespaces import thread_id_for
+
+logger = logging.getLogger("assistant.api.identity")
 
 USER_ID_HEADER = "X-OpenWebUI-User-Id"
 USER_NAME_HEADER = "X-OpenWebUI-User-Name"
@@ -75,6 +78,24 @@ def extract_identity(
             user_id, chat_id = dev_user, dev_chat
             source = "dev-test"
         else:
+            # Diagnostic evidence for lineage wiring: values of the opaque
+            # Open WebUI id headers only (never secrets), truncated.
+            observed = {
+                name: (value or "")[:40]
+                for name in (
+                    USER_ID_HEADER,
+                    CHAT_ID_HEADER,
+                    MESSAGE_ID_HEADER,
+                    USER_MESSAGE_ID_HEADER,
+                    USER_MESSAGE_PARENT_ID_HEADER,
+                    TASK_HEADER,
+                )
+                if (value := (headers.get(name) or "")) is not None
+            }
+            logger.warning(
+                "identity_headers_missing",
+                extra={"event": "identity_headers_missing", "observed": observed},
+            )
             raise GatewayError(
                 "missing_chat_identity",
                 "Missing Open WebUI identity headers "

@@ -125,16 +125,23 @@ daemon -> `docker compose stop`.
 - URL: `http://host.docker.internal:8787/v1`
 - API key: the `AGENT_GATEWAY_API_KEY` from `.env`
 - Model: `personal-assistant-v1`
-- The compose file enables user-info header forwarding and sets the
-  turn-lineage headers (`X-OpenWebUI-Chat-Id`, `X-OpenWebUI-Message-Id`,
+- The compose file enables user-info header forwarding
+  (`ENABLE_FORWARD_USER_INFO_HEADERS=true` -> `X-OpenWebUI-User-Id`,
+  `-Name`, `-Email`, `-Role`).
+- Turn-lineage headers (`X-OpenWebUI-Chat-Id`, `X-OpenWebUI-Message-Id`,
   `X-OpenWebUI-User-Message-Id`, `X-OpenWebUI-User-Message-Parent-Id`,
-  `X-OpenWebUI-Task`).
+  `X-OpenWebUI-Task`) are **per-connection custom headers** stored in the
+  Open WebUI database in v0.11.3 (there is no environment variable for
+  them). Apply them with:
 
-If the pinned Open WebUI version does not substitute those template
-variables from the environment, set the same custom headers in Admin
-Settings -> Connections (they are stored per connection in the UI).
-Verify by sending one chat message and checking the gateway run logs for
-the `X-OpenWebUI-*` header receipt.
+  ```bash
+  uv run python scripts/configure_openwebui_connection.py \
+      --email <admin email> --password <admin password>
+  ```
+
+Verify by sending one chat message in the UI and checking the gateway
+run log: `run_started` must carry `identity_source: openwebui` plus
+`chat_id` and `user_message_id`.
 
 First run: create the Open WebUI admin account at `http://127.0.0.1:3000`,
 then open Admin Settings -> Connections and confirm the gateway

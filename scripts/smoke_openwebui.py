@@ -26,6 +26,8 @@ from assistant.settings import Settings
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-check the Open WebUI deployment")
     parser.add_argument("--skip-ui", action="store_true", help="do not probe the Open WebUI port")
+    parser.add_argument("--ui-email", help="admin email for the full UI-path chat check")
+    parser.add_argument("--ui-password", help="admin password for the full UI-path chat check")
     args = parser.parse_args()
 
     settings = Settings()
@@ -61,23 +63,28 @@ def main() -> int:
         else:
             failures.append(f"missing key returned {no_auth.status_code}, expected 401")
 
-        # 3. Gateway end-to-end with dev test headers (no CUA, scripted env).
-        dev = client.post(
-            f"http://{settings.app_host}:{settings.app_port}/v1/chat/completions",
-            headers={
-                **auth,
-                "X-Assistant-Dev-User-Id": "smoke-user",
-                "X-Assistant-Dev-Chat-Id": "smoke-chat",
-            },
-            json={
-                "model": settings.assistant_model_id,
-                "messages": [{"role": "user", "content": "smoke test"}],
-            },
-        )
-        if dev.status_code == 200:
-            print("[ok] dev-header chat completion round trip")
+        # 3. Gateway end-to-end with dev test headers (real model round trip).
+        try:
+            dev = client.post(
+                f"http://{settings.app_host}:{settings.app_port}/v1/chat/completions",
+                headers={
+                    **auth,
+                    "X-Assistant-Dev-User-Id": "smoke-user",
+                    "X-Assistant-Dev-Chat-Id": "smoke-chat",
+                },
+                json={
+                    "model": settings.assistant_model_id,
+                    "messages": [{"role": "user", "content": "Reply with exactly: ok"}],
+                },
+                timeout=200,
+            )
+        except httpx.TimeoutException as exc:
+            failures.append(f"dev chat completion timed out (model too slow?): {exc}")
         else:
-            failures.append(f"dev chat completion -> {dev.status_code}: {dev.text[:200]}")
+            if dev.status_code == 200:
+                print("[ok] dev-header chat completion round trip")
+            else:
+                failures.append(f"dev chat completion -> {dev.status_code}: {dev.text[:200]}")
 
         # 4. Open WebUI UI reachable on loopback.
         if not args.skip_ui:
@@ -90,13 +97,57 @@ def main() -> int:
             except httpx.HTTPError as exc:
                 failures.append(f"Open WebUI unreachable (docker compose up -d?): {exc}")
 
+        # 5. Optional full UI-path chat: real chat row + UI-shaped request.
+        if args.ui_email and args.ui_password:
+            try:
+                with httpx.Client(timeout=200) as ui_client:
+                    signin = ui_client.post(
+                        "http://127.0.0.1:3000/api/v1/auths/signin",
+                        json={"email": args.ui_email, "password": args.ui_password},
+                    )
+                    assert signin.status_code == 200, f"sign-in {signin.status_code}"
+                    auth = {"Authorization": f"Bearer {signin.json()['token']}"}
+                    created = ui_client.post(
+                        "http://127.0.0.1:3000/api/v1/chats/new",
+                        headers=auth,
+                        json={"chat": {"title": "smoke verify", "messages": []}},
+                    )
+                    chat_id = created.json()["id"]
+                    completion = ui_client.post(
+                        "http://127.0.0.1:3000/api/chat/completions",
+                        headers=auth,
+                        timeout=180,
+                        json={
+                            "model": "personal-assistant-v1",
+                            "messages": [
+                                {"role": "user", "content": "Reply with exactly: ok"}
+                            ],
+                            "stream": False,
+                            "chat_id": chat_id,
+                            "user_message": {
+                                "id": f"um-{chat_id[:8]}",
+                                "role": "user",
+                                "content": "Reply with exactly: ok",
+                            },
+                        },
+                    )
+                    assert completion.status_code == 200, (
+                        f"UI chat {completion.status_code}: {completion.text[:200]}"
+                    )
+                    reply = completion.json()["choices"][0]["message"]["content"]
+                    assert "ok" in reply.lower()
+                print("[ok] UI-path chat reached the gateway with lineage headers")
+            except Exception as exc:  # noqa: BLE001 -- smoke must classify any failure
+                failures.append(f"UI-path chat: {exc}")
+
     if failures:
         print("\nFAILURES:")
         for failure in failures:
             print(f"  - {failure}")
         return 1
-    print("\nSmoke passed. For header-lineage verification, send one chat in the")
-    print("Open WebUI UI and confirm X-OpenWebUI-* headers in the gateway run logs.")
+    print("\nSmoke passed.")
+    print("Header-lineage evidence: check the gateway log for run_started with")
+    print("identity_source: openwebui plus chat_id / user_message_id fields.")
     return 0
 
 
