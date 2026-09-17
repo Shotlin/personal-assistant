@@ -11,13 +11,15 @@ from __future__ import annotations
 import contextvars
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import BaseTool, StructuredTool
 
 from assistant.agent.context import CuaBudgetExceeded, RunBudget
+from assistant.runtime.session import DesktopRunCancelled
 
 logger = logging.getLogger("assistant.tools.policy")
 
@@ -51,11 +53,29 @@ CUA_ALLOWED_TOOL_NAMES = frozenset(
         "double_click",
         "hotkey",
         "set_value",
-        # Session lifecycle (makes the visible agent cursor available).
+    }
+)
+
+#: Session/cursor lifecycle controls. Controller-owned (master plan 7.2):
+#: the DesktopSessionManager calls these through the trusted path; they
+#: must never appear in the model-visible tool inventory.
+SESSION_LIFECYCLE_TOOL_NAMES = frozenset(
+    {
         "start_session",
         "end_session",
         "set_agent_cursor_enabled",
+        "set_agent_cursor_motion",
+        "set_agent_cursor_theme",
+        "get_agent_cursor_state",
+        "get_session",
+        "list_sessions",
+        "get_session_state",
+        "escalate_session",
     }
+)
+
+assert CUA_ALLOWED_TOOL_NAMES.isdisjoint(SESSION_LIFECYCLE_TOOL_NAMES), (
+    "session lifecycle tools must stay out of the model-visible inventory"
 )
 
 #: Tools that only observe state; at least one must be available at startup.
@@ -100,6 +120,21 @@ cua_artifact_dir: contextvars.ContextVar[str] = contextvars.ContextVar(
 cua_current_session: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "cua_current_session", default=None
 )
+
+#: Per-run desktop session handle (WP3). Set by the gateway inside the
+#: execution scope that owns the run; tool wrappers read it at call time
+#: to lazily activate the driver session, force the trusted session id,
+#: and check local cancellation before every new action.
+if TYPE_CHECKING:  # pragma: no cover
+    from assistant.runtime.session import DesktopRun as _DesktopRun
+
+cua_desktop_run: contextvars.ContextVar[_DesktopRun | None] = contextvars.ContextVar(
+    "cua_desktop_run", default=None
+)
+
+#: Returned to the model instead of executing an action after a local
+#: stop was requested (master plan 7.5: stop is local, not a model ask).
+CANCELLED_ACTION_NOTICE = "[Run cancelled by user; no action taken.]"
 
 #: Text-first observation defaults (latency + token control): skip the
 #: base64 screenshot and cap the accessibility tree; the model may opt
@@ -216,13 +251,23 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
     captures_screenshot = name in SCREENSHOT_CAPABLE_TOOLS
 
     async def safe(**kwargs: Any) -> Any:
-        # ContextVars must be read at call time: the gateway sets them
-        # inside the request scope, after tools were wrapped (master plan
-        # 7.2 -- never rely on wrap-time snapshots).
+        run = cua_desktop_run.get()
+        try:
+            async with run.action() if run is not None else nullcontext():
+                if run is not None:
+                    run.require_active()
+                return await dispatch(kwargs)
+        except DesktopRunCancelled:
+            return CANCELLED_ACTION_NOTICE
+
+    async def dispatch(kwargs: dict[str, Any]) -> Any:
+        # Read scope at call time, and force the controller's session even
+        # when the model supplied a different nonempty value.
         artifact_dir = cua_artifact_dir.get()
+        run = cua_desktop_run.get()
         if accepts_session:
-            session = cua_current_session.get()
-            if session and not kwargs.get("session"):
+            session = run.session_id if run is not None else cua_current_session.get()
+            if session:
                 kwargs["session"] = session
         for key, value in defaults.items():
             # Schema defaults arrive as None (LangChain fills every schema
@@ -246,11 +291,31 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
                 extra={"event": "cua_mutating_action", "tool": name},
             )
         try:
-            return await original(**kwargs)
+            result = await original(**kwargs)
         except CuaBudgetExceeded:
             raise
         except Exception as exc:  # noqa: BLE001 -- tool errors become agent-visible text
             return f"Error: {exc}"
+        return _model_text(result)
+
+    def _model_text(result: Any) -> Any:
+        """Render normalized ToolOutcomes as bounded model-facing text.
+
+        Never a dataclass repr, never base64: image payloads are reported
+        by count only; structured evidence stays in the outcome for the
+        trusted executor (master plan WP2).
+        """
+        from assistant.tools.result_normalizer import ToolOutcome
+
+        if not isinstance(result, ToolOutcome):
+            return result
+        blocks = result.model_content(allow_images=False)
+        text = "\n".join(str(block.get("text", "")) for block in blocks)
+        if result.images:
+            text += f"\n[{len(result.images)} screenshot(s) retained locally]"
+        if result.truncated:
+            text += "\n[observation truncated]"
+        return text or "(no content)"
 
     return StructuredTool(
         name=name,

@@ -25,6 +25,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from assistant.settings import Settings
 from assistant.tools.policy import (
+    SESSION_LIFECYCLE_TOOL_NAMES,
     apply_tool_policy,
     assert_observation_available,
     filter_cua_tools,
@@ -45,6 +46,10 @@ class CuaConnection:
     discovered_names: list[str]
     skipped_names: list[str]
     tools_by_name: dict[str, BaseTool] = field(default_factory=dict)
+    #: Unwrapped lifecycle tools for the trusted DesktopSessionManager
+    #: only (never the model inventory); absent names mean the installed
+    #: driver does not expose them.
+    lifecycle_tools_by_name: dict[str, BaseTool] = field(default_factory=dict)
 
 
 def _require_manifest(settings: Settings) -> Path:
@@ -74,12 +79,21 @@ def _filtered_connection(discovered: list[BaseTool]) -> CuaConnection:
     )
     assert_observation_available(result.enabled_names)
     wrapped, wrapped_names = apply_tool_policy(result.enabled)
+    # Trusted-path only: raw lifecycle tools for the DesktopSessionManager.
+    # Filtered to SESSION_LIFECYCLE_TOOL_NAMES so the controller cannot
+    # reach beyond session management even here.
+    lifecycle = {
+        getattr(tool, "name", ""): tool
+        for tool in discovered
+        if getattr(tool, "name", "") in SESSION_LIFECYCLE_TOOL_NAMES
+    }
     return CuaConnection(
         tools=wrapped,
         tool_names=wrapped_names,
         discovered_names=result.discovered_names,
         skipped_names=result.skipped_names,
         tools_by_name={getattr(t, "name", "?"): t for t in wrapped},
+        lifecycle_tools_by_name=lifecycle,
     )
 
 
@@ -136,22 +150,15 @@ async def open_cua_connection(settings: Settings) -> AsyncIterator[CuaConnection
 def _caller(session: ClientSession, name: str) -> Any:
     """Build an async callable that routes one tool call over ``session``.
 
-    Results pass through :func:`normalize_mcp_result`: the model receives
-    bounded text (never base64 or raw MCP objects) while structured
-    evidence stays available in the outcome for local verification.
+    Returns the normalized :class:`ToolOutcome` so the policy wrapper can
+    produce bounded model text while structured evidence stays available
+    to trusted local verification (master plan WP2/F02).
     """
 
     from assistant.tools.result_normalizer import normalize_mcp_result
 
     async def call(**kwargs: Any) -> Any:
         result = await session.call_tool(name, kwargs)
-        outcome = normalize_mcp_result(result)
-        blocks = outcome.model_content(allow_images=False)
-        text = "\n".join(str(block.get("text", "")) for block in blocks)
-        if outcome.images:
-            text += f"\n[{len(outcome.images)} screenshot(s) retained locally]"
-        if outcome.truncated:
-            text += "\n[observation truncated]"
-        return text or "(no content)"
+        return normalize_mcp_result(result)
 
     return call
