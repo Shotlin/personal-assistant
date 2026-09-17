@@ -608,6 +608,9 @@ async def _try_planner_route(
             usage=_usage_from_ledger(UsageLedger()),
         ), "cancelled"
     text = render_result(result)
+    # Persist the user's exchange, not the internal plan. Like exact
+    # recipes, honest failures must remain visible to later agent turns.
+    await _persist_recipe_turn(request, identity, str(last), text)
     # Same terminal truth as the exact-match route (P2-5b).
     return ChatCompletionResponse(
         id=f"chatcmpl-{run_id}",

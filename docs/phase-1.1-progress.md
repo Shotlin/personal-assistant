@@ -1,5 +1,31 @@
 # Phase 1.1 implementation progress
 
+## Round-12 checkpoint — planner outcome memory continuity
+
+Planner-route success and honest failure responses now use the same
+`_persist_recipe_turn` helper as exact recipes before returning JSON/SSE.
+The thread receives user text + actual rendered outcome, not internal plan
+JSON. Test `test_planner_outcome_reaches_checkpoint_and_followup` covers
+success/failure crossed with stream false/true, checks terminal truth and
+one initial planner call, reads the actual checkpoint, then routes a follow-up
+through an unsupported planner decision to the general agent and checks its
+received messages. The planner remains enabled during that follow-up.
+
+Red evidence: before the fix, the first case had an empty checkpoint instead
+of the expected user/assistant pair. After the fix all four cases pass; the
+whole planner gateway file is 6 passed. Full gates: 318 passed, 1 skipped,
+1 existing Starlette deprecation warning; ruff/mypy clean (45 files), diff
+check clean. Tests use fake desktop tools/scripted model and real gateway
+lifespan/checkpointer; no live desktop or provider calls were made this round.
+
+Boundaries: persistence remains best-effort and cancellation branches still
+skip it; this is not a guarantee of memory durability on storage failure or
+client disconnect. Planner context/constraints remain unwired and its rollout
+flag remains false by default. Next priorities remain actual stored-memory
+constraints on both routes, cancellation/disconnect/wall-clock truth,
+provider-wire coverage and WP7 compact window state. Full WP1-WP8 completion
+and live latency improvement are not claimed. No model/permission changes.
+
 ## Round-11 checkpoint — router contract only
 
 Implemented and verified supplied `approved_context['denied_apps']` in

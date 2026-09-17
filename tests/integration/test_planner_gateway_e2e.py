@@ -28,7 +28,9 @@ PLAN_JSON = '{"recipe_id": "open_app.v1", "arguments": {"app_id": "chrome"}}'
 
 
 class PlannerThenAgentModel(ScriptedChatModel):
-    """Call 1 answers the compact planner; any later call = agent = failure."""
+    """One planned turn; opt-in follow-up exercises general-agent memory."""
+
+    allow_followup: bool = False
 
     def _generate(
         self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
@@ -40,8 +42,12 @@ class PlannerThenAgentModel(ScriptedChatModel):
                 content=PLAN_JSON,
                 usage_metadata={"input_tokens": 123, "output_tokens": 24, "total_tokens": 147},
             )
+        elif self.allow_followup and self.call_index == 2:
+            message = AIMessage(content='{"decision": "unsupported"}')
+        elif self.allow_followup and self.call_index == 3:
+            message = AIMessage(content="I can see the previous attempt in the conversation.")
         else:
-            raise AssertionError("general agent must not run for a planned recipe")
+            raise AssertionError("unexpected extra model call")
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
@@ -171,3 +177,68 @@ async def test_stream_true_gets_sse_not_json(
     record = await app.state.run_store.get_run(run_id)
     assert record is not None and record.status == "completed"
     assert app.state._model.call_index == 1
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("verified", [False, True])
+async def test_planner_outcome_reaches_checkpoint_and_followup(
+    planner_gateway: tuple[httpx.AsyncClient, Any], stream: bool, verified: bool,
+) -> None:
+    client, app = planner_gateway
+    app.state._model.allow_followup = True
+    if not verified:
+        # Missing observation evidence yields an honest failed recipe, not
+        # a fabricated success; that actual outcome also belongs in memory.
+        app.state.cua_tools_by_name.pop("get_window_state")
+    turn = uuid.uuid4().hex
+    objective = "please launch chrome for me"
+    headers = {
+        "Authorization": "Bearer test-gateway-key",
+        "X-OpenWebUI-User-Id": "planner-e2e",
+        "X-OpenWebUI-Chat-Id": turn,
+        "X-OpenWebUI-User-Message-Id": turn,
+    }
+    response = await client.post("/v1/chat/completions", headers=headers, json={
+        "model": app.state.settings.assistant_model_id,
+        "messages": [{"role": "user", "content": objective}],
+        "stream": stream,
+    })
+    assert response.status_code == 200
+    if stream:
+        assert "data: [DONE]" in response.text
+        chunks = [json.loads(line.removeprefix("data: "))
+                  for line in response.text.splitlines()
+                  if line.startswith("data: {")]
+        reply = "".join(c["choices"][0]["delta"].get("content", "") or ""
+                        for c in chunks)
+        response_id = chunks[0]["id"]
+    else:
+        body = response.json()
+        reply = body["choices"][0]["message"]["content"]
+        response_id = body["id"]
+    assert ("Opened chrome." in reply) if verified else ("could not verify" in reply)
+    assert app.state._model.call_index == 1
+    record = await app.state.run_store.get_run(response_id.removeprefix("chatcmpl-"))
+    assert record is not None
+    assert record.status == ("completed" if verified else "failed")
+
+    config = {"configurable": {"thread_id": f"owui:planner-e2e:{turn}"}}
+    snapshot = await app.state.agent.aget_state(config)
+    messages = snapshot.values.get("messages", [])
+    assert [(m.type, m.content) for m in messages] == [
+        ("human", objective), ("ai", reply),
+    ], "the actual planner-route exchange must persist, not internal plan JSON"
+
+    followup = await client.post("/v1/chat/completions", headers={
+        **headers, "X-OpenWebUI-User-Message-Id": uuid.uuid4().hex,
+    }, json={
+        "model": app.state.settings.assistant_model_id,
+        "messages": [{"role": "user", "content": "what happened on my last request?"}],
+        "stream": False,
+    })
+    assert followup.status_code == 200
+    assert app.state._model.call_index == 3  # planner -> unsupported -> general agent
+    seen = [(m.type, m.content) for m in app.state._model.seen[-1]]
+    assert ("human", objective) in seen
+    assert ("ai", reply) in seen
+    assert ("ai", PLAN_JSON) not in seen
