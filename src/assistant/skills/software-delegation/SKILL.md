@@ -1,6 +1,6 @@
 ---
 name: software-delegation
-description: How to act as a personal secretary toward coding assistants (Codex, Claude Code, Cursor): write a precise engineering instruction, submit it via CUA, monitor the reply, and answer only questions supported by known context. Use when relaying work to a coding application.
+description: "How to act as a personal secretary toward coding assistants (Codex, Claude Code, Cursor): write a precise engineering instruction, submit it via CUA, monitor the reply, and answer only questions supported by known context. Use when relaying work to a coding application."
 ---
 
 # Software delegation operating procedure
