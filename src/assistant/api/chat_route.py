@@ -224,6 +224,11 @@ async def _run_agent_turn(
     if start_session is not None:
         try:
             await start_session.ainvoke({"session": f"run-{run_id}"})
+            enable_cursor = (getattr(request.app.state, "cua_tools_by_name", {}) or {}).get(
+                "set_agent_cursor_enabled"
+            )
+            if enable_cursor is not None:
+                await enable_cursor.ainvoke({"session": f"run-{run_id}", "enabled": True})
         except Exception as exc:  # noqa: BLE001 -- cursor session is best-effort
             logger.info(
                 "cua_session_start_failed",

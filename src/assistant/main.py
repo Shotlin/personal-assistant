@@ -23,8 +23,16 @@ from assistant.memory.postgres import open_memory_resources
 from assistant.models import build_chat_model
 from assistant.observability.logging import setup_logging
 from assistant.settings import Settings
-from assistant.tools.cua import load_cua_tools
+from assistant.tools.cua import open_cua_connection
 from assistant.tools.registry import assemble_tool_inventory
+
+
+def _null_cua_connection() -> AbstractAsyncContextManager[dict[str, Any]]:
+    @asynccontextmanager
+    async def cm() -> AsyncIterator[dict[str, Any]]:
+        yield {}
+
+    return cm()
 
 
 def _skills_root() -> Path:
@@ -92,14 +100,15 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
         model = build_chat_model(settings)
         app.state.utility_model = model
 
+        cua_cm = (
+            open_cua_connection(settings)
+            if settings.cua_enabled
+            else _null_cua_connection()
+        )
         try:
-            if settings.cua_enabled:
-                connection = await load_cua_tools(settings)
-                extra_tools = assemble_tool_inventory(connection.tools)
-                app.state.cua_tools_by_name = connection.tools_by_name
-            else:
-                extra_tools = assemble_tool_inventory([])
-                app.state.cua_tools_by_name = {}
+            connection = await cua_cm.__aenter__()
+            extra_tools = assemble_tool_inventory(connection.tools)
+            app.state.cua_tools_by_name = connection.tools_by_name
             bundle = build_agent(
                 model=model,
                 checkpointer=resources.saver,
@@ -109,12 +118,14 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
             )
             app.state.agent = bundle.agent
         except BaseException:
+            await cua_cm.__aexit__(None, None, None)
             await resources_cm.__aexit__(None, None, None)
             raise
 
         try:
             yield
         finally:
+            await cua_cm.__aexit__(None, None, None)
             await resources_cm.__aexit__(None, None, None)
 
     return lifespan

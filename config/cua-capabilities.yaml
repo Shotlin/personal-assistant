@@ -27,6 +27,8 @@ allow:
     # session + inventory
     - start_session
     - end_session
+    - set_agent_cursor_enabled
+    - get_agent_cursor_state
     - list_apps
     - list_windows
     # observation

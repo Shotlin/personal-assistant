@@ -53,6 +53,8 @@ CUA_ALLOWED_TOOL_NAMES = frozenset(
         # Session lifecycle (makes the visible agent cursor available).
         "start_session",
         "end_session",
+        "set_agent_cursor_enabled",
+        "get_agent_cursor_state",
     }
 )
 
