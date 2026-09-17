@@ -2,71 +2,63 @@
 
 ## Current checkpoint
 
-Branch: `phase-1.1-latency`. Last committed revision before this work:
-`1977c01` (WP2 defaults/ContextVar regression fixes). WP3 work is uncommitted
-and incomplete. No push or deployment was performed during this goal round.
-The previously requested gateway process remains running; it has not reloaded
-these subsequent source changes.
+Branch: `phase-1.1-latency`. Committed through `9bd0a27`:
+WP3 parts 1-3 (session manager core, stream-owned run scope + local Stop,
+gateway wiring + stop endpoint + manifest review) and the newest-observation
+hard cap (F03). Working tree clean. No push, no deployment.
 
-## Verified locally in this round
+## Live-verified this round (bounded, no desktop actions)
 
-Commands from repository root (existing locked virtual environment):
+Gateway restarted from current source (`MODEL_NAME=stealth/union-alpha`):
+`/healthz` + `/readyz` 200. Stop endpoint live checks: unknown run -> 404
+`run_not_found`; missing key -> 401. One streaming smoke (1 model call,
+`WP3-SMOKE-OK` streamed back in 2.91s total): `[working]` status chunk
+appeared immediately after acceptance; final `[DONE]` framing present.
+Log evidence for the pure-chat smoke: `run_usage` recorded
+`model_calls=1, input_tokens=15774, output_tokens=45` and NO
+`cua_session`/desktop events — session lifecycle tools absent from the
+model inventory (startup `skipped` list). No live desktop action, no
+cursor session, no denial-path probe.
 
-```sh
-.venv/bin/python -m pytest tests/unit/test_trusted_session_binding.py -o addopts='' -x --tb=long
-.venv/bin/python -m pytest tests/unit tests/integration -o addopts='' --tb=long -q
-.venv/bin/ruff check src tests
-.venv/bin/mypy src
-```
+Operational finding (pre-existing, logged live): deepagents skips
+`/skills/computer-use/SKILL.md` — YAML frontmatter parse fails on the
+colon in the description line. Skill content is currently not loaded.
+Needs a front-matter fix + test (WP7).
 
-Results: 5 trusted-session tests passed; full suite 134 passed, 1 skipped,
-1 Starlette deprecation warning, in 2.59 seconds. Ruff passed; mypy passed
-for 38 source files. These are regression execution times, NOT task latency
-or performance claims. Live provider test remains skipped.
+## Measured (small-n, honest)
 
-New/strengthened checks cover lazy desktop lease acquisition (plain chat
-must not take the lease), concurrent startup, rejection of a closed handle,
-cleanup failure quarantine, forced trusted session binding, and a queued
-mutation refused after Stop while an earlier in-flight effect is preserved.
+- Streaming smoke: 1 run, 2.91s end-to-end, 1 model call, 15,774 input /
+  45 output tokens, model `stealth/union-alpha` via OpenRouter. Not a
+  performance baseline (n=1, full-system latency).
+- Unit/integration suite runs in ~2.9s wall clock; per-commit counts
+  recorded in commit messages (136 -> 142 -> 145 -> 148 passed).
 
 ## Remaining WP3 work / known limitations
 
-- Wire DesktopSessionManager into both non-streaming execution and the
-  streaming generator's own context; remove eager gateway cursor setup.
-- Establish/reset budget, session, and artifact ContextVars in their owning
-  execution scope. The current production path does not set cua_desktop_run.
-- Provide controller-only normalized MCP results. Current `_caller` still
-  drops its normalized structured outcome after constructing model text.
-- Validate native controller result status rather than treating strings,
-  malformed outcomes or transport acknowledgements as success.
-- Review cursor-motion manifest addition before any invocation; leave its
-  activation flag off until the manifest and installed schema are validated.
-- Bound and test cleanup during cancellation/disconnect, adapter cleanup
-  errors, shutdown and startup uncertainty. Current adapter error swallowing
-  and close_all handling need further hardening; mock lease tests alone are
-  not sufficient proof of production recovery.
-- Cross-process durable desktop ownership belongs to WP4, not the current
-  process-local lease.
-- Complete package review and gates before a WP3 local commit.
+- Cursor-motion manifest entry added but daemon not restarted; motion
+  behavior unverified live. idle_hide_ms=0 wiring exists only in the
+  manager; no live >30s-wait or real Stop check yet.
+- Durable cross-process desktop ownership remains WP4 scope; current
+  lease is process-local.
+- Utility path never opens desktop runs (by design); covered by absence
+  of desktop events in the smoke log, not a dedicated test yet.
+- Settings flags added to code; `.env.example` needs the new keys
+  documented; README rollback section still pending (WP8).
 
-## WP1/WP2 audit caveats
+## WP1/WP2 audit caveats (unchanged unless noted)
 
-Existing groundwork is not full acceptance. Usage callbacks do not yet count
-all native SDK retry attempts or reconcile actual cost. API usage can still
-turn unknown values into zero. Structured evidence is normalized but then
-lost at the wrapper boundary; hard latest-observation limits and per-window
-context still need completion. Previous Calculator report timings are not a
-measured gateway/Open WebUI baseline.
+- Usage ledger counts provider responses, not underlying SDK retry
+  attempts; cost stays unknown (recorded as unknown, not zero).
+- Structured evidence now reaches the policy wrapper boundary
+  (ToolOutcome preserved); per-window state shaping still open (WP7).
+- Newest-observation hard cap DONE this round (12000 chars); per-window
+  freshness still open.
 
 ## Model and live testing
 
 The user changed the local configuration to `stealth/union-alpha` via
-OpenRouter and requested a restart. Do not silently rewrite that setting
-back to GLM during autonomous continuation. Model-specific acceptance against
-the original GLM plan remains unresolved; no provider request was made in
-this round, and endpoint support/cost for the changed model is unverified.
-
-No live desktop action, >30-second cursor wait, real Calculator display
-readback, browser search, playback, paid smoke trial, or Open WebUI visible
-acknowledgement benchmark was performed. Do not enable the unfinished local
-runtime for routine desktop use based on these mocked tests.
+OpenRouter and requested a restart; the running gateway logs that model.
+The master plan's model-specific work (GLM reasoning controls, provider
+latency preference, GLM endpoint probes) is NOT applicable until the
+owner reconciles the model constraint; no GLM-specific claims are made.
+No claim is made that the smoke run reflects production performance.
