@@ -204,6 +204,37 @@ uv run python scripts/verify_cua.py --live
   `cua-driver permissions status`, and the pytest summary. Never share
   `.env`.
 
+## Feature flags & rollback (Phase 1.1)
+
+All levers live in `.env`; change one, restart the gateway, no code edit.
+
+| Flag (env) | Default | Effect of `false` |
+| --- | --- | --- |
+| `COMPACT_PLANNER_ENABLED` | `false` | Every non-exact turn goes to the general agent exactly as before WP6 (compact same-model planning disabled). |
+| `ACTIVE_CURSOR_PERSISTENCE_ENABLED` | `true` | No desktop cursor sessions: runs execute without a visible cursor and the driver is never contacted for sessions. |
+| `STATUS_EVENTS_ENABLED` | `true` | No `[working]`/`[waiting]` SSE progress lines. |
+| `CUA_ENABLED` | `true` | No computer control at all: pure chat agent (requires restart; recipes unavailable). |
+
+Rollback paths by layer:
+
+- **Planner (WP6)** is off by default. To roll a live rollout back, set
+  `COMPACT_PLANNER_ENABLED=false` and restart — the exact-match recipe
+  route (WP5) is unaffected and keeps its zero-model behavior.
+- **Recipes (WP5)**: there is no flag for the exact-match route by design
+  (it makes zero model calls and writes durable ledger rows); to disable
+  it entirely, set `CUA_ENABLED=false`, which removes the tool inventory
+  and makes the router fail closed.
+- **Run registry / dedup (WP4)**: do not disable in production. To roll
+  the gateway back to a pre-WP4 build, checkout the earlier commit and
+  restart; the `run_registry`/`action_ledger` tables are additive and
+  safe to leave in place (setup() never deletes history).
+- **Cursor sessions (WP3)**: `ACTIVE_CURSOR_PERSISTENCE_ENABLED=false`.
+
+Desktop verification requires the macOS permission grants (Accessibility,
+Screen Recording) for CuaDriver; while they are pending, desktop calls
+fail with an explicit `permissions_pending` message in the run registry
+and reply text — the gateway does not retry around a permissions gate.
+
 ## Troubleshooting
 
 | Symptom | First checks |
