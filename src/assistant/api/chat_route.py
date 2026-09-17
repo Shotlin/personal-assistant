@@ -75,13 +75,15 @@ def _stream_recipe_response(
     run_store: Any | None = None,
     run_id: str = "",
     timeline: RunTimeline | None = None,
+    terminal_status: str = "completed",
 ) -> StreamingResponse:
     """Render a fast-path completion as OpenAI-compatible SSE ([DONE] ended).
 
     Open WebUI always expects the streaming contract when the request set
     stream=true (review P1-4). The terminal run_registry/timeline events
     are written in the generator's finally per master plan F06: returning
-    the StreamingResponse object is not completion.
+    the StreamingResponse object is not completion. ``terminal_status``
+    carries the fast path's own truth (a failed recipe is NOT completed).
     """
 
     async def stream_one() -> AsyncIterator[str]:
@@ -101,9 +103,9 @@ def _stream_recipe_response(
             yield "data: [DONE]\n\n"
         finally:
             if run_store is not None and run_id:
-                await run_store.finish(run_id, "completed")
+                await run_store.finish(run_id, terminal_status)
             if timeline is not None:
-                timeline.mark_terminal(metadata={"status": "ok"})
+                timeline.mark_terminal(metadata={"status": terminal_status})
 
     return StreamingResponse(stream_one(), media_type="text/event-stream")
 
@@ -295,6 +297,7 @@ async def chat_completions(
             response: ChatCompletionResponse | StreamingResponse = await _run_utility(
                 body, request, settings, run_id, ledger
             )
+            fast_terminal = "completed"
         else:
             # The action ledger exists only for claimed runs: rows are
             # FK-bound to the registry entry created by the claim.
@@ -303,18 +306,21 @@ async def chat_completions(
                 if claimed and run_store is not None
                 else None
             )
-            recipe_response = await _try_recipe_route(
+            recipe_result = await _try_recipe_route(
                 body, request, settings, identity, run_id, action_ledger
             )
-            if recipe_response is None and settings.compact_planner_enabled:
+            if recipe_result is None and settings.compact_planner_enabled:
                 # WP6: natural phrasing of a supported task gets ONE compact
                 # same-model decision before the full agent loop. Results
                 # execute locally; no obligatory second model call. Flag
                 # gives staged rollout and rollback (WP8).
-                recipe_response = await _try_planner_route(
+                recipe_result = await _try_planner_route(
                     body, request, settings, identity, run_id, action_ledger, ledger
                 )
-            if recipe_response is not None:
+            if recipe_result is not None:
+                # Fast paths report their own terminal truth (P2-5b): a
+                # failed or cancelled recipe is never recorded completed.
+                recipe_response, fast_status = recipe_result
                 # Fast paths honor the request's stream contract (P1-4):
                 # JSON for stream=false, SSE with [DONE] for stream=true.
                 if body.stream and not isinstance(recipe_response, StreamingResponse):
@@ -323,14 +329,17 @@ async def chat_completions(
                         run_store=getattr(request.app.state, "run_store", None),
                         run_id=run_id,
                         timeline=timeline,
+                        terminal_status=fast_status,
                     )
                 else:
                     response = recipe_response
+                    fast_terminal = fast_status
             else:
                 response = await _run_agent_turn(
                     body, request, settings, identity, run_id, ledger, timeline,
                     action_ledger=action_ledger,
                 )
+                fast_terminal = "completed"
     except GatewayError as exc:
         if claimed and run_store is not None:
             await run_store.finish(run_id, "failed")
@@ -358,7 +367,7 @@ async def chat_completions(
 
     if not isinstance(response, StreamingResponse):
         if claimed and run_store is not None:
-            await run_store.finish(run_id, "completed")
+            await run_store.finish(run_id, fast_terminal)
         timeline.mark_terminal(metadata={"status": "ok"})
         logger.info(
             "run_finished",
@@ -464,15 +473,17 @@ async def _try_recipe_route(
             model=settings.assistant_model_id,
             choices=[ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))],
             usage=_usage_from_ledger(UsageLedger()),
-        )
+        ), "cancelled"
     text = render_result(result)
+    # Terminal status is the recipe's own truth: a verified result is
+    # completed; an honest failure is failed (P2-5b) -- never completed.
     return ChatCompletionResponse(
         id=f"chatcmpl-{run_id}",
         created=int(time.time()),
         model=settings.assistant_model_id,
         choices=[ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))],
         usage=UsageStats(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-    )
+    ), ("completed" if result.get("ok") is True else "failed")
 
 
 async def _try_planner_route(
@@ -559,15 +570,16 @@ async def _try_planner_route(
             model=settings.assistant_model_id,
             choices=[ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))],
             usage=_usage_from_ledger(UsageLedger()),
-        )
+        ), "cancelled"
     text = render_result(result)
+    # Same terminal truth as the exact-match route (P2-5b).
     return ChatCompletionResponse(
         id=f"chatcmpl-{run_id}",
         created=int(time.time()),
         model=settings.assistant_model_id,
         choices=[ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))],
         usage=_usage_from_ledger(ledger),
-    )
+    ), ("completed" if result.get("ok") is True else "failed")
 
 
 async def _run_agent_turn(
