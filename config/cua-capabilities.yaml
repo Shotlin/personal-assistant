@@ -34,6 +34,7 @@ allow:
     - get_screen_size
     - get_accessibility_tree
     - verify_state
+    - zoom
     - bring_to_front
     # launch
     - launch_app
