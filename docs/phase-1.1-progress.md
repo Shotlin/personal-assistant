@@ -2,19 +2,42 @@
 
 ## Current checkpoint
 
-Branch: `phase-1.1-latency`. Committed through `5a232b7` (WP4 part 3):
-production gateway now claims every non-utility turn in the REAL lifespan
-(AsyncExitStack; RunStore closed on startup failure), terminal status
-written on completed/failed/cancelled paths (streaming terminal marked in
-the generator's finally per F06), duplicate deliveries answered
-observe-only in the request's format with the canonical run_id and zero
-model calls. runs.py safety repairs: setup() never deletes history
-(legacy duplicate identities fail setup loudly, operator migration
-required), claim() is a single atomic statement returning the canonical
-run_id (no shared-connection transaction nesting), DesktopLease upsert is
-atomic with DB-clock expiry — explicitly NOT a fencing mechanism, NOT
-wired to production dispatch. Suite: 174 passed, 1 skipped; ruff/mypy
-clean. No push.
+Branch: `phase-1.1-latency`. Committed through `9d069be`:
+- WP4 COMPLETE (parts 1-4): durable run registry + atomic claim
+  (UNIQUE(user_id, user_message_id)), action ledger with unknown-effect
+  state, gateway claim before external work, terminal marking on all
+  paths, duplicate delivery observe-only (SSE + JSON), production wiring
+  live-verified, and durable action-ledger rows written around REAL CUA
+  dispatch (planned -> confirmed/failed/unknown; timeout/cancel = unknown,
+  never blind replay). DesktopLease documented non-fencing, unwired.
+- WP5 COMPLETE (parts 1-2): strict router (master-plan regressions
+  verbatim), three local recipes with bounded arithmetic evaluator,
+  RecipeExecutor (per-native-mutation budget + ledger, fail-closed
+  schemas, no pixel coordinates), render_result with evidence recheck,
+  gateway recipe route BEFORE the agent path, and an e2e gate proving
+  'Open Chrome' -> 'Opened chrome.' with model call count 0.
+Suite: 268 passed, 1 skipped; ruff/mypy clean (44 files). No push.
+
+## Round-5 verification
+
+- Live (production gateway, real model idle): 'Open Chrome' with the real
+  cua-driver inventory -> honest failure text 'I could not verify that
+  chrome opened: launch_app failed: DesktopDriverError.', usage 0 prompt /
+  0 completion tokens, registry row completed. The zero-model claim and
+  honest-failure rendering are LIVE-verified; the recipe's GUI effect is
+  NOT (real driver dispatch is WP8 live scope; the daemon manifest for
+  cursor motion is still stale and launch_app schema coverage must be
+  confirmed against the real driver).
+- test_recipe_gateway_e2e.py: production lifespan + fake CuaConnection
+  with REAL argument schemas (executor validates; empty-schema fakes are
+  rejected - pinned by an isolated executor probe) -> 'Opened chrome.',
+  call_index == 0.
+- WP4 ledger dispatch tests on real Postgres (6): planned->confirmed,
+  failed, unknown-on-timeout, observations excluded, no-scope no-rows,
+  per-args digest.
+- Subagent WP5: 86 focused tests (router regressions, render contract,
+  executor budget/ledger/modal/closed-session/macro accounting), full
+  suite 268 green, ruff/mypy clean; fake-driver only.
 
 ## Round-4 live verification (production gateway, real Postgres, real model)
 
