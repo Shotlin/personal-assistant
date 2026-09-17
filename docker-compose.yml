@@ -37,13 +37,11 @@ services:
       # The pinned Open WebUI image connects to our gateway for the assistant model.
       OPENAI_API_BASE_URL: http://host.docker.internal:8787/v1
       OPENAI_API_KEY: ${AGENT_GATEWAY_API_KEY:-change-me}
-      # Turn-lineage headers (spec section 15.2 / user-approved scheme).
-      OPENAI_API_CUSTOM_HEADERS: |-
-        X-OpenWebUI-Chat-Id: {{CHAT_ID}}
-        X-OpenWebUI-Message-Id: {{MESSAGE_ID}}
-        X-OpenWebUI-User-Message-Id: {{USER_MESSAGE_ID}}
-        X-OpenWebUI-User-Message-Parent-Id: {{USER_MESSAGE_PARENT_ID}}
-        X-OpenWebUI-Task: {{TASK}}
+      # Turn-lineage headers (X-OpenWebUI-Chat-Id etc.) are per-connection
+      # custom headers in the Open WebUI DB, not environment variables in
+      # v0.11.3. Apply them with:
+      #   uv run python scripts/configure_openwebui_connection.py \
+      #     --email <admin> --password <pass>
 
 volumes:
   assistant-postgres:
