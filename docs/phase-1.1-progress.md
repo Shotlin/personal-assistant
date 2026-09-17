@@ -1,5 +1,25 @@
 # Phase 1.1 implementation progress
 
+## Round-8 checkpoint
+
+Committed through `1e85bc7`. Two WP7 review items fixed, both TDD:
+- SKILL.md YAML frontmatter (live-log bug): colon in an unquoted plain
+  description broke yaml.safe_load, so deepagents DROPPED the skill.
+  Descriptions now quoted (computer-use, general-assistant);
+  tests/unit/test_skill_frontmatter.py pins the real files through
+  deepagents' own parser + the quoting mechanism (red -> green).
+- Fast-path recipe turns are now persisted to the agent thread
+  (best-effort aupdate_state; P1-3). Pinned by
+  test_recipe_checkpoint_continuity.py: checkpoint holds the exchange
+  AND a following general-agent turn receives it in prompt history
+  (was 0 messages).
+Suite: 295 passed, 1 skipped; ruff/mypy clean. Live desktop verification
+still paused (permission step below). Remaining review queue: strict
+planner validation + its regressions; constraints/preferences gating of
+fast paths (approved_context still empty); provider-wire capture;
+disconnect/wall-clock status truth; WP8 negative tests, calculator e2e,
+rollback docs; Open WebUI auxiliary generation; prompt caching decision.
+
 ## Round-7 checkpoint
 
 Committed through `9e72f20`. Fast paths (exact recipe + planner route)
