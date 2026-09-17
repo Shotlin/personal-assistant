@@ -11,6 +11,8 @@ import logging
 from decimal import Decimal
 from typing import Any
 
+from langchain_core.callbacks import BaseCallbackHandler
+
 logger = logging.getLogger("assistant.observability.usage")
 
 _TOKEN_FIELDS = ("input_tokens", "output_tokens", "reasoning_tokens", "cached_input_tokens")
@@ -91,3 +93,59 @@ class UsageLedger:
         if not cost_known:
             totals["cost_usd"] = None
         return totals
+
+
+class LedgerCallbackHandler(BaseCallbackHandler):
+    """LangChain callback handler feeding one run's :class:`UsageLedger`.
+
+    Attached at the provider boundary so usage is aggregated from actual
+    provider responses (never by rescanning graph messages). Call ids are
+    ``{prefix}-{n}`` in completion order.
+    """
+
+    def __init__(self, ledger: UsageLedger, prefix: str) -> None:
+        self.ledger = ledger
+        self.prefix = prefix
+        self._sequence = 0
+
+    def on_llm_end(self, response: Any, **kwargs: Any) -> None:  # noqa: ANN003
+        self._sequence += 1
+        call_id = f"{self.prefix}-{self._sequence}"
+
+        input_tokens = output_tokens = reasoning_tokens = cached = None
+        llm_output = getattr(response, "llm_output", None) or {}
+        token_usage = llm_output.get("token_usage") or {}
+        if isinstance(token_usage, dict):
+            input_tokens = token_usage.get("prompt_tokens")
+            output_tokens = token_usage.get("completion_tokens")
+            reasoning_raw = token_usage.get("reasoning_tokens")
+            reasoning_tokens = int(reasoning_raw) if isinstance(reasoning_raw, int) else None
+
+        # Prefer the richer per-generation usage metadata when present.
+        for generation in getattr(response, "generations", []) or []:
+            for gen in generation or []:
+                meta = getattr(gen, "usage_metadata", None)
+                message_obj = getattr(gen, "message", None)
+                if meta is None and message_obj is not None:
+                    meta = getattr(message_obj, "usage_metadata", None)
+                if isinstance(meta, dict):
+                    input_tokens = int(meta.get("input_tokens") or 0) or None
+                    output_tokens = int(meta.get("output_tokens") or 0) or None
+                    details = meta.get("output_token_details") or {}
+                    reasoning_raw = details.get("reasoning")
+                    if isinstance(reasoning_raw, int):
+                        reasoning_tokens = reasoning_raw
+                    in_details = meta.get("input_token_details") or {}
+                    cached_raw = in_details.get("cache_read")
+                    if isinstance(cached_raw, int):
+                        cached = cached_raw
+                    break
+
+        self.ledger.record(
+            call_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            reasoning_tokens=reasoning_tokens,
+            cached_input_tokens=cached,
+            cost_usd=None,  # provider cost stays unknown until reconciled
+        )

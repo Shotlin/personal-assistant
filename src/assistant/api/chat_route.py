@@ -37,6 +37,8 @@ from assistant.api.schemas import (
 from assistant.api.streaming import sse_agent_stream
 from assistant.api.turns import decide_turn, last_user_content, message_text, normalize_history
 from assistant.models import build_chat_model
+from assistant.observability.timing import RunTimeline
+from assistant.observability.usage import LedgerCallbackHandler, UsageLedger
 from assistant.settings import Settings
 from assistant.tools.policy import cua_current_session, cua_run_budget
 
@@ -59,18 +61,6 @@ def _final_assistant_text(result: dict[str, Any]) -> str:
         if content.strip():
             return content
     return ""
-
-
-def _usage_from(result: dict[str, Any]) -> UsageStats:
-    for message in reversed(result.get("messages", [])):
-        usage = getattr(message, "usage_metadata", None)
-        if usage:
-            return UsageStats(
-                prompt_tokens=int(usage.get("input_tokens") or 0),
-                completion_tokens=int(usage.get("output_tokens") or 0),
-                total_tokens=int(usage.get("total_tokens") or 0),
-            )
-    return UsageStats()
 
 
 def _provider_error(exc: Exception) -> GatewayError:
@@ -155,6 +145,11 @@ async def chat_completions(
     identity = extract_identity(request.headers, is_production=settings.is_production)
     run_id = uuid.uuid4().hex
     started = time.monotonic()
+    ledger = UsageLedger()
+    timeline = RunTimeline(run_id)
+    request.app.state.last_run_timeline = timeline
+    request.app.state.last_run_ledger = ledger
+    timeline.mark("run_started")
     logger.info(
         "run_started",
         extra=_run_log_fields(run_id, identity, settings, utility=identity.is_utility),
@@ -162,10 +157,13 @@ async def chat_completions(
 
     try:
         if identity.is_utility:
-            response = await _run_utility(body, request, settings, run_id)
+            response = await _run_utility(body, request, settings, run_id, ledger)
         else:
-            response = await _run_agent_turn(body, request, settings, identity, run_id)
+            response = await _run_agent_turn(
+                body, request, settings, identity, run_id, ledger, timeline
+            )
     except GatewayError as exc:
+        timeline.mark_terminal(metadata={"status": "error", "error_code": exc.code})
         logger.warning(
             "run_finished",
             extra={
@@ -177,16 +175,22 @@ async def chat_completions(
             },
         )
         raise
-    logger.info(
-        "run_finished",
-        extra={
-            "event": "run_finished",
-            "run_id": run_id,
-            "status": "ok",
-            "utility": identity.is_utility,
-            "duration_ms": int((time.monotonic() - started) * 1000),
-        },
-    )
+    # NOTE: for streaming responses the terminal event is marked by the
+    # generator's finally-clause (master plan F06): returning the
+    # StreamingResponse object is not completion.
+
+    if not isinstance(response, StreamingResponse):
+        timeline.mark_terminal(metadata={"status": "ok"})
+        logger.info(
+            "run_finished",
+            extra={
+                "event": "run_finished",
+                "run_id": run_id,
+                "status": "ok",
+                "utility": identity.is_utility,
+                "duration_ms": int((time.monotonic() - started) * 1000),
+            },
+        )
     return response
 
 
@@ -196,12 +200,18 @@ async def _run_agent_turn(
     settings: SettingsDep,
     identity: RequestIdentity,
     run_id: str,
+    ledger: UsageLedger,
+    timeline: RunTimeline,
 ) -> Any:
     agent = getattr(request.app.state, "agent", None)
     if agent is None:
         raise GatewayError("agent_execution_failed", "Agent is not initialized")
 
-    config = {"configurable": {"thread_id": identity.thread_id}}
+    usage_handler = LedgerCallbackHandler(ledger, prefix=run_id)
+    config: dict[str, Any] = {
+        "configurable": {"thread_id": identity.thread_id},
+        "callbacks": [usage_handler],
+    }
     snapshot = await agent.aget_state(config)
     persisted: list = []
     if snapshot is not None and snapshot.values:
@@ -241,6 +251,7 @@ async def _run_agent_turn(
             )
 
     run_config: dict[str, Any] = dict(config)
+    run_config.setdefault("callbacks", [usage_handler])
     invoke_input: dict[str, Any] | None
     if decision.mode in ("initialize", "new_turn"):
         invoke_input = {"messages": decision.messages}
@@ -271,6 +282,9 @@ async def _run_agent_turn(
                 context,
                 model_id=settings.assistant_model_id,
                 completion_id=completion_id,
+                run_id=run_id,
+                ledger=ledger,
+                timeline=timeline,
             ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -280,6 +294,9 @@ async def _run_agent_turn(
         async with asyncio.timeout(MAX_RUN_WALL_CLOCK_SECONDS):
             result = await agent.ainvoke(invoke_input, run_config, context=context)
     except TimeoutError:
+        timeline.mark_terminal(
+            metadata={"status": "wall_clock_exceeded", "cua_mutating_actions": budget.used}
+        )
         logger.warning(
             "run_finished",
             extra={
@@ -293,9 +310,15 @@ async def _run_agent_turn(
             "agent_execution_failed",
             "Run exceeded the wall-clock ceiling; partial state is preserved.",
         ) from None
-    except GatewayError:
+    except GatewayError as exc:
+        timeline.mark_terminal(metadata={"status": "error", "error_code": exc.code})
         raise
     except Exception as exc:
+        timeline.mark_terminal(metadata={"status": "error"})
+        logger.exception(
+            "agent_turn_failed",
+            extra={"event": "agent_turn_failed", "run_id": run_id, "exc_type": type(exc).__name__},
+        )
         raise _provider_error(exc) from exc
 
     text = _final_assistant_text(result)
@@ -306,7 +329,19 @@ async def _run_agent_turn(
         choices=[
             ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))
         ],
-        usage=_usage_from(result),
+        usage=_usage_from_ledger(ledger),
+    )
+
+
+def _usage_from_ledger(ledger: UsageLedger) -> UsageStats:
+    """Run-aggregated usage from the provider boundary (master plan F05)."""
+    totals = ledger.snapshot()
+    input_tokens = int(totals.get("input_tokens") or 0)
+    output_tokens = int(totals.get("output_tokens") or 0)
+    return UsageStats(
+        prompt_tokens=input_tokens,
+        completion_tokens=output_tokens,
+        total_tokens=input_tokens + output_tokens,
     )
 
 
@@ -315,6 +350,7 @@ async def _run_utility(
     request: Request,
     settings: SettingsDep,
     run_id: str,
+    ledger: UsageLedger,
 ) -> ChatCompletionResponse:
     """Utility tasks get a plain model response: no agent, no CUA (spec 15.3)."""
     model = getattr(request.app.state, "utility_model", None)
@@ -323,28 +359,32 @@ async def _run_utility(
     messages = normalize_history(body.messages)
     if not messages:
         raise GatewayError("agent_execution_failed", "Empty messages for utility request")
+    usage_handler = LedgerCallbackHandler(ledger, prefix=f"{run_id}-util")
 
     try:
         async with asyncio.timeout(settings.model_timeout_seconds + 5):
-            result = await model.ainvoke(messages)
+            result = await model.ainvoke(
+                messages, config={"callbacks": [usage_handler]}  # type: ignore[arg-type]
+            )
     except TimeoutError as exc:
         raise GatewayError("provider_timeout", "Model provider timed out.") from exc
     except Exception as exc:
         raise _provider_error(exc) from exc
 
-    usage_meta = getattr(result, "usage_metadata", None) or {}
+    totals = ledger.snapshot()
+    input_tokens = int(totals.get("input_tokens") or 0)
+    output_tokens = int(totals.get("output_tokens") or 0)
+    content = str(result.content or "")
     return ChatCompletionResponse(
         id=f"chatcmpl-{run_id}",
         created=int(time.time()),
         model=settings.assistant_model_id,
         choices=[
-            ChatCompletionChoice(
-                message=ChatMessage(role="assistant", content=str(result.content or ""))
-            )
+            ChatCompletionChoice(message=ChatMessage(role="assistant", content=content))
         ],
         usage=UsageStats(
-            prompt_tokens=int(usage_meta.get("input_tokens") or 0),
-            completion_tokens=int(usage_meta.get("output_tokens") or 0),
-            total_tokens=int(usage_meta.get("total_tokens") or 0),
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
         ),
     )
