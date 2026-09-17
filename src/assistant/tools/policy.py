@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import contextvars
 import logging
-from collections.abc import Awaitable, Callable, Sequence
-from contextlib import nullcontext
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC
 from typing import TYPE_CHECKING, Any
@@ -135,6 +135,30 @@ cua_desktop_run: contextvars.ContextVar[_DesktopRun | None] = contextvars.Contex
 #: Returned to the model instead of executing an action after a local
 #: stop was requested (master plan 7.5: stop is local, not a model ask).
 CANCELLED_ACTION_NOTICE = "[Run cancelled by user; no action taken.]"
+
+
+@asynccontextmanager
+async def cua_run_scope(
+    *,
+    budget: RunBudget | None,
+    run: Any | None,
+    artifact_dir: str = "",
+) -> AsyncIterator[None]:
+    """Bind run-scoped policy state inside the scope that owns it.
+
+    The gateway sets these per request (or per stream generator) and the
+    tokens are reset on exit -- never set at import/wrap time, never left
+    to leak across runs (master plan 7.2).
+    """
+    budget_token = cua_run_budget.set(budget)
+    run_token = cua_desktop_run.set(run)
+    dir_token = cua_artifact_dir.set(artifact_dir)
+    try:
+        yield
+    finally:
+        cua_artifact_dir.reset(dir_token)
+        cua_desktop_run.reset(run_token)
+        cua_run_budget.reset(budget_token)
 
 #: Text-first observation defaults (latency + token control): skip the
 #: base64 screenshot and cap the accessibility tree; the model may opt
