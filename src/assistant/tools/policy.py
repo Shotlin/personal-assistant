@@ -8,6 +8,7 @@ per-run budget, and never auto-enables newly introduced CUA tools.
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
@@ -132,6 +133,16 @@ cua_desktop_run: contextvars.ContextVar[_DesktopRun | None] = contextvars.Contex
     "cua_desktop_run", default=None
 )
 
+#: Per-run action ledger writer (WP4). Set inside cua_run_scope; mutating
+#: dispatch records 'planned' before and a terminal state after the native
+#: call. Observations never write rows.
+if TYPE_CHECKING:  # pragma: no cover
+    from assistant.runtime.runs import RunActionLedger as _RunActionLedger
+
+cua_action_ledger: contextvars.ContextVar[_RunActionLedger | None] = (
+    contextvars.ContextVar("cua_action_ledger", default=None)
+)
+
 #: Returned to the model instead of executing an action after a local
 #: stop was requested (master plan 7.5: stop is local, not a model ask).
 CANCELLED_ACTION_NOTICE = "[Run cancelled by user; no action taken.]"
@@ -143,19 +154,23 @@ async def cua_run_scope(
     budget: RunBudget | None,
     run: Any | None,
     artifact_dir: str = "",
+    ledger: Any | None = None,
 ) -> AsyncIterator[None]:
     """Bind run-scoped policy state inside the scope that owns it.
 
     The gateway sets these per request (or per stream generator) and the
     tokens are reset on exit -- never set at import/wrap time, never left
-    to leak across runs (master plan 7.2).
+    to leak across runs (master plan 7.2). ``ledger`` is the optional
+    RunActionLedger for durable action accounting around real dispatch.
     """
     budget_token = cua_run_budget.set(budget)
     run_token = cua_desktop_run.set(run)
     dir_token = cua_artifact_dir.set(artifact_dir)
+    ledger_token = cua_action_ledger.set(ledger)
     try:
         yield
     finally:
+        cua_action_ledger.reset(ledger_token)
         cua_artifact_dir.reset(dir_token)
         cua_desktop_run.reset(run_token)
         cua_run_budget.reset(budget_token)
@@ -314,13 +329,55 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
                 "cua_mutating_action",
                 extra={"event": "cua_mutating_action", "tool": name},
             )
+        ledger = cua_action_ledger.get()
+        ledger_id: int | None = None
+        if is_mutating and ledger is not None:
+            ledger_id = await _ledger_plan(ledger, name, kwargs)
         try:
             result = await original(**kwargs)
         except CuaBudgetExceeded:
+            if ledger_id is not None:
+                await _ledger_observe(ledger, ledger_id, "failed", "budget_exceeded")
             raise
+        except asyncio.CancelledError:
+            # Outcome was never observed and must never be replayed blind.
+            if ledger_id is not None:
+                await _ledger_observe(ledger, ledger_id, "unknown")
+            raise
+        except TimeoutError as exc:
+            # Dispatched but no acknowledgement: unknown_effect, readback
+            # required (master plan 11.2); agent sees the error text.
+            if ledger_id is not None:
+                await _ledger_observe(ledger, ledger_id, "unknown", str(exc)[:120])
+            return f"Error: outcome unobserved (timeout): {exc}"
         except Exception as exc:  # noqa: BLE001 -- tool errors become agent-visible text
+            if ledger_id is not None:
+                await _ledger_observe(ledger, ledger_id, "failed", str(exc)[:120])
             return f"Error: {exc}"
+        if ledger_id is not None:
+            await _ledger_observe(ledger, ledger_id, "confirmed")
         return _model_text(result)
+
+    async def _ledger_plan(ledger: Any, tool_name: str, kwargs: dict[str, Any]) -> int | None:
+        """Write the 'planned' row before dispatch; never break the action."""
+        import hashlib
+
+        digest = hashlib.sha256(repr(sorted(kwargs.items())).encode()).hexdigest()[:16]
+        try:
+            return await ledger.plan(tool_name=tool_name, args_digest=digest)
+        except Exception:
+            logger.exception("action_ledger_plan_failed", extra={"event": "ledger_plan_failed"})
+            return None
+
+    async def _ledger_observe(
+        ledger: Any, ledger_id: int, outcome: str, evidence: str = ""
+    ) -> None:
+        try:
+            await ledger.observe(ledger_id, outcome, evidence)
+        except Exception:
+            logger.exception(
+                "action_ledger_observe_failed", extra={"event": "ledger_observe_failed"}
+            )
 
     def _model_text(result: Any) -> Any:
         """Render normalized ToolOutcomes as bounded model-facing text.

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -240,7 +241,7 @@ class RunStore:
     async def run_actions(self, run_id: str) -> list[dict[str, Any]]:
         async with self._conn.cursor() as cur:
             await cur.execute(
-                "SELECT step_id, tool_name, target_desc, state, evidence_ref "
+                "SELECT step_id, tool_name, target_desc, args_digest, state, evidence_ref "
                 "FROM action_ledger WHERE run_id=%s ORDER BY ledger_id",
                 (run_id,),
             )
@@ -250,8 +251,9 @@ class RunStore:
                 "step_id": r[0],
                 "tool_name": r[1],
                 "target_desc": r[2],
-                "state": r[3],
-                "evidence_ref": r[4],
+                "args_digest": r[3],
+                "state": r[4],
+                "evidence_ref": r[5],
             }
             for r in rows
         ]
@@ -317,3 +319,39 @@ class DesktopLease:
         await cur.execute("SELECT owner FROM desktop_lease WHERE id=1")
         row = await cur.fetchone()
         return str(row[0]) if row else None
+
+
+class RunActionLedger:
+    """Run-scoped action ledger writer (master plan 11.2).
+
+    One ledger row per native mutation: 'planned' BEFORE dispatch,
+    terminal state after ('confirmed' | 'failed' | 'unknown'). Ledger
+    failures are logged and swallowed: recording must never break or
+    delay the action it records. The run_id must be a claimed run.
+    """
+
+    def __init__(self, store: RunStore, *, run_id: str) -> None:
+        self._store = store
+        self.run_id = run_id
+
+    async def plan(
+        self,
+        *,
+        tool_name: str,
+        args_digest: str = "",
+        target_desc: str = "",
+    ) -> int:
+        """Record a 'planned' row before dispatch; returns the ledger id."""
+        return await self._store.record_action(
+            self.run_id,
+            step_id=f"{tool_name}:{time.time_ns()}",
+            tool_name=tool_name,
+            target_desc=target_desc,
+            args_digest=args_digest,
+        )
+
+    async def observe(
+        self, ledger_id: int, outcome: ActionState, evidence_ref: str = ""
+    ) -> None:
+        """Record the dispatch outcome; 'unknown' is the crash-window state."""
+        await self._store.mark_action(ledger_id, outcome, evidence_ref)
