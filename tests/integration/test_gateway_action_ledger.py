@@ -93,6 +93,9 @@ async def ledger_gateway(
             openrouter_api_key="dummy",
             cua_enabled=True,
             active_cursor_persistence_enabled=False,
+            # The scripted model plays the AGENT here; the compact planner
+            # (default on) would consume its responses as plan attempts.
+            compact_planner_enabled=False,
         )
     )
     async with app.router.lifespan_context(app):

@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     # status lines are interface output only, never model history.
     status_events_enabled: bool = True
     status_quiet_seconds: float = 6.0
+    # WP6: compact same-model planner route (natural phrasing -> one model
+    # decision -> local recipe). Feature flag for staged rollout and
+    # rollback (master plan 15.2/WP8): false sends every non-exact turn to
+    # the general agent exactly as before WP6.
+    compact_planner_enabled: bool = True
 
     @property
     def is_production(self) -> bool:

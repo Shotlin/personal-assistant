@@ -45,6 +45,7 @@ from assistant.api.turns import decide_turn, last_user_content, message_text, no
 from assistant.models import build_chat_model
 from assistant.observability.timing import RunTimeline
 from assistant.observability.usage import LedgerCallbackHandler, UsageLedger
+from assistant.runtime.router import RecipeRequest
 from assistant.runtime.runs import RunActionLedger
 from assistant.runtime.session import DesktopRunCancelled
 from assistant.settings import Settings
@@ -264,6 +265,14 @@ async def chat_completions(
             recipe_response = await _try_recipe_route(
                 body, request, settings, identity, run_id, action_ledger
             )
+            if recipe_response is None and settings.compact_planner_enabled:
+                # WP6: natural phrasing of a supported task gets ONE compact
+                # same-model decision before the full agent loop. Results
+                # execute locally; no obligatory second model call. Flag
+                # gives staged rollout and rollback (WP8).
+                recipe_response = await _try_planner_route(
+                    body, request, settings, identity, run_id, action_ledger
+                )
             if recipe_response is not None:
                 response = recipe_response
             else:
@@ -395,6 +404,97 @@ async def _try_recipe_route(
             "reason": str(exc),
             "app_id": str(getattr(request_obj.arguments, "get", lambda k: "")("app_id") or ""),
             "query": str(getattr(request_obj.arguments, "get", lambda k: "")("query") or ""),
+        }
+    except DesktopRunCancelled:
+        text = "[Run cancelled by user; the command was not completed.]"
+        return ChatCompletionResponse(
+            id=f"chatcmpl-{run_id}",
+            created=int(time.time()),
+            model=settings.assistant_model_id,
+            choices=[ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))],
+            usage=_usage_from_ledger(UsageLedger()),
+        )
+    text = render_result(result)
+    return ChatCompletionResponse(
+        id=f"chatcmpl-{run_id}",
+        created=int(time.time()),
+        model=settings.assistant_model_id,
+        choices=[ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))],
+        usage=UsageStats(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+    )
+
+
+async def _try_planner_route(
+    body: ChatCompletionRequest,
+    request: Request,
+    settings: SettingsDep,
+    identity: RequestIdentity,
+    run_id: str,
+    action_ledger: RunActionLedger | None,
+) -> Any:
+    """WP6: one compact same-model decision for natural phrasing.
+
+    The planner chooses an enumerated recipe; validation is fail-closed
+    (never a partially streamed argument). A recipe plan executes locally
+    with zero FURTHER model calls; clarification/unsupported fall through
+    to the general agent unchanged. Same budget and ledger as the
+    exact-match route.
+    """
+    from assistant.runtime.planner import plan_supported_task
+    from assistant.runtime.recipe_errors import RecipeFailure
+    from assistant.runtime.recipe_executor import RecipeExecutor
+    from assistant.runtime.recipe_result import render_result
+    from assistant.runtime.recipes import execute_recipe
+
+    incoming = normalize_history(body.messages)
+    last = last_user_content(incoming)
+    if not last:
+        return None
+    model = getattr(request.app.state, "utility_model", None)
+    if model is None:
+        return None
+    try:
+        plan = await plan_supported_task(str(last), None, model)
+    except Exception as exc:  # noqa: BLE001 -- planner failure falls back, never blocks
+        logger.warning(
+            "planner_route_failed",
+            extra={"event": "planner_route_failed", "exc_type": type(exc).__name__},
+        )
+        return None
+    if not isinstance(plan, RecipeRequest):
+        # NeedsClarification / UnsupportedTask: the general agent owns them
+        # (gate: constraints and unclear questions are not discarded).
+        logger.info(
+            "planner_route_fallback",
+            extra={
+                "event": "planner_route_fallback",
+                "decision": type(plan).__name__,
+                "reason": getattr(plan, "reason", "") or getattr(plan, "question", ""),
+            },
+        )
+        return None
+
+    tools_by_name = dict(getattr(request.app.state, "cua_tools_by_name", {}) or {})
+    budget = RunBudget()
+    desktop_manager = getattr(request.app.state, "desktop_sessions", None)
+    executor = RecipeExecutor(
+        cua_tools_by_name=tools_by_name,
+        run_store=None,
+        run_id=run_id,
+        budget=budget,
+        run=None,
+    )
+    try:
+        async with _open_desktop_run(desktop_manager, run_id) as run:
+            executor._run = run  # noqa: SLF001 -- executor is gateway-owned here
+            result = await execute_recipe(plan, executor)
+    except RecipeFailure as exc:
+        result = {
+            "recipe_id": plan.recipe_id,
+            "ok": False,
+            "reason": str(exc),
+            "app_id": str(plan.arguments.get("app_id", "")),
+            "query": str(plan.arguments.get("query", "")),
         }
     except DesktopRunCancelled:
         text = "[Run cancelled by user; the command was not completed.]"

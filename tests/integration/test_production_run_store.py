@@ -21,6 +21,10 @@ async def test_production_lifespan_claims_and_closes_store(monkeypatch, require_
         model_provider="openrouter",
         openrouter_api_key="dummy",
         cua_enabled=False,
+        # This test scripts the GENERAL AGENT ("check wiring" -> one agent
+        # call); the compact planner (default on) would consume the
+        # scripted response as a plan attempt and then fall back.
+        compact_planner_enabled=False,
     )
     app = create_application(settings)
     turn = uuid.uuid4().hex
