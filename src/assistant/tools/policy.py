@@ -21,27 +21,62 @@ from assistant.agent.context import RunBudget
 logger = logging.getLogger("assistant.tools.policy")
 
 #: Phase 1 application-side allowlist (spec section 13.6).
+#:
+#: Base names come from the spec; additional names are the cua-driver
+#: v0.28.1 native registry names verified against the published macOS MCP
+#: tool reference (2026-09-17). Deliberate additions only -- never
+#: auto-enable a tool that appears after a driver update.
 CUA_ALLOWED_TOOL_NAMES = frozenset(
     {
+        # Spec section 13.6 expected names.
         "list_apps",
         "list_windows",
         "get_window_state",
-        "screenshot",
+        "screenshot",  # accepted if the installed driver exposes it
         "launch_app",
         "click",
         "type_text",
         "scroll",
         "press_key",
+        # cua-driver v0.28.1 native observation tools.
+        "get_desktop_state",
+        "get_screen_size",
+        "get_accessibility_tree",
+        "verify_state",
+        "bring_to_front",
+        # cua-driver v0.28.1 native interaction tools.
+        "double_click",
+        "hotkey",
+        "set_value",
     }
 )
 
 #: Tools that only observe state; at least one must be available at startup.
 OBSERVATION_TOOL_NAMES = frozenset(
-    {"list_apps", "list_windows", "get_window_state", "screenshot"}
+    {
+        "list_apps",
+        "list_windows",
+        "get_window_state",
+        "screenshot",
+        "get_desktop_state",
+        "get_accessibility_tree",
+    }
 )
 
 #: Tools that change desktop state; they consume the per-run budget.
-MUTATING_TOOL_NAMES = frozenset({"launch_app", "click", "type_text", "scroll", "press_key"})
+MUTATING_TOOL_NAMES = frozenset(
+    {
+        "launch_app",
+        "click",
+        "double_click",
+        "type_text",
+        "scroll",
+        "press_key",
+        "hotkey",
+        "set_value",
+        "bring_to_front",
+    }
+)
 
 #: Per-run mutating-action budget. Set by the gateway before each agent run;
 #: tool wrappers read it via this context variable.

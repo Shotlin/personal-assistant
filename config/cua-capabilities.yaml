@@ -1,0 +1,65 @@
+# Cua Driver capability manifest -- Phase 1 bounded runtime.
+#
+# Schema: cua-driver capability manifest version 3
+# (https://cua.ai/docs/how-to-guides/driver/write-a-bounded-manifest).
+# Pinned driver: cua-driver-rs v0.28.1.
+#
+# This is an APPLICATION-SCOPED manifest (generic desktop input). Per the
+# Cua docs, typed-browser manifests are separate and cannot coexist with
+# generic input tools; Phase 1 drives Chrome generically as an
+# application, so no browser.origins section is declared here.
+#
+# Validation protocol (spec section 13.4): start the driver with this
+# manifest in bounded mode, then run one allowed action (launch
+# Calculator) and one intentionally denied action. Adjust only with the
+# same review+test cycle.
+#
+# Allowlisted applications (bundle_id verified locally):
+#   Calculator     com.apple.calculator
+#   Google Chrome  com.google.Chrome
+#   Terminal       com.apple.Terminal   (hosts Claude Code CLI)
+version: 3
+expires_after: 8h
+idle_timeout: 30m
+allow:
+  tools:
+    # session + inventory
+    - start_session
+    - end_session
+    - list_apps
+    - list_windows
+    # observation
+    - get_window_state
+    - get_desktop_state
+    - get_screen_size
+    - get_accessibility_tree
+    - verify_state
+    - bring_to_front
+    # launch
+    - launch_app
+    # interaction
+    - click
+    - double_click
+    - type_text
+    - scroll
+    - press_key
+    - hotkey
+    - set_value
+  resources:
+    apps:
+      - bundle_id: com.apple.calculator
+        launch: true
+        windows: all
+        terminate: driver_launched
+      - bundle_id: com.google.Chrome
+        launch: true
+        windows: all
+        terminate: driver_launched
+      - bundle_id: com.apple.Terminal
+        launch: true
+        windows: all
+        terminate: driver_launched
+    desktop:
+      # Window-scoped observation/input only; no unfiltered desktop
+      # capture or desktop-coordinate input in Phase 1.
+      display: false
