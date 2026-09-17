@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     model_base_url: str = ""
     model_timeout_seconds: int = 120
     model_max_retries: int = 2
+    model_max_tokens: int = 2000
+    model_reasoning_effort: str = "low"
 
     # Provider keys -- never logged, never returned to clients.
     openrouter_api_key: str = ""
@@ -84,6 +86,13 @@ class Settings(BaseSettings):
             errors.append(f"MODEL_TIMEOUT_SECONDS must be > 0, got {self.model_timeout_seconds}")
         if self.model_max_retries < 0:
             errors.append(f"MODEL_MAX_RETRIES must be >= 0, got {self.model_max_retries}")
+        if self.model_reasoning_effort not in {"", "default", "low", "medium", "high"}:
+            errors.append(
+                f"MODEL_REASONING_EFFORT must be one of [default, low, medium, high], "
+                f"got {self.model_reasoning_effort!r}"
+            )
+        if self.model_max_tokens < 200:
+            errors.append(f"MODEL_MAX_TOKENS must be >= 200, got {self.model_max_tokens}")
 
         if self.model_provider not in SUPPORTED_MODEL_PROVIDERS:
             errors.append(

@@ -38,7 +38,7 @@ from assistant.api.streaming import sse_agent_stream
 from assistant.api.turns import decide_turn, last_user_content, message_text, normalize_history
 from assistant.models import build_chat_model
 from assistant.settings import Settings
-from assistant.tools.policy import cua_run_budget
+from assistant.tools.policy import cua_current_session, cua_run_budget
 
 logger = logging.getLogger("assistant.api.chat")
 
@@ -224,6 +224,7 @@ async def _run_agent_turn(
     if start_session is not None:
         try:
             await start_session.ainvoke({"session": f"run-{run_id}"})
+            cua_current_session.set(f"run-{run_id}")
             enable_cursor = (getattr(request.app.state, "cua_tools_by_name", {}) or {}).get(
                 "set_agent_cursor_enabled"
             )

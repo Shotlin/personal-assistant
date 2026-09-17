@@ -20,5 +20,6 @@ def create_model(settings: Settings) -> BaseChatModel:
         model=settings.model_name,
         api_key=SecretStr(settings.openai_api_key),
         timeout=settings.model_timeout_seconds,
+        max_tokens=settings.model_max_tokens,
         max_retries=settings.model_max_retries,
     )

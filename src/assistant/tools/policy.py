@@ -90,6 +90,25 @@ cua_run_budget: contextvars.ContextVar[RunBudget | None] = contextvars.ContextVa
     "cua_run_budget", default=None
 )
 
+#: Per-run driver session id. Set by the gateway; observation/action wrappers
+#: inject it into every call that accepts a ``session`` argument so all
+#: actions of one run share the visible agent cursor.
+cua_current_session: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "cua_current_session", default=None
+)
+
+#: Text-first observation defaults (latency + token control): skip the
+#: base64 screenshot and cap the accessibility tree; the model may opt
+#: into screenshots explicitly for visual verification.
+OBSERVATION_DEFAULTS: dict[str, dict[str, Any]] = {
+    "get_window_state": {
+        "include_screenshot": False,
+        "max_elements": 120,
+        "max_depth": 12,
+    },
+    "get_accessibility_tree": {"max_elements": 120},
+}
+
 
 class CuaUnavailableError(RuntimeError):
     """Raised when CUA is required but no observation tools are available."""
@@ -129,46 +148,6 @@ def assert_observation_available(enabled_names: list[str]) -> None:
         )
 
 
-def wrap_mutating_tool(tool: BaseTool) -> BaseTool:
-    """Gate a mutating CUA tool with the per-run budget and error conversion.
-
-    Observation tools pass through unchanged (see :func:`wrap_tool_errors`).
-    Driver-side failures are returned as error text so the agent can observe
-    and recover (spec rule 15) instead of aborting the run. When no per-run
-    budget is installed (direct scripts), the action is logged but not
-    counted; the gateway always installs a budget for agent runs (section 17).
-    """
-    if getattr(tool, "name", None) not in MUTATING_TOOL_NAMES:
-        return tool
-
-    original = getattr(tool, "coroutine", None)
-    if original is None:
-        return tool
-
-    async def gated(**kwargs: Any) -> Any:
-        budget = cua_run_budget.get()
-        tool_name = getattr(tool, "name", "?")
-        if budget is not None:
-            budget.consume(tool_name)  # raises CuaBudgetExceeded at the ceiling
-        logger.info(
-            "cua_mutating_action",
-            extra={"event": "cua_mutating_action", "tool": tool_name},
-        )
-        try:
-            return await original(**kwargs)
-        except CuaBudgetExceeded:
-            raise
-        except Exception as exc:  # noqa: BLE001 -- tool errors become agent-visible text
-            return f"Error: {exc}"
-
-    return StructuredTool(
-        name=getattr(tool, "name", "cua_tool"),
-        description=getattr(tool, "description", "") or "",
-        args_schema=getattr(tool, "args_schema", None),
-        coroutine=gated,
-    )
-
-
 #: v0.28.2 addressing contract appended to tool descriptions so the model
 #: addresses targets correctly on the first attempt (spec section 13.2).
 ADDRESSING_CONTRACT = (
@@ -198,19 +177,48 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
     errors like wrong argument shapes). The agent must see the error text
     to recover per spec rule 15, so every enabled CUA tool gets this
     conversion; mutating tools additionally carry the budget gate.
+
+    Also applies, in one place:
+    - session injection: every call that accepts ``session`` joins the
+      run's driver session (visible cursor continuity),
+    - observation defaults for ``get_window_state``: text-first payloads
+      (no base64 screenshot, bounded element tree) so each step stays
+      fast and cheap. The model can still opt into screenshots
+      explicitly.
     """
+    name = getattr(tool, "name", "cua_tool")
     original = getattr(tool, "coroutine", None)
     if original is None:
         return tool
 
+    is_mutating = name in MUTATING_TOOL_NAMES
+    defaults = OBSERVATION_DEFAULTS.get(name, {})
+    accepts_session = isinstance(getattr(tool, "args", None), dict) and "session" in tool.args
+
     async def safe(**kwargs: Any) -> Any:
+        if accepts_session:
+            session = cua_current_session.get()
+            if session and not kwargs.get("session"):
+                kwargs["session"] = session
+        for key, value in defaults.items():
+            kwargs.setdefault(key, value)
+        if is_mutating:
+            budget = cua_run_budget.get()
+            if budget is not None:
+                budget.consume(name)  # raises CuaBudgetExceeded at the ceiling
+            logger.info(
+                "cua_mutating_action",
+                extra={"event": "cua_mutating_action", "tool": name},
+            )
         try:
             return await original(**kwargs)
+        except CuaBudgetExceeded:
+            raise
         except Exception as exc:  # noqa: BLE001 -- tool errors become agent-visible text
             return f"Error: {exc}"
 
     return StructuredTool(
-        name=getattr(tool, "name", "cua_tool"),
+        name=name,
         description=_enriched_description(tool),
         args_schema=getattr(tool, "args_schema", None),
         coroutine=safe,
@@ -219,7 +227,7 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
 
 def apply_tool_policy(tools: Sequence[BaseTool]) -> tuple[list[BaseTool], list[str]]:
     """Apply budget gates (mutating) and error conversion (all) to CUA tools."""
-    wrapped = [wrap_mutating_tool(wrap_tool_errors(tool)) for tool in tools]
+    wrapped = [wrap_tool_errors(tool) for tool in tools]
     return wrapped, [getattr(tool, "name", "?") for tool in wrapped]
 
 

@@ -22,6 +22,7 @@ def create_model(settings: Settings) -> BaseChatModel:
         api_key=SecretStr(settings.model_api_key),
         base_url=settings.model_base_url,
         timeout=settings.model_timeout_seconds,
+        max_tokens=settings.model_max_tokens,
         max_retries=settings.model_max_retries,
         use_responses_api=False,
     )

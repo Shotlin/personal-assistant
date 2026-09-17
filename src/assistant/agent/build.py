@@ -28,6 +28,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
 
 from assistant.agent.context import AgentContext
+from assistant.agent.observation_trim import ObservationTrimMiddleware
 from assistant.agent.profiles import register_single_agent_profile
 from assistant.agent.system_prompt import SYSTEM_PROMPT
 from assistant.memory.namespaces import user_memory_namespace
@@ -132,6 +133,7 @@ def build_agent(
     profile_keys = register_single_agent_profile(model)
     backend = build_backend(store, skills_root)
 
+    trim_middleware: Any = ObservationTrimMiddleware()
     agent = create_deep_agent(
         model,
         tools=list(extra_tools) or None,
@@ -139,6 +141,7 @@ def build_agent(
         skills=[SKILLS_ROUTE],
         memory=MEMORY_FILES,
         system_prompt=SYSTEM_PROMPT,
+        middleware=[trim_middleware],
         checkpointer=checkpointer,
         store=store,
         context_schema=AgentContext,
