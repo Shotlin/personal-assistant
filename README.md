@@ -208,6 +208,7 @@ uv run python scripts/verify_cua.py --live
 
 | Symptom | First checks |
 | --- | --- |
+| Chat shows `Model "" was not found` | The gateway process is not running (Open WebUI's connection registry is empty). Start it: `./scripts/run_agent_api.sh` — then retry the chat. |
 | Gateway exits at startup | `.env` validation error printed (provider key, manifest path, CUA mode) |
 | `/readyz` returns 503 | `docker compose up -d postgres`; check `DATABASE_URL` |
 | Model picker empty in Open WebUI | gateway reachable from container? `docker compose exec open-webui curl -s http://host.docker.internal:8787/healthz` |
