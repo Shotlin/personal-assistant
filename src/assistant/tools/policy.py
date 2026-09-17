@@ -50,6 +50,9 @@ CUA_ALLOWED_TOOL_NAMES = frozenset(
         "double_click",
         "hotkey",
         "set_value",
+        # Session lifecycle (makes the visible agent cursor available).
+        "start_session",
+        "end_session",
     }
 )
 

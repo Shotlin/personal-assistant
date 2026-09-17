@@ -96,8 +96,10 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
             if settings.cua_enabled:
                 connection = await load_cua_tools(settings)
                 extra_tools = assemble_tool_inventory(connection.tools)
+                app.state.cua_tools_by_name = connection.tools_by_name
             else:
                 extra_tools = assemble_tool_inventory([])
+                app.state.cua_tools_by_name = {}
             bundle = build_agent(
                 model=model,
                 checkpointer=resources.saver,

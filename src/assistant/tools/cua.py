@@ -33,6 +33,7 @@ class CuaConnection:
     tool_names: list[str]
     discovered_names: list[str]
     skipped_names: list[str]
+    tools_by_name: dict[str, BaseTool]
 
 
 def _require_manifest(settings: Settings) -> Path:
@@ -82,4 +83,5 @@ async def load_cua_tools(settings: Settings) -> CuaConnection:
         tool_names=wrapped_names,
         discovered_names=result.discovered_names,
         skipped_names=result.skipped_names,
+        tools_by_name={getattr(t, "name", "?"): t for t in wrapped},
     )

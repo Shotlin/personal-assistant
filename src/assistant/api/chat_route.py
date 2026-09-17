@@ -217,6 +217,23 @@ async def _run_agent_turn(
     budget = RunBudget()
     cua_run_budget.set(budget)
 
+    # Start a visible agent-cursor session for this run (best effort): the
+    # Cua Driver cursor animates on every observe/click/type action so the
+    # user can follow the GUI-level work.
+    start_session = (getattr(request.app.state, "cua_tools_by_name", {}) or {}).get("start_session")
+    if start_session is not None:
+        try:
+            await start_session.ainvoke({"session": f"run-{run_id}"})
+        except Exception as exc:  # noqa: BLE001 -- cursor session is best-effort
+            logger.info(
+                "cua_session_start_failed",
+                extra={
+                    "event": "cua_session_start_failed",
+                    "run_id": run_id,
+                    "detail": str(exc)[:120],
+                },
+            )
+
     run_config: dict[str, Any] = dict(config)
     invoke_input: dict[str, Any] | None
     if decision.mode in ("initialize", "new_turn"):
