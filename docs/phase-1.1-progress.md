@@ -1,5 +1,26 @@
 # Phase 1.1 implementation progress
 
+## Round-10 checkpoint
+
+Committed through `33875d8` — WP8 offline scope COMPLETE:
+- test_calculator_gateway_e2e.py: production-lifespan calculator run
+  ('calculate 6*7' -> '= 42') with display-state assertions (Escape
+  first, Enter last, final display '42') and durable confirmed ledger
+  rows. Red first (fixture lacked display_value evidence); production
+  code untouched.
+- test_negative_routing_e2e.py: master-plan negatives (negation,
+  multi-clause, unmapped app, compound) reach the general agent; zero
+  native actions across all negatives.
+- README 'Feature flags & rollback' section + .env.example levers
+  (planner/recipes/registry/cursor) with layer rollback paths.
+Suite: 304 passed, 1 skipped; ruff/mypy clean. Live GUI verification
+STILL PAUSED: one probe this round confirmed the macOS permission gate
+remains pending. Remaining for the objective: live desktop verification
+(permission grant), real provider-wire capture, constraints/preferences
+gating of fast paths (approved_context), disconnect/wall-clock status
+truth, Open WebUI auxiliary generation accounting, prompt-caching
+decision (owner policy), planner-route persistence parity.
+
 ## Round-9 checkpoint
 
 Committed through `eaefbd6`. The one offline-verifiable gap from the
