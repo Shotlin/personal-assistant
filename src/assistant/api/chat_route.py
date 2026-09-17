@@ -31,9 +31,12 @@ from assistant.api.auth import SettingsDep, require_gateway_key
 from assistant.api.identity import RequestIdentity, extract_identity
 from assistant.api.schemas import (
     ChatCompletionChoice,
+    ChatCompletionChunk,
+    ChatCompletionChunkChoice,
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,
+    DeltaMessage,
     GatewayError,
     UsageStats,
 )
@@ -191,6 +194,7 @@ async def chat_completions(
     # user-message id + same content = duplicate delivery -> observe the
     # existing run; same id + different content = identity conflict.
     run_store = getattr(request.app.state, "run_store", None)
+    claimed = False
     if identity.user_message_id and run_store is not None and not identity.is_utility:
         request_digest = hashlib.sha256(
             f"{body.model}:{_content_digest(body.messages)}".encode()
@@ -217,9 +221,26 @@ async def chat_completions(
                     "missing_chat_identity",
                     "Same user-message id delivered with different content.",
                 )
-            return _duplicate_response(
-                settings, claim, run_id, started
-            )
+            duplicate = _duplicate_response(settings, claim, claim.run_id, started)
+            if body.stream:
+                async def stream_duplicate() -> AsyncIterator[str]:
+                    chunk = ChatCompletionChunk(
+                        id=duplicate.id,
+                        created=duplicate.created,
+                        model=duplicate.model,
+                        choices=[ChatCompletionChunkChoice(delta=DeltaMessage(
+                            role="assistant", content=str(duplicate.choices[0].message.content)
+                        ))],
+                    )
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+                    chunk.choices[0].delta = DeltaMessage()
+                    chunk.choices[0].finish_reason = "stop"
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+                    yield "data: [DONE]\n\n"
+
+                return StreamingResponse(stream_duplicate(), media_type="text/event-stream")
+            return duplicate
+        claimed = True
 
     timeline.mark("run_started")
     logger.info(
@@ -235,6 +256,8 @@ async def chat_completions(
                 body, request, settings, identity, run_id, ledger, timeline
             )
     except GatewayError as exc:
+        if claimed and run_store is not None:
+            await run_store.finish(run_id, "failed")
         timeline.mark_terminal(metadata={"status": "error", "error_code": exc.code})
         logger.warning(
             "run_finished",
@@ -247,11 +270,19 @@ async def chat_completions(
             },
         )
         raise
+    except BaseException as exc:
+        if claimed and run_store is not None:
+            await run_store.finish(
+                run_id, "cancelled" if isinstance(exc, asyncio.CancelledError) else "failed"
+            )
+        raise
     # NOTE: for streaming responses the terminal event is marked by the
     # generator's finally-clause (master plan F06): returning the
     # StreamingResponse object is not completion.
 
     if not isinstance(response, StreamingResponse):
+        if claimed and run_store is not None:
+            await run_store.finish(run_id, "completed")
         timeline.mark_terminal(metadata={"status": "ok"})
         logger.info(
             "run_finished",
@@ -357,6 +388,7 @@ async def _run_agent_turn(
                 artifact_dir=artifact_dir,
                 status_events_enabled=settings.status_events_enabled,
                 status_quiet_seconds=settings.status_quiet_seconds,
+                run_store=getattr(request.app.state, "run_store", None),
             ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

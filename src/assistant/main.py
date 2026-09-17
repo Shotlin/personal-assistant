@@ -9,7 +9,7 @@ filtered CUA tools, and assembles the one Deep Agent.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,7 @@ from assistant.api import chat_route, models_route
 from assistant.memory.postgres import open_memory_resources
 from assistant.models import build_chat_model
 from assistant.observability.logging import setup_logging
+from assistant.runtime.runs import RunStore
 from assistant.runtime.session import (
     DesktopSessionConfig,
     DesktopSessionManager,
@@ -97,21 +98,26 @@ def create_app(
 def _build_lifespan(settings: Settings) -> LifespanFn:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        resources_cm = open_memory_resources(settings.database_url)
-        resources = await resources_cm.__aenter__()
-        app.state.store = resources.store
-        app.state.saver = resources.saver
+        # Register each cleanup before the next fallible startup operation.
+        # The same stack covers startup failure and ordinary shutdown.
+        async with AsyncExitStack() as stack:
+            resources = await stack.enter_async_context(
+                open_memory_resources(settings.database_url)
+            )
+            app.state.store = resources.store
+            app.state.saver = resources.saver
+            run_store = await RunStore.connect(settings.database_url)
+            stack.push_async_callback(run_store.close)
+            await run_store.setup()
+            app.state.run_store = run_store
 
-        model = build_chat_model(settings)
-        app.state.utility_model = model
-
-        cua_cm = (
-            open_cua_connection(settings)
-            if settings.cua_enabled
-            else _null_cua_connection()
-        )
-        try:
-            connection: Any = await cua_cm.__aenter__()
+            model = build_chat_model(settings)
+            app.state.utility_model = model
+            connection: Any = await stack.enter_async_context(
+                open_cua_connection(settings)
+                if settings.cua_enabled
+                else _null_cua_connection()
+            )
             extra_tools = assemble_tool_inventory(list(getattr(connection, "tools", [])))
             app.state.cua_tools_by_name = dict(getattr(connection, "tools_by_name", {}))
             # One trusted DesktopSessionManager over the persistent
@@ -124,6 +130,7 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
                 config=DesktopSessionConfig(),
                 enabled=settings.active_cursor_persistence_enabled,
             )
+            stack.push_async_callback(app.state.desktop_sessions.close_all)
             bundle = build_agent(
                 model=model,
                 checkpointer=resources.saver,
@@ -132,22 +139,7 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
                 extra_tools=extra_tools,
             )
             app.state.agent = bundle.agent
-        except BaseException:
-            sessions = getattr(app.state, "desktop_sessions", None)
-            if sessions is not None:
-                await sessions.close_all()
-            await cua_cm.__aexit__(None, None, None)
-            await resources_cm.__aexit__(None, None, None)
-            raise
-
-        try:
             yield
-        finally:
-            sessions = getattr(app.state, "desktop_sessions", None)
-            if sessions is not None:
-                await sessions.close_all()
-            await cua_cm.__aexit__(None, None, None)
-            await resources_cm.__aexit__(None, None, None)
 
     return lifespan
 

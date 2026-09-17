@@ -11,8 +11,8 @@ re-execute external work:
   dispatch; outcome/evidence recorded after. ``unknown_effect`` is a
   first-class terminal state (master plan 11.2): a crash between
   dispatch and acknowledgement must never be replayed blind.
-- :class:`DesktopLease`: process-safe desktop mutation lease with expiry,
-  so two gateway processes cannot act on the desktop concurrently.
+- :class:`DesktopLease`: atomic expiring lease primitive, NOT a fencing
+  mechanism. It is not wired to production desktop dispatch.
 
 No GUI semantics here: this module claims, records, and reports. It does
 not advertise exactly-once GUI effects (impossible across a crash window).
@@ -21,7 +21,7 @@ not advertise exactly-once GUI effects (impossible across a crash window).
 from __future__ import annotations
 
 import logging
-import time
+import math
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -46,27 +46,8 @@ CREATE TABLE IF NOT EXISTS run_registry (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """,
-    # One row per (user, user-message) turn: the database, not app code,
-    # makes duplicate delivery of the same turn un-claimable twice
-    # (master plan 11.1). Pre-existing duplicates collapse to the newest;
-    # their ledger rows are removed first (dev-garbage tolerance).
-    """
-DELETE FROM action_ledger
-WHERE run_id IN (
-    SELECT a.run_id FROM run_registry a
-    JOIN run_registry b
-      ON a.user_id = b.user_id
-     AND a.user_message_id = b.user_message_id
-     AND a.created_at < b.created_at
-);
-""",
-    """
-DELETE FROM run_registry a
-USING run_registry b
-WHERE a.user_id = b.user_id
-  AND a.user_message_id = b.user_message_id
-  AND a.created_at < b.created_at;
-""",
+    # Legacy duplicate identities must fail setup, never erase history.
+    # An operator must reconcile them in a separate, explicit migration.
     """
 CREATE UNIQUE INDEX IF NOT EXISTS run_registry_turn_idx
     ON run_registry (user_id, user_message_id);
@@ -156,37 +137,42 @@ class RunStore:
         id is a new intentional command; same id with a conflicting digest
         is an identity collision and is rejected.
         """
-        try:
-            # SAVEPOINT: the unique violation must not abort the outer work.
-            async with self._conn.transaction():
-                await self._conn.execute(
-                    """
-                    INSERT INTO run_registry
-                        (run_id, user_id, chat_id, user_message_id, request_digest, status)
-                    VALUES (%s, %s, %s, %s, %s, 'running')
-                    """,
-                    (run_id, user_id, chat_id, user_message_id, request_digest),
-                )
-                return ClaimResult(owned=True, run_id=run_id, status="running")
-        except psycopg.errors.UniqueViolation:
-            pass
+        # One statement, not overlapping transaction/savepoint contexts when
+        # requests share a connection. Catch every unique conflict, including
+        # a proposed run_id that already belongs to an unrelated turn.
         cur = await self._conn.execute(
             """
-            SELECT status, request_digest FROM run_registry
+            INSERT INTO run_registry
+                (run_id, user_id, chat_id, user_message_id, request_digest, status)
+            VALUES (%s, %s, %s, %s, %s, 'running')
+            ON CONFLICT DO NOTHING
+            RETURNING run_id, status
+            """,
+            (run_id, user_id, chat_id, user_message_id, request_digest),
+        )
+        inserted = await cur.fetchone()
+        if inserted is not None:
+            return ClaimResult(owned=True, run_id=str(inserted[0]), status=str(inserted[1]))
+
+        # A separate statement gets a fresh READ COMMITTED snapshot after a
+        # competing INSERT commits; a same-statement CTE lookup could miss it.
+        cur = await self._conn.execute(
+            """
+            SELECT run_id, status, request_digest FROM run_registry
             WHERE user_id = %s AND user_message_id = %s
             """,
             (user_id, user_message_id),
         )
         row = await cur.fetchone()
-        if row is None:  # pragma: no cover - index guarantees a row
+        if row is None:  # e.g. run_id collision with an unrelated turn: fail closed
             return ClaimResult(owned=False, run_id=run_id, reason="registry_error")
-        status, digest = str(row[0]), str(row[1])
+        existing_run_id, status, digest = str(row[0]), str(row[1]), str(row[2])
         if digest != request_digest:
             return ClaimResult(
-                owned=False, run_id=run_id, status=status, reason="identity_conflict"
+                owned=False, run_id=existing_run_id, status=status, reason="identity_conflict"
             )
         return ClaimResult(
-            owned=False, run_id=run_id, status=status, reason="already_claimed"
+            owned=False, run_id=existing_run_id, status=status, reason="already_claimed"
         )
 
     async def finish(self, run_id: str, status: str) -> None:
@@ -277,36 +263,47 @@ class RunStore:
 
 
 class DesktopLease:
-    """Single desktop mutation lease, safe across processes (WP4/11.3).
+    """Atomic lease primitive, not production desktop fencing (WP4/11.3).
 
     Row 1 of ``desktop_lease`` holds (owner, expires_at). An expired lease
-    is stealable; an active lease blocks acquisition. Release is
-    owner-checked; releasing someone else's lease is a no-op.
+    is stealable; an active lease blocks acquisition by another owner.
+    Release is owner-checked; callers must use a unique owner per holder.
+    Expiry cannot stop a paused/stale holder from acting: do NOT use this
+    alone to guarantee exclusive desktop effects or wire it to dispatch.
     """
 
     def __init__(self, conn: Any, *, ttl_seconds: float = 300.0) -> None:
+        self._validate_ttl(ttl_seconds)
         self._conn = conn
         self.ttl_seconds = ttl_seconds
         self._owner: str | None = None
 
+    @staticmethod
+    def _validate_ttl(ttl: float) -> None:
+        if not math.isfinite(ttl) or ttl <= 0:
+            raise ValueError("Lease TTL must be finite and positive")
+
     async def acquire(self, owner: str, *, ttl_seconds: float | None = None) -> bool:
         ttl = self.ttl_seconds if ttl_seconds is None else ttl_seconds
-        now = time.time()
-        async with self._conn.transaction():
-            await self._conn.execute("DELETE FROM desktop_lease WHERE expires_at <= %s", (now,))
-            cur = self._conn.cursor()
-            await cur.execute("SELECT owner, expires_at FROM desktop_lease WHERE id=1")
-            row = await cur.fetchone()
-            if row is not None and float(row[1]) > now and str(row[0]) != owner:
-                return False
-            await self._conn.execute(
-                "INSERT INTO desktop_lease (id, owner, expires_at) VALUES (1, %s, %s) "
-                "ON CONFLICT (id) DO UPDATE SET owner=EXCLUDED.owner, "
-                "expires_at=EXCLUDED.expires_at",
-                (owner, now + ttl),
-            )
-        self._owner = owner
-        return True
+        self._validate_ttl(ttl)
+        cur = await self._conn.execute(
+            """
+            INSERT INTO desktop_lease (id, owner, expires_at)
+            VALUES (1, %s, EXTRACT(EPOCH FROM clock_timestamp())::double precision + %s)
+            ON CONFLICT (id) DO UPDATE
+            SET owner = EXCLUDED.owner,
+                expires_at = EXTRACT(EPOCH FROM clock_timestamp())::double precision + %s
+            WHERE desktop_lease.owner = EXCLUDED.owner
+               OR desktop_lease.expires_at <= EXTRACT(EPOCH FROM clock_timestamp())
+            RETURNING owner
+            """,
+            (owner, ttl, ttl),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return False
+        self._owner = str(row[0])
+        return self._owner == owner
 
     async def release(self, owner: str) -> None:
         await self._conn.execute(

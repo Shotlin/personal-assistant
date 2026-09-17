@@ -86,6 +86,7 @@ async def sse_agent_stream(
     artifact_dir: str = "",
     status_events_enabled: bool = True,
     status_quiet_seconds: float = 6.0,
+    run_store: Any | None = None,
 ) -> AsyncIterator[str]:
     """Yield OpenAI-compatible SSE chunks for one agent run, ending with [DONE].
 
@@ -159,6 +160,9 @@ async def sse_agent_stream(
                             yield _sse(payload)
                             emitted_any = True
                             quiet_since_ns = time.monotonic_ns()
+        except (asyncio.CancelledError, GeneratorExit):
+            status = "cancelled"
+            raise
         except TimeoutError:
             status = "wall_clock_exceeded"
             logger.warning(
@@ -183,6 +187,13 @@ async def sse_agent_stream(
             # Truthful terminal event: after the generator really terminates
             # (completion, timeout, error, or client disconnect). The desktop
             # session is ended by manager.open()'s own cleanup below.
+            if run_store is not None and run_id:
+                await run_store.finish(
+                    run_id,
+                    "completed" if status == "ok" else (
+                        "cancelled" if status == "cancelled" else "failed"
+                    ),
+                )
             if timeline is not None:
                 timeline.mark_terminal(
                     metadata={"status": status, "emitted_any": emitted_any}
