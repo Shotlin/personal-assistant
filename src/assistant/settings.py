@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     cua_permission_mode: str = "bounded"
     cua_capability_manifest_path: str = ""
     cua_existing_profile_grant: bool = False
+    cua_artifact_dir: str = "var/artifacts"
 
     # Open WebUI integration
     openwebui_forward_headers: bool = True

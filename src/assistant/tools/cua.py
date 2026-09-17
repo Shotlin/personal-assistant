@@ -134,13 +134,24 @@ async def open_cua_connection(settings: Settings) -> AsyncIterator[CuaConnection
 
 
 def _caller(session: ClientSession, name: str) -> Any:
-    """Build an async callable that routes one tool call over ``session``."""
+    """Build an async callable that routes one tool call over ``session``.
+
+    Results pass through :func:`normalize_mcp_result`: the model receives
+    bounded text (never base64 or raw MCP objects) while structured
+    evidence stays available in the outcome for local verification.
+    """
+
+    from assistant.tools.result_normalizer import normalize_mcp_result
 
     async def call(**kwargs: Any) -> Any:
         result = await session.call_tool(name, kwargs)
-        if result.isError:
-            parts = [getattr(part, "text", "") for part in result.content]
-            raise RuntimeError(" | ".join(p for p in parts if p) or f"{name} failed")
-        return result.content
+        outcome = normalize_mcp_result(result)
+        blocks = outcome.model_content(allow_images=False)
+        text = "\n".join(str(block.get("text", "")) for block in blocks)
+        if outcome.images:
+            text += f"\n[{len(outcome.images)} screenshot(s) retained locally]"
+        if outcome.truncated:
+            text += "\n[observation truncated]"
+        return text or "(no content)"
 
     return call

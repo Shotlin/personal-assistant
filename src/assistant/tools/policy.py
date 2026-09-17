@@ -12,6 +12,7 @@ import contextvars
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC
 from typing import Any
 
 from langchain_core.tools import BaseTool, StructuredTool
@@ -93,6 +94,9 @@ cua_run_budget: contextvars.ContextVar[RunBudget | None] = contextvars.ContextVa
 #: Per-run driver session id. Set by the gateway; observation/action wrappers
 #: inject it into every call that accepts a ``session`` argument so all
 #: actions of one run share the visible agent cursor.
+cua_artifact_dir: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "cua_artifact_dir", default=""
+)
 cua_current_session: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "cua_current_session", default=None
 )
@@ -108,6 +112,21 @@ OBSERVATION_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "get_accessibility_tree": {"max_elements": 120},
 }
+
+#: Tools that can emit screenshots. When the model explicitly asks for a
+#: screenshot, the PNG is diverted to the artifact store (never base64 in
+#: the prompt) and the file path is reported back.
+SCREENSHOT_CAPABLE_TOOLS = frozenset({"get_window_state", "get_desktop_state", "zoom"})
+
+
+def _artifact_screenshot_path(artifact_dir: str, tool_name: str) -> str:
+    from datetime import datetime
+    from pathlib import Path
+
+    base = Path(artifact_dir)
+    base.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")[:-3]
+    return str(base / f"{tool_name}-{stamp}.png")
 
 
 class CuaUnavailableError(RuntimeError):
@@ -194,6 +213,8 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
     is_mutating = name in MUTATING_TOOL_NAMES
     defaults = OBSERVATION_DEFAULTS.get(name, {})
     accepts_session = isinstance(getattr(tool, "args", None), dict) and "session" in tool.args
+    captures_screenshot = name in SCREENSHOT_CAPABLE_TOOLS
+    artifact_dir = cua_artifact_dir.get()
 
     async def safe(**kwargs: Any) -> Any:
         if accepts_session:
@@ -202,6 +223,13 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
                 kwargs["session"] = session
         for key, value in defaults.items():
             kwargs.setdefault(key, value)
+        if (
+            captures_screenshot
+            and artifact_dir
+            and kwargs.get("include_screenshot", True)
+            and not kwargs.get("screenshot_out_file")
+        ):
+            kwargs["screenshot_out_file"] = _artifact_screenshot_path(artifact_dir, name)
         if is_mutating:
             budget = cua_run_budget.get()
             if budget is not None:
