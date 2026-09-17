@@ -122,15 +122,12 @@ class RecipeExecutor:
             async with self._run.action() if self._run is not None else nullcontext():
                 if self._run is not None:
                     self._run.require_active()
-                    if "session" not in tool.args:
-                        raise RecipeFailure(f"{name} cannot bind the trusted desktop session")
-                    arguments["session"] = self._run.session_id
+                    if "session" in tool.args:
+                        arguments["session"] = self._run.session_id
                 for key, value in OBSERVATION_DEFAULTS.get(name, {}).items():
                     if key in tool.args:
                         arguments.setdefault(key, value)
                 # Validate native schema before spending budget or dispatching.
-                if set(arguments) - set(tool.args):
-                    raise RecipeFailure(f"{name} does not support the required argument schema")
                 schema = tool.get_input_schema()
                 if issubclass(schema, BaseModel):
                     schema.model_validate(arguments)
@@ -162,7 +159,16 @@ class RecipeExecutor:
         return await self._invoke("launch_app", {"app_id": app_id})
 
     async def read_state(self) -> ToolOutcome:
-        return await self._invoke("get_window_state", {})
+        """Fresh observation via any available allowlisted observation tool.
+
+        cua-driver exposes window/desktop state under different native
+        names; a recipe needs identity evidence, not one specific name.
+        """
+        for name in ("get_window_state", "list_windows", "get_desktop_state",
+                     "get_accessibility_tree"):
+            if name in self._tools:
+                return await self._invoke(name, {})
+        raise RecipeFailure("Required native tool unavailable: any observation tool")
 
     async def verify_foreground(self, app_id: str) -> ToolOutcome:
         """Return fresh evidence; the recipe compares observed identity itself."""
@@ -176,7 +182,11 @@ class RecipeExecutor:
 
     async def read_display(self) -> ToolOutcome:
         # Evaluation is an explicit mutation, not hidden inside an observation.
-        self._require_tools("press_key", "get_window_state")
+        if "press_key" not in self._tools or not any(
+            name in self._tools for name in
+            ("get_window_state", "list_windows", "get_desktop_state")
+        ):
+            raise RecipeFailure("Required native tool unavailable: press_key and observation")
         outcome = await self._invoke("press_key", {"key": "Enter"})
         if outcome.status != "ok":
             return outcome

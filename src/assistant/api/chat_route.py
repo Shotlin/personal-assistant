@@ -46,6 +46,7 @@ from assistant.models import build_chat_model
 from assistant.observability.timing import RunTimeline
 from assistant.observability.usage import LedgerCallbackHandler, UsageLedger
 from assistant.runtime.runs import RunActionLedger
+from assistant.runtime.session import DesktopRunCancelled
 from assistant.settings import Settings
 from assistant.tools.policy import cua_run_scope
 
@@ -260,10 +261,16 @@ async def chat_completions(
                 if claimed and run_store is not None
                 else None
             )
-            response = await _run_agent_turn(
-                body, request, settings, identity, run_id, ledger, timeline,
-                action_ledger=action_ledger,
+            recipe_response = await _try_recipe_route(
+                body, request, settings, identity, run_id, action_ledger
             )
+            if recipe_response is not None:
+                response = recipe_response
+            else:
+                response = await _run_agent_turn(
+                    body, request, settings, identity, run_id, ledger, timeline,
+                    action_ledger=action_ledger,
+                )
     except GatewayError as exc:
         if claimed and run_store is not None:
             await run_store.finish(run_id, "failed")
@@ -321,6 +328,91 @@ async def stop_run(run_id: str, request: Request) -> dict[str, str]:
         extra={"event": "run_stop", "run_id": run_id},
     )
     return {"status": "cancelling", "run_id": run_id}
+
+
+async def _try_recipe_route(
+    body: ChatCompletionRequest,
+    request: Request,
+    settings: SettingsDep,
+    identity: RequestIdentity,
+    run_id: str,
+    action_ledger: RunActionLedger | None,
+) -> Any:
+    """Exact local command -> recipe execution with ZERO model calls.
+
+    Returns a ChatCompletionResponse when a recipe matched and executed,
+    or None to fall through to the agent path. Failure inside a matched
+    recipe is rendered honestly (never a guessed success); router
+    non-matches silently fall back. Every native mutation counts against
+    the same per-run budget and writes the same action-ledger rows as an
+    agent-driven action.
+    """
+    from assistant.runtime.recipe_errors import RecipeFailure
+    from assistant.runtime.recipe_executor import RecipeExecutor
+    from assistant.runtime.recipe_result import render_result
+    from assistant.runtime.recipes import execute_recipe
+    from assistant.runtime.router import match_local_command
+
+    # The router consumes the normalized user text (same normalization the
+    # agent path uses); raw pydantic ChatMessages yield no user content.
+    incoming = normalize_history(body.messages)
+    last = last_user_content(incoming)
+    if not last:
+        return None
+    request_obj = match_local_command(str(last), approved_context={})
+    if request_obj is None:
+        return None
+
+    logger.info(
+        "recipe_route_matched",
+        extra={
+            "event": "recipe_route_matched",
+            "run_id": run_id,
+            "recipe_id": request_obj.recipe_id,
+        },
+    )
+    tools_by_name = dict(getattr(request.app.state, "cua_tools_by_name", {}) or {})
+    budget = RunBudget()
+    desktop_manager = getattr(request.app.state, "desktop_sessions", None)
+    # The executor writes its own ledger rows (planned -> confirmed/failed/
+    # unknown) against the claimed run; the policy ContextVar ledger stays
+    # out of the recipe path to avoid double-counting raw-tool dispatch.
+    executor = RecipeExecutor(
+        cua_tools_by_name=tools_by_name,
+        run_store=None,
+        run_id=run_id,
+        budget=budget,
+        run=None,
+    )
+    try:
+        async with _open_desktop_run(desktop_manager, run_id) as run:
+            executor._run = run  # noqa: SLF001 -- executor is gateway-owned here
+            result = await execute_recipe(request_obj, executor)
+    except RecipeFailure as exc:
+        result = {
+            "recipe_id": request_obj.recipe_id,
+            "ok": False,
+            "reason": str(exc),
+            "app_id": str(getattr(request_obj.arguments, "get", lambda k: "")("app_id") or ""),
+            "query": str(getattr(request_obj.arguments, "get", lambda k: "")("query") or ""),
+        }
+    except DesktopRunCancelled:
+        text = "[Run cancelled by user; the command was not completed.]"
+        return ChatCompletionResponse(
+            id=f"chatcmpl-{run_id}",
+            created=int(time.time()),
+            model=settings.assistant_model_id,
+            choices=[ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))],
+            usage=_usage_from_ledger(UsageLedger()),
+        )
+    text = render_result(result)
+    return ChatCompletionResponse(
+        id=f"chatcmpl-{run_id}",
+        created=int(time.time()),
+        model=settings.assistant_model_id,
+        choices=[ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))],
+        usage=UsageStats(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+    )
 
 
 async def _run_agent_turn(

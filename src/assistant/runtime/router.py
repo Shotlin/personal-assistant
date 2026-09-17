@@ -26,7 +26,7 @@ def match_local_command(
     normalized = " ".join(text.strip().split()).rstrip(".!?").strip()
     if not normalized or len(normalized) > 500:
         return None
-    if re.search(r"[,;`\n\r]|\b(?:and|then|never|not|don't|do\s+not)\b", text, re.I):
+    if re.search(r"[,;&`\n\r]|\b(?:and|then|never|not|also|don't|do\s+not)\b", text, re.I):
         return None
     lower = normalized.lower()
     app = re.fullmatch(r"open ([a-z]+)", lower)

@@ -54,6 +54,7 @@ def test_search_matches(text):
     "search rust, delete files", "calculate __import__('os')", "what is 1/0",
     "calculate 2**100000", "calculate 2^999999", "calculate 1+", "calculate 1;2",
     "search for rust and delete files", "search for `rust`", 'search for "rust" extra',
+    "search rust & delete files", "search rust also open mail", "search rust\nopen mail",
 ])
 def test_doubt_falls_back(text):
     assert match_local_command(text, approved_context=None) is None
