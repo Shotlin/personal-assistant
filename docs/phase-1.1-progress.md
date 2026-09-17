@@ -2,10 +2,61 @@
 
 ## Current checkpoint
 
-Branch: `phase-1.1-latency`. Committed through `9bd0a27`:
-WP3 parts 1-3 (session manager core, stream-owned run scope + local Stop,
-gateway wiring + stop endpoint + manifest review) and the newest-observation
-hard cap (F03). Working tree clean. No push, no deployment.
+Branch: `phase-1.1-latency`. Committed through `a2fbc4d`: WP3 parts 1-3,
+newest-observation hard cap (F03), WP4 part 1 (RunStore: atomic claim on
+UNIQUE(user_id, user_message_id), action ledger with unknown-effect state,
+cross-process DesktopLease with expiry/steal) and WP4 part 2 (gateway
+claims before external work; duplicate delivery returns observe-only
+response with zero model calls; same id + conflicting content rejected).
+Suite: 158 passed, 1 skipped; ruff/mypy clean. Working tree clean. No push.
+
+## Round-3 evidence (all real-Postgres or live-gateway, no paid calls)
+
+- tests/integration/test_run_ledger.py: 8 tests on the real compose DB —
+  claim semantics (dup observes, conflict rejects, new id runs), status
+  transitions, planned->confirmed ledger flow, unknown-not-replayed,
+  desktop lease exclusivity + expiry steal.
+- test_run_dedup.py: first version was VACUOUS (counter read the utility
+  model); hardened to count agent model invocations and FAILED before
+  wiring, then passed after claim wiring — it discriminates.
+- Live gateway (restart pending for WP4 code): stop endpoint 404/401,
+  one streaming smoke on stealth/union-alpha (2.91s, 1 call, 15774/45
+  tokens, no desktop events). n=1, not a performance baseline.
+
+## Remaining WP4 work
+
+- Record actions in the ledger around real CUA dispatch (safe/dispatch/
+  outcome wiring in policy wrapper or executor) and enforce DesktopLease
+  around desktop runs.
+- finish() terminal marking on completion/failure/cancel paths of the
+  gateway; regenerate/retry interplay with claims (regeneration must not
+  be swallowed as a duplicate).
+- .env.example docs for new flags; README rollback section (WP8).
+
+## Operational findings (live log evidence)
+
+- deepagents skips /skills/computer-use/SKILL.md: YAML frontmatter parse
+  fails on the colon in the description line (seen in live gateway logs
+  and integration runs). Fix front-matter + add test (WP7).
+
+## Earlier rounds (summarized)
+
+- WP3: DesktopSessionManager (lazy session, lease, sequential actions,
+  local Stop before dispatch, cleanup on all paths), session lifecycle
+  tools removed from model inventory, POST /v1/runs/{id}/stop, stream
+  status events, run-scoped ContextVars, manifest reviewed.
+- WP2/F03: observation defaults, ToolOutcome normalization + model-text
+  conversion, newest-observation 12k hard cap.
+- Live smoke on stealth/union-alpha confirmed status events + framing;
+  model_calls=1 with no desktop events for pure chat.
+
+## Model and live testing
+
+User's configured model is stealth/union-alpha (changed from the plan's
+z-ai/glm-5.3-flash); do not silently revert. GLM-specific plan items
+(reasoning controls, provider latency probes) are not applicable until
+the owner reconciles; no GLM claims made. No live desktop action, cursor
+wait check, denial probe, or Open WebUI benchmark yet (WP8).
 
 ## Live-verified this round (bounded, no desktop actions)
 
