@@ -69,6 +69,26 @@ def _content_digest(messages: list[ChatMessage]) -> str:
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:24]
 
 
+def _fast_failure_reason(recipe_result: tuple[Any, str]) -> str:
+    """Extract the bounded failure reason from a fast-path result (WP4).
+
+    Reads the recipe renderer's honest reason from the reply payload; an
+    executed recipe carries it in ``result['reason']``, which
+    ``render_result`` appends to the user-visible text. Bounded, and never
+    contains prompt bodies.
+    """
+    response, status = recipe_result
+    if status != "failed":
+        return ""
+    content = getattr(getattr(response, "choices", [None])[0], "message", None)
+    text = str(getattr(content, "content", "") or "")
+    # The renderer's honest failure format is 'I could not verify ...: <reason>.'
+    if ": " in text:
+        reason = text.split(": ", 1)[1].rstrip(".")
+        return reason[:300]
+    return text[:300]
+
+
 def _stream_recipe_response(
     response: ChatCompletionResponse,
     *,
@@ -76,6 +96,7 @@ def _stream_recipe_response(
     run_id: str = "",
     timeline: RunTimeline | None = None,
     terminal_status: str = "completed",
+    failure_reason: str = "",
 ) -> StreamingResponse:
     """Render a fast-path completion as OpenAI-compatible SSE ([DONE] ended).
 
@@ -103,7 +124,7 @@ def _stream_recipe_response(
             yield "data: [DONE]\n\n"
         finally:
             if run_store is not None and run_id:
-                await run_store.finish(run_id, terminal_status)
+                await run_store.finish(run_id, terminal_status, failure_reason)
             if timeline is not None:
                 timeline.mark_terminal(metadata={"status": terminal_status})
 
@@ -285,6 +306,10 @@ async def chat_completions(
                 return StreamingResponse(stream_duplicate(), media_type="text/event-stream")
             return duplicate
         claimed = True
+        # Canonical identity (WP4 retry): a retry_after_terminal_failure
+        # claim returns the EXISTING run's id; every ledger row, SSE id,
+        # stop lookup and finish() must address that same row.
+        run_id = claim.run_id
 
     timeline.mark("run_started")
     logger.info(
@@ -293,6 +318,7 @@ async def chat_completions(
     )
 
     try:
+        fast_failure_reason = ""
         if identity.is_utility:
             response: ChatCompletionResponse | StreamingResponse = await _run_utility(
                 body, request, settings, run_id, ledger
@@ -321,6 +347,9 @@ async def chat_completions(
                 # Fast paths report their own terminal truth (P2-5b): a
                 # failed or cancelled recipe is never recorded completed.
                 recipe_response, fast_status = recipe_result
+                # WP4 diagnostics: the recipe's own reason travels with the
+                # result so the registry explains a failed run by itself.
+                fast_failure_reason = _fast_failure_reason(recipe_result)
                 # Fast paths honor the request's stream contract (P1-4):
                 # JSON for stream=false, SSE with [DONE] for stream=true.
                 if body.stream and not isinstance(recipe_response, StreamingResponse):
@@ -330,6 +359,7 @@ async def chat_completions(
                         run_id=run_id,
                         timeline=timeline,
                         terminal_status=fast_status,
+                        failure_reason=fast_failure_reason,
                     )
                 else:
                     response = recipe_response
@@ -342,7 +372,7 @@ async def chat_completions(
                 fast_terminal = "completed"
     except GatewayError as exc:
         if claimed and run_store is not None:
-            await run_store.finish(run_id, "failed")
+            await run_store.finish(run_id, "failed", str(exc)[:300])
         timeline.mark_terminal(metadata={"status": "error", "error_code": exc.code})
         logger.warning(
             "run_finished",
@@ -367,7 +397,7 @@ async def chat_completions(
 
     if not isinstance(response, StreamingResponse):
         if claimed and run_store is not None:
-            await run_store.finish(run_id, fast_terminal)
+            await run_store.finish(run_id, fast_terminal, fast_failure_reason)
         timeline.mark_terminal(metadata={"status": "ok"})
         logger.info(
             "run_finished",

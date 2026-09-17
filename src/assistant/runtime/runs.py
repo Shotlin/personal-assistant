@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS run_registry (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """,
+    # WP4 diagnostics: a failed run must be explainable from the registry
+    # alone. Additive column; bounded tool/recipe error text only.
+    """
+ALTER TABLE run_registry ADD COLUMN IF NOT EXISTS failure_reason TEXT NOT NULL DEFAULT '';
+""",
     # Legacy duplicate identities must fail setup, never erase history.
     # An operator must reconcile them in a separate, explicit migration.
     """
@@ -100,6 +105,7 @@ class RunRecord:
     owner: str | None = None
     updated_at: float = 0.0
     actions: list[dict[str, Any]] = field(default_factory=list)
+    failure_reason: str = ""
 
 
 class RunStore:
@@ -172,22 +178,48 @@ class RunStore:
             return ClaimResult(
                 owned=False, run_id=existing_run_id, status=status, reason="identity_conflict"
             )
+        if status in ("failed", "cancelled"):
+            # A retry after a TERMINAL failure/cancellation is a new
+            # intentional action (live incident 2026-09-18: Open WebUI
+            # regeneration reuses the same user-message id, and the old
+            # dedup made a failed turn permanently unretryable). The
+            # conditional UPDATE is the atomic takeover: a concurrent
+            # retry loses (status no longer terminal) and dedups.
+            retried = await self._conn.execute(
+                """
+                UPDATE run_registry SET status='running', updated_at=now(), failure_reason=''
+                WHERE run_id=%s AND status IN ('failed', 'cancelled')
+                RETURNING run_id
+                """,
+                (existing_run_id,),
+            )
+            if await retried.fetchone() is not None:
+                return ClaimResult(
+                    owned=True, run_id=existing_run_id, status="running",
+                    reason="retry_after_terminal_failure",
+                )
         return ClaimResult(
             owned=False, run_id=existing_run_id, status=status, reason="already_claimed"
         )
 
-    async def finish(self, run_id: str, status: str) -> None:
-        """Mark terminal status ('completed'|'failed'|'cancelled')."""
+    async def finish(self, run_id: str, status: str, failure_reason: str = "") -> None:
+        """Mark terminal status ('completed'|'failed'|'cancelled').
+
+        ``failure_reason`` (WP4 diagnostics): bounded tool/recipe error
+        text for failed runs -- never prompt bodies. Empty for successes.
+        """
         await self._conn.execute(
-            "UPDATE run_registry SET status=%s, owner=NULL, updated_at=now() WHERE run_id=%s",
-            (status, run_id),
+            "UPDATE run_registry SET status=%s, owner=NULL, updated_at=now(), "
+            "failure_reason=%s WHERE run_id=%s",
+            (status, failure_reason[:300], run_id),
         )
 
     async def get_run(self, run_id: str) -> RunRecord | None:
         async with self._conn.cursor() as cur:
             await cur.execute(
                 "SELECT run_id, user_id, chat_id, user_message_id, request_digest, status, owner, "
-                "EXTRACT(EPOCH FROM updated_at) FROM run_registry WHERE run_id=%s",
+                "EXTRACT(EPOCH FROM updated_at), failure_reason "
+                "FROM run_registry WHERE run_id=%s",
                 (run_id,),
             )
             row = await cur.fetchone()
@@ -202,6 +234,7 @@ class RunStore:
             status=str(row[5]),
             owner=row[6] if row[6] is None else str(row[6]),
             updated_at=float(row[7] or 0.0),
+            failure_reason=str(row[8] or ""),
         )
         record.actions = await self.run_actions(run_id)
         return record

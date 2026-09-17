@@ -87,7 +87,13 @@ async def claim(store: RunStore, run_id: str, *, digest: str = "digest", msg: st
     )
 
 
-_RUNS_SQL = "SELECT * FROM run_registry ORDER BY run_id"
+# Explicit columns: setup() may additive-migrate new columns (e.g.
+# failure_reason) between the before/after snapshots; the safety contract
+# is about legacy ROW data surviving, not the tuple shape of SELECT *.
+_RUNS_SQL = (
+    "SELECT run_id, user_id, chat_id, user_message_id, request_digest, "
+    "status, owner, created_at, updated_at FROM run_registry ORDER BY run_id"
+)
 _LEDGER_SQL = "SELECT * FROM action_ledger ORDER BY ledger_id"
 
 
@@ -160,6 +166,69 @@ async def test_duplicate_returns_canonical_identity_and_conflicts_fail_closed(
     assert collision.reason in {"identity_conflict", "registry_error"}
     # A PK collision must not poison the connection or insert another turn.
     assert (await claim(store, "fresh", msg="another-turn")).owned
+
+
+async def test_failed_run_is_retryable_with_same_identity(
+    isolated_schema: IsolatedSchema,
+):
+    """Live incident (2026-09-18): Open WebUI regeneration reuses the same
+    user-message id ('2/2'), and the registry rejected the retry of a run
+    that had terminally FAILED -- the user could never retry. A retry
+    after a terminal failure/cancellation is a new intentional action."""
+    store = await isolated_schema.store()
+    first = await claim(store, "run-1", digest="d1", msg="m1")
+    assert first.owned
+    await store.finish("run-1", "failed", "Requested app was not observed in the foreground.")
+    retry = await claim(store, "run-1", digest="d1", msg="m1")
+    assert retry.owned, "a terminal failure must be retryable"
+    assert retry.run_id == "run-1"
+    assert "retry" in retry.reason
+    record = await store.get_run("run-1")
+    assert record is not None and record.status == "running"
+    assert record.failure_reason == "", "retry clears the stale failure reason"
+    # The cancelled terminal state is retryable for the same reason.
+    await store.finish("run-1", "cancelled")
+    retry2 = await claim(store, "run-1", digest="d1", msg="m1")
+    assert retry2.owned and retry2.run_id == "run-1"
+
+
+async def test_retry_claim_is_atomic_single_winner(isolated_schema: IsolatedSchema):
+    await isolated_schema.store()  # create schema/tables in this test's search_path
+    store_a = RunStore(await isolated_schema.connect())
+    store_b = RunStore(await isolated_schema.connect())
+    assert (await claim(store_a, "dup-run", msg="same")).owned
+    await store_a.finish("dup-run", "failed", "boom")
+    results = await asyncio.gather(
+        claim(store_a, "dup-run", msg="same"), claim(store_b, "dup-run", msg="same")
+    )
+    owned = [r for r in results if r.owned]
+    assert len(owned) == 1, f"exactly one retry winner, got {results}"
+    assert all(r.reason == "already_claimed" for r in results if not r.owned)
+
+
+async def test_inflight_and_completed_retries_still_dedup(
+    isolated_schema: IsolatedSchema,
+):
+    store = await isolated_schema.store()
+    assert (await claim(store, "live", msg="live-msg")).owned
+    inflight = await claim(store, "other", msg="live-msg")
+    assert not inflight.owned and inflight.reason == "already_claimed"
+    await store.finish("live", "completed")
+    done = await claim(store, "other", msg="live-msg")
+    assert not done.owned and done.reason == "already_claimed"
+
+
+async def test_identity_conflict_after_failure_still_rejected(
+    isolated_schema: IsolatedSchema,
+):
+    store = await isolated_schema.store()
+    assert (await claim(store, "id-run", digest="original", msg="id-msg")).owned
+    await store.finish("id-run", "failed", "boom")
+    conflict = await claim(store, "id-run", digest="different", msg="id-msg")
+    assert not conflict.owned
+    assert conflict.reason == "identity_conflict", (
+        "a failed run does not authorize a different payload under the same id"
+    )
 
 
 @pytest.mark.parametrize("shared_connection", [False, True])

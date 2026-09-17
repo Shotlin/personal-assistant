@@ -45,16 +45,22 @@ async def test_planner_sends_compact_single_message_and_no_tools() -> None:
 
 
 def test_settings_model_name_is_what_the_adapter_would_address() -> None:
-    """The model id the gateway logs is the one configured - no drift."""
+    """The model id the gateway logs is the one configured - no drift.
+
+    Owner instruction (2026-09-17): the assistant runs z-ai/glm-5.3-flash
+    via OpenRouter; the .env is the source of truth and the contract test
+    pins that exact identity to catch config drift.
+    """
     settings = Settings(
         agent_gateway_api_key="k",
         model_provider="openrouter",
         openrouter_api_key="dummy",
+        model_name="z-ai/glm-5.3-flash",
         cua_enabled=False,
     )
     model = build_chat_model(settings)
     # The adapter builds from settings; the gateway's logged model name and
     # the planner's model come from the same settings object (same instance
     # in the lifespan). Assert the binding source of truth is settings.
-    assert settings.model_name == "stealth/union-alpha"
+    assert settings.model_name == "z-ai/glm-5.3-flash"
     _ = model  # adapter construction succeeded under the current settings

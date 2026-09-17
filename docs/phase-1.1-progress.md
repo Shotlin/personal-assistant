@@ -1,5 +1,43 @@
 # Phase 1.1 implementation progress
 
+## Round-16 checkpoint — failed-turn retry (live incident) + model switch
+
+LIVE INCIDENT (user screenshot, Open WebUI '2/2' regeneration): a turn
+whose first run terminally FAILED could never be retried — the WP4 dedup
+rejected any redelivery with the same user-message id, so the user was
+stuck with '[This message was already received...; Current run status:
+failed.]'. Fixed, TDD (4 new registry tests red first + 1 e2e red first):
+
+- runs.claim(): when the existing run's status is TERMINAL ('failed' or
+  'cancelled') and the request digest matches, a conditional
+  `UPDATE ... WHERE status IN ('failed','cancelled')` performs the
+  atomic takeover (exactly one concurrent retry winner — pinned), resets
+  status to 'running' and clears failure_reason. Returns
+  owned=True/reason='retry_after_terminal_failure' with the EXISTING
+  run_id. Inflight and completed runs still dedup; identity conflicts
+  (same id, different payload) still fail closed even after failure.
+- chat_route: after an owned claim, the route adopts claim.run_id as the
+  canonical id (the e2e caught this: a retry's fresh local run_id broke
+  the action_ledger FK before the fix).
+- Failure diagnostics (WP4, earlier this round): failed runs carry a
+  bounded failure_reason (additive `failure_reason` column, finish()
+  parameter, reason extracted from the fast path's honest reply, never
+  user text) so the registry alone answers 'why did this fail'.
+  test_run_store_safety's SELECT * was made column-explicit because the
+  additive migration legitimately changes the tuple shape between
+  snapshots.
+
+Model switch (owner instruction): MODEL_NAME is now z-ai/glm-5.3-flash
+via OpenRouter (session model changed accordingly); the provider
+contract test pins the new identity. `.env` is owner-local (untracked).
+
+Gateway RESTARTED (job bash-29) on :8787 — healthz/readyz OK — with the
+retry fix and new model live. Full gates: 354 passed, 1 skipped;
+ruff/mypy clean (46 files); diff check clean. Still open: constraints
+wiring on both routes, cancellation/disconnect truth, provider-wire
+capture, epoch management across recipes, live desktop verification
+(permission gate still pending). No measured latency claims.
+
 ## Round-15 checkpoint — observation freshness policy wired
 
 `scene.observation_is_fresh(outcome)` (TDD, red first): a normalized
