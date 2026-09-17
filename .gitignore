@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# uv local caches / managed interpreters (kept inside the repo for sandboxed runs)
+.uv-cache/
+.uv-python/
+
+# Environment / secrets
+.env
+
+# Docker local overrides
+compose.override.yml
+
+# macOS
+.DS_Store

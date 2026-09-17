@@ -1,0 +1,23 @@
+# Phase 1 logging configuration: single-line JSON, secrets redacted (spec section 18).
+version: 1
+disable_existing_loggers: false
+
+filters:
+  redact:
+    (): assistant.observability.logging.RedactionFilter
+
+formatters:
+  json:
+    (): assistant.observability.logging.JsonFormatter
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    filters: [redact]
+    formatter: json
+    stream: ext://sys.stderr
+
+root:
+  level: INFO
+  handlers: [console]
