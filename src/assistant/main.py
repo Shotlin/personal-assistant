@@ -106,9 +106,9 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
             else _null_cua_connection()
         )
         try:
-            connection = await cua_cm.__aenter__()
-            extra_tools = assemble_tool_inventory(connection.tools)
-            app.state.cua_tools_by_name = connection.tools_by_name
+            connection: Any = await cua_cm.__aenter__()
+            extra_tools = assemble_tool_inventory(list(getattr(connection, "tools", [])))
+            app.state.cua_tools_by_name = dict(getattr(connection, "tools_by_name", {}))
             bundle = build_agent(
                 model=model,
                 checkpointer=resources.saver,
