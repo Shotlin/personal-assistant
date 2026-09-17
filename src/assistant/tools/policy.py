@@ -54,7 +54,6 @@ CUA_ALLOWED_TOOL_NAMES = frozenset(
         "start_session",
         "end_session",
         "set_agent_cursor_enabled",
-        "get_agent_cursor_state",
     }
 )
 
