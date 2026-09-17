@@ -74,6 +74,17 @@ def _usage_from(result: dict[str, Any]) -> UsageStats:
 
 
 def _provider_error(exc: Exception) -> GatewayError:
+    try:
+        import openai
+    except ImportError:  # pragma: no cover - langchain-openai guarantees openai
+        openai = None  # type: ignore[assignment]
+
+    if openai is not None and isinstance(exc, openai.APITimeoutError):
+        return GatewayError("provider_timeout", "Model provider timed out after retries.")
+    if openai is not None and isinstance(exc, openai.APIConnectionError):
+        return GatewayError("provider_unavailable", "Model provider is unreachable.")
+    if openai is not None and isinstance(exc, openai.APIStatusError):
+        return GatewayError("provider_unavailable", "Model provider returned an error.")
     if isinstance(exc, httpx.TimeoutException):
         return GatewayError("provider_timeout", "Model provider timed out after retries.")
     if isinstance(exc, (httpx.TransportError, httpx.HTTPStatusError)):

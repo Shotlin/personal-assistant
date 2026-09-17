@@ -1,6 +1,6 @@
 # Phase 1 local services.
-# Task 1: PostgreSQL only (pgvector-capable image for future Phase 2 vector use).
-# Task 7 extends this file with the pinned Open WebUI service.
+# Task 1: PostgreSQL (pgvector-capable image for future Phase 2 vector use).
+# Task 7: pinned Open WebUI connected to the native agent gateway.
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -19,5 +19,32 @@ services:
       timeout: 3s
       retries: 20
 
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.11.3
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:8080"
+    volumes:
+      - open-webui:/app/backend/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Loopback-only Phase 1: the UI is reachable at http://127.0.0.1:3000.
+      ENABLE_FORWARD_USER_INFO_HEADERS: "true"
+      # The pinned Open WebUI image connects to our gateway for the assistant model.
+      OPENAI_API_BASE_URL: http://host.docker.internal:8787/v1
+      OPENAI_API_KEY: ${AGENT_GATEWAY_API_KEY:-change-me}
+      # Turn-lineage headers (spec section 15.2 / user-approved scheme).
+      OPENAI_API_CUSTOM_HEADERS: |-
+        X-OpenWebUI-Chat-Id: {{CHAT_ID}}
+        X-OpenWebUI-Message-Id: {{MESSAGE_ID}}
+        X-OpenWebUI-User-Message-Id: {{USER_MESSAGE_ID}}
+        X-OpenWebUI-User-Message-Parent-Id: {{USER_MESSAGE_PARENT_ID}}
+        X-OpenWebUI-Task: {{TASK}}
+
 volumes:
   assistant-postgres:
+  open-webui:

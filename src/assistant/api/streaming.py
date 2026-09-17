@@ -42,7 +42,7 @@ def _base_chunk(completion_id: str, model: str) -> ChatCompletionChunk:
 def visible_text(chunk: Any) -> str:
     """Extract user-visible text from a model-node message chunk."""
     msg_type = getattr(chunk, "type", None)
-    if msg_type is not None and msg_type != "ai":
+    if msg_type is not None and msg_type not in {"ai", "AIMessageChunk"}:
         return ""
     if getattr(chunk, "tool_call_chunks", None) or getattr(chunk, "tool_calls", None):
         return ""

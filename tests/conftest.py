@@ -1,4 +1,4 @@
-"""Shared helpers for integration tests (real compose PostgreSQL)."""
+"""Shared fixtures for all test suites (real compose PostgreSQL)."""
 
 import socket
 
