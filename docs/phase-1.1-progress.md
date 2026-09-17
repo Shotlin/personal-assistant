@@ -2,13 +2,33 @@
 
 ## Current checkpoint
 
-Branch: `phase-1.1-latency`. Committed through `a2fbc4d`: WP3 parts 1-3,
-newest-observation hard cap (F03), WP4 part 1 (RunStore: atomic claim on
-UNIQUE(user_id, user_message_id), action ledger with unknown-effect state,
-cross-process DesktopLease with expiry/steal) and WP4 part 2 (gateway
-claims before external work; duplicate delivery returns observe-only
-response with zero model calls; same id + conflicting content rejected).
-Suite: 158 passed, 1 skipped; ruff/mypy clean. Working tree clean. No push.
+Branch: `phase-1.1-latency`. Committed through `5a232b7` (WP4 part 3):
+production gateway now claims every non-utility turn in the REAL lifespan
+(AsyncExitStack; RunStore closed on startup failure), terminal status
+written on completed/failed/cancelled paths (streaming terminal marked in
+the generator's finally per F06), duplicate deliveries answered
+observe-only in the request's format with the canonical run_id and zero
+model calls. runs.py safety repairs: setup() never deletes history
+(legacy duplicate identities fail setup loudly, operator migration
+required), claim() is a single atomic statement returning the canonical
+run_id (no shared-connection transaction nesting), DesktopLease upsert is
+atomic with DB-clock expiry — explicitly NOT a fencing mechanism, NOT
+wired to production dispatch. Suite: 174 passed, 1 skipped; ruff/mypy
+clean. No push.
+
+## Round-4 live verification (production gateway, real Postgres, real model)
+
+After restart from current source (`stealth/union-alpha` via OpenRouter):
+- Non-streaming: first delivery executed (answer `WP4-LIVE-OK`, 2.65s, one
+  OpenRouter call); duplicate delivery logged `run_duplicate_rejected
+  reason=already_claimed claim_status=completed` and returned the
+  observe-only reply; run_registry held EXACTLY ONE row, status
+  `completed`. (Pre-repair baseline on the old process: HTTP 200 with
+  ZERO registry rows — wiring failure was found live and fixed.)
+- Streaming: duplicate delivery received observe-only SSE with proper
+  framing ([DONE] present). No second model call.
+- Log evidence source: the running process (job bash-15); var/gateway.log
+  holds a stale pre-WP4 crash trace and is NOT current evidence.
 
 ## Round-3 evidence (all real-Postgres or live-gateway, no paid calls)
 
@@ -25,12 +45,12 @@ Suite: 158 passed, 1 skipped; ruff/mypy clean. Working tree clean. No push.
 
 ## Remaining WP4 work
 
-- Record actions in the ledger around real CUA dispatch (safe/dispatch/
-  outcome wiring in policy wrapper or executor) and enforce DesktopLease
-  around desktop runs.
-- finish() terminal marking on completion/failure/cancel paths of the
-  gateway; regenerate/retry interplay with claims (regeneration must not
-  be swallowed as a duplicate).
+- Record actions in the ledger around real CUA dispatch (planned ->
+  confirmed/unknown wiring in the policy wrapper/dispatch path).
+- DesktopLease remains UNWIRED and non-fencing by design (documented in
+  runs.py); production desktop dispatch must not rely on it for safety.
+- Regenerate/retry interplay with claims (regeneration must not be
+  swallowed as a duplicate); run_id collision on claim fails closed.
 - .env.example docs for new flags; README rollback section (WP8).
 
 ## Operational findings (live log evidence)
