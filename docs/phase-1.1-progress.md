@@ -1,5 +1,17 @@
 # Phase 1.1 implementation progress
 
+## Round-7 checkpoint
+
+Committed through `9e72f20`. Fast paths (exact recipe + planner route)
+now return their own terminal status: failed recipe -> 'failed',
+cancelled -> 'cancelled' (was always 'completed'); both the JSON finish
+site and the SSE generator consume it. New e2e
+(test_fast_path_cancellation.py, production lifespan): Stop during a
+slow-but-finite recipe launch resolves 200 mid-flight and the registry
+ends 'cancelled'; the tool is cancelled through the real DesktopRun
+path. Suite: 292 passed, 1 skipped; ruff/mypy clean. Live desktop
+verification remains paused pending the permission step below.
+
 ## Round-6 closeout — authoritative runtime and repair state
 
 - Gates: 290 passed, 1 skipped; ruff, mypy (45 files), git diff --check clean.
