@@ -76,17 +76,43 @@ def _recipe_arguments(recipe_id: str, arguments: object) -> dict[str, str]:
         if not isinstance(arguments, dict) or set(arguments) != {"expression"}:
             raise InvalidPlan("calculator.evaluate.v1 requires exactly {'expression'}")
         expression = arguments["expression"]
-        if not isinstance(expression, str) or not expression.strip():
-            raise InvalidPlan("expression must be a nonempty string")
+        if not isinstance(expression, str) or not expression.strip() or len(expression) > 200:
+            raise InvalidPlan("expression must be a nonempty string of at most 200 chars")
         return {"expression": expression}
     if recipe_id == "browser.search.v1":
         if not isinstance(arguments, dict) or set(arguments) != {"query"}:
             raise InvalidPlan("browser.search.v1 requires exactly {'query'}")
         query = arguments["query"]
-        if not isinstance(query, str) or not query.strip():
-            raise InvalidPlan("query must be a nonempty string")
+        if not isinstance(query, str) or not query.strip() or len(query) > 500:
+            raise InvalidPlan("query must be a nonempty string of at most 500 chars")
         return {"query": query.strip()}
     raise InvalidPlan(f"unsupported recipe_id {recipe_id!r}")
+
+
+def _reject_mixed_shape(plan: dict[str, Any]) -> None:
+    """Require exactly one decision shape; never a blend (review P2-6)."""
+    has_recipe = "recipe_id" in plan
+    has_decision = "decision" in plan
+    if has_recipe and has_decision:
+        raise InvalidPlan("plan mixes 'decision' and 'recipe_id' shapes")
+    if has_recipe and ("question" in plan or "reason" in plan):
+        raise InvalidPlan("recipe plan must not carry question/reason fields")
+    if has_decision and (plan.get("question") is not None or plan.get("reason") is not None):
+        if plan.get("decision") == "clarification" and isinstance(plan.get("question"), str):
+            return
+        raise InvalidPlan("decision plan carries unexpected question/reason fields")
+
+
+class _DuplicateKeyRejector:
+    """JSON object hook that rejects duplicate keys (last-one-wins hides intent)."""
+
+    def __call__(self, pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise InvalidPlan(f"duplicate JSON key {key!r} in plan")
+            result[key] = value
+        return result
 
 
 def validate_plan(plan: object) -> RecipeRequest:
@@ -100,11 +126,12 @@ def validate_plan(plan: object) -> RecipeRequest:
     """
     if isinstance(plan, (str, bytes)):
         try:
-            plan = json.loads(plan)
+            plan = json.loads(plan, object_pairs_hook=_DuplicateKeyRejector())
         except json.JSONDecodeError as exc:
             raise InvalidPlan(f"plan is not valid JSON: {exc.msg}") from exc
     if not isinstance(plan, dict):
         raise InvalidPlan("plan must be a JSON object")
+    _reject_mixed_shape(plan)
     allowed_top = {"recipe_id", "arguments", "decision", "question", "reason"}
     unknown_top = set(plan) - allowed_top
     if unknown_top:
@@ -112,6 +139,8 @@ def validate_plan(plan: object) -> RecipeRequest:
             f"unknown executable payload in plan: {sorted(unknown_top)!r}"
         )
     decision = plan.get("decision")
+    if decision is None and "decision" in plan:
+        raise InvalidPlan("decision must be a non-null string")
     if decision == "clarification":
         question = plan.get("question")
         if not isinstance(question, str) or not question.strip():

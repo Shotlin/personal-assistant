@@ -72,6 +72,14 @@ class ToolOutcome:
 
 
 def _content_items(result: Any) -> list[Any]:
+    # This mcp lib's ClientSession.call_tool returns a 2-tuple
+    # (content items list, metadata dict) rather than a CallToolResult
+    # object -- verified live against cua-driver 0.28.2. The metadata
+    # dict carries the structured payload under 'structured_content'.
+    if isinstance(result, tuple) and len(result) == 2:
+        items = result[0]
+        if isinstance(items, list):
+            return [item for item in items if item is not None]
     content = getattr(result, "content", None)
     if isinstance(content, list):
         return [item for item in content if item is not None]
@@ -97,18 +105,23 @@ def normalize_mcp_result(result: Any) -> ToolOutcome:
     text_parts: list[str] = []
     images: list[ImageRef] = []
     for item in _content_items(result):
-        item_type = getattr(item, "type", None)
+        # The tuple transport returns plain dicts, not typed objects.
+        if isinstance(item, dict):
+            item_type = item.get("type")
+        else:
+            item_type = getattr(item, "type", None)
         if item_type == "text":
-            text_parts.append(str(getattr(item, "text", "")))
+            raw_text = item.get("text", "") if isinstance(item, dict) else getattr(item, "text", "")
+            text_parts.append(str(raw_text))
         elif item_type == "image":
-            data = getattr(item, "data", None)
+            if isinstance(item, dict):
+                data = item.get("base64") or item.get("data")
+                mime = item.get("mime_type") or item.get("mimeType") or "image/png"
+            else:
+                data = getattr(item, "data", None)
+                mime = str(getattr(item, "mimeType", "image/png"))
             if isinstance(data, str) and data:
-                images.append(
-                    ImageRef(
-                        data_base64=data,
-                        mime_type=str(getattr(item, "mimeType", "image/png")),
-                    )
-                )
+                images.append(ImageRef(data_base64=data, mime_type=str(mime)))
         elif isinstance(item, str):
             text_parts.append(item)
 
@@ -119,6 +132,10 @@ def normalize_mcp_result(result: Any) -> ToolOutcome:
         truncated = True
 
     structured_raw = getattr(result, "structuredContent", None)
+    if structured_raw is None and isinstance(result, tuple) and len(result) == 2:
+        metadata = result[1]
+        if isinstance(metadata, dict):
+            structured_raw = metadata.get("structured_content")
     structured: dict[str, Any]
     if isinstance(structured_raw, dict):
         structured = structured_raw

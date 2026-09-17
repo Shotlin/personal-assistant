@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     # decision -> local recipe). Feature flag for staged rollout and
     # rollback (master plan 15.2/WP8): false sends every non-exact turn to
     # the general agent exactly as before WP6.
-    compact_planner_enabled: bool = True
+    compact_planner_enabled: bool = False
 
     @property
     def is_production(self) -> bool:

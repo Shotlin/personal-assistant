@@ -69,6 +69,45 @@ def _content_digest(messages: list[ChatMessage]) -> str:
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:24]
 
 
+def _stream_recipe_response(
+    response: ChatCompletionResponse,
+    *,
+    run_store: Any | None = None,
+    run_id: str = "",
+    timeline: RunTimeline | None = None,
+) -> StreamingResponse:
+    """Render a fast-path completion as OpenAI-compatible SSE ([DONE] ended).
+
+    Open WebUI always expects the streaming contract when the request set
+    stream=true (review P1-4). The terminal run_registry/timeline events
+    are written in the generator's finally per master plan F06: returning
+    the StreamingResponse object is not completion.
+    """
+
+    async def stream_one() -> AsyncIterator[str]:
+        try:
+            chunk = ChatCompletionChunk(
+                id=response.id,
+                created=response.created,
+                model=response.model,
+                choices=[ChatCompletionChunkChoice(delta=DeltaMessage(
+                    role="assistant", content=str(response.choices[0].message.content)
+                ))],
+            )
+            yield f"data: {chunk.model_dump_json()}\n\n"
+            chunk.choices[0].delta = DeltaMessage()
+            chunk.choices[0].finish_reason = "stop"
+            yield f"data: {chunk.model_dump_json()}\n\n"
+            yield "data: [DONE]\n\n"
+        finally:
+            if run_store is not None and run_id:
+                await run_store.finish(run_id, "completed")
+            if timeline is not None:
+                timeline.mark_terminal(metadata={"status": "ok"})
+
+    return StreamingResponse(stream_one(), media_type="text/event-stream")
+
+
 def _duplicate_response(
     settings: SettingsDep, claim: Any, run_id: str, started: float
 ) -> ChatCompletionResponse:
@@ -253,7 +292,9 @@ async def chat_completions(
 
     try:
         if identity.is_utility:
-            response = await _run_utility(body, request, settings, run_id, ledger)
+            response: ChatCompletionResponse | StreamingResponse = await _run_utility(
+                body, request, settings, run_id, ledger
+            )
         else:
             # The action ledger exists only for claimed runs: rows are
             # FK-bound to the registry entry created by the claim.
@@ -271,10 +312,20 @@ async def chat_completions(
                 # execute locally; no obligatory second model call. Flag
                 # gives staged rollout and rollback (WP8).
                 recipe_response = await _try_planner_route(
-                    body, request, settings, identity, run_id, action_ledger
+                    body, request, settings, identity, run_id, action_ledger, ledger
                 )
             if recipe_response is not None:
-                response = recipe_response
+                # Fast paths honor the request's stream contract (P1-4):
+                # JSON for stream=false, SSE with [DONE] for stream=true.
+                if body.stream and not isinstance(recipe_response, StreamingResponse):
+                    response = _stream_recipe_response(
+                        recipe_response,
+                        run_store=getattr(request.app.state, "run_store", None),
+                        run_id=run_id,
+                        timeline=timeline,
+                    )
+                else:
+                    response = recipe_response
             else:
                 response = await _run_agent_turn(
                     body, request, settings, identity, run_id, ledger, timeline,
@@ -388,7 +439,7 @@ async def _try_recipe_route(
     # out of the recipe path to avoid double-counting raw-tool dispatch.
     executor = RecipeExecutor(
         cua_tools_by_name=tools_by_name,
-        run_store=None,
+        action_ledger=action_ledger,
         run_id=run_id,
         budget=budget,
         run=None,
@@ -431,6 +482,7 @@ async def _try_planner_route(
     identity: RequestIdentity,
     run_id: str,
     action_ledger: RunActionLedger | None,
+    ledger: UsageLedger,
 ) -> Any:
     """WP6: one compact same-model decision for natural phrasing.
 
@@ -454,7 +506,10 @@ async def _try_planner_route(
     if model is None:
         return None
     try:
-        plan = await plan_supported_task(str(last), None, model)
+        accounted_model = model.with_config(
+            callbacks=[LedgerCallbackHandler(ledger, prefix=f"{run_id}:planner")]
+        )
+        plan = await plan_supported_task(str(last), None, accounted_model)
     except Exception as exc:  # noqa: BLE001 -- planner failure falls back, never blocks
         logger.warning(
             "planner_route_failed",
@@ -479,7 +534,7 @@ async def _try_planner_route(
     desktop_manager = getattr(request.app.state, "desktop_sessions", None)
     executor = RecipeExecutor(
         cua_tools_by_name=tools_by_name,
-        run_store=None,
+        action_ledger=action_ledger,
         run_id=run_id,
         budget=budget,
         run=None,
@@ -511,7 +566,7 @@ async def _try_planner_route(
         created=int(time.time()),
         model=settings.assistant_model_id,
         choices=[ChatCompletionChoice(message=ChatMessage(role="assistant", content=text))],
-        usage=UsageStats(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+        usage=_usage_from_ledger(ledger),
     )
 
 

@@ -45,6 +45,8 @@ class CuaConnection:
     tool_names: list[str]
     discovered_names: list[str]
     skipped_names: list[str]
+    # Raw allowlisted normalized tools for trusted recipes only.
+    # Model-facing tools above remain policy-wrapped.
     tools_by_name: dict[str, BaseTool] = field(default_factory=dict)
     #: Unwrapped lifecycle tools for the trusted DesktopSessionManager
     #: only (never the model inventory); absent names mean the installed
@@ -92,7 +94,7 @@ def _filtered_connection(discovered: list[BaseTool]) -> CuaConnection:
         tool_names=wrapped_names,
         discovered_names=result.discovered_names,
         skipped_names=result.skipped_names,
-        tools_by_name={getattr(t, "name", "?"): t for t in wrapped},
+        tools_by_name={getattr(t, "name", "?"): t for t in result.enabled},
         lifecycle_tools_by_name=lifecycle,
     )
 

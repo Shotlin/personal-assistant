@@ -90,3 +90,43 @@ def test_malformed_structured_content_is_tolerated():
 def test_unexpected_payload_shapes_do_not_crash(payload):
     outcome = normalize_mcp_result(payload)
     assert outcome.status in {"ok", "failed", "unknown"}
+
+
+def _tuple_result(content, structured, is_error=False):
+    """Real shape from this mcp lib's ClientSession.call_tool: a tuple.
+
+    Verified live against cua-driver 0.28.2 (2026-09-17): first slot is a
+    list of typed content dicts, second slot is a metadata dict holding
+    the structured payload under 'structured_content'.
+    """
+    return (
+        content if content is not None else [],
+        {"structured_content": structured} if structured is not None else {},
+    )
+
+
+def test_tuple_result_structured_content_is_promoted():
+    outcome = normalize_mcp_result(
+        _tuple_result(
+            [{"type": "text", "text": "found 8 windows"}],
+            {"apps": [{"bundle_id": "com.google.Chrome", "name": "Google Chrome", "pid": 1081}]},
+        )
+    )
+    assert outcome.status == "ok"
+    assert outcome.structured.get("apps"), "tuple metadata slot must surface as structured evidence"
+
+
+def test_tuple_result_text_items_are_extracted():
+    outcome = normalize_mcp_result(
+        _tuple_result([{"type": "text", "text": "window_id=1783 pid=47060"}], {})
+    )
+    assert "window_id=1783" in outcome.text
+    assert outcome.status == "ok"
+
+
+def test_tuple_result_image_items_are_captured():
+    outcome = normalize_mcp_result(
+        _tuple_result([{"type": "image", "id": "x", "base64": "aGVsbG8="}], {})
+    )
+    assert len(outcome.images) == 1
+    assert outcome.images[0].data_base64 == "aGVsbG8="

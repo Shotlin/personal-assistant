@@ -1,22 +1,112 @@
 # Phase 1.1 implementation progress
 
+## Round-6 closeout — authoritative runtime and repair state
+
+- Gates: 290 passed, 1 skipped; ruff, mypy (45 files), git diff --check clean.
+- Planner usage now shares the gateway ledger; fake provider metadata
+  (123 input / 24 output) is asserted through the production lifespan.
+- Recipe executors now receive RunActionLedger; raw allowlisted tools are
+  distinct from model-wrapped tools. Production-shaped ToolOutcome e2e
+  reproduced evidence loss before the repair; now asserts exactly one
+  confirmed launch row. Streamed agent scope also receives action_ledger.
+- Fast responses return SSE/[DONE] when requested, and finalize the run
+  in the generator. Early streaming, disconnect/cancellation status,
+  timeout and accurate failed-recipe terminal status remain unfinished.
+- Planner mixed/duplicate-key rejection and argument bounds improved,
+  but strict discriminated validation and regression coverage remain open.
+- Native launch lowering uses bundle_id (observed native schema); legacy
+  fake app_id schemas remain supported explicitly. Foreground observation
+  adaptation is NOT solved; do not infer focus from app/window presence.
+- Tuple normalization tests: 3 red -> green for LangChain MCP adapter
+  (content list, metadata with structured_content). Earlier statements
+  that ClientSession.call_tool itself returns tuples were incorrect:
+  load_cua_tools uses the adapter; production _caller uses ClientSession.
+- Model remains stealth/union-alpha. Compact planner defaults OFF.
+
+### Runtime incident and restoration
+
+Repeated restart attempts were a mistake. The MCP adapter auto-started a
+standard-mode daemon without the manifest; read-only status exposed this.
+The Calculator launch/observation probes during that interval are NOT
+valid evidence of bounded recipe success. Standard daemon and erroneous
+launchctl job were stopped. Final status verified PID 96391, bounded
+(trusted_startup_configuration), manifest configured/approved/valid,
+sha256 107ff67558fbf72ca96690eea7f01de41cb4eaf8a2ff28f886b25ca91ba32eb7.
+Managed daemon job bash-27 retains the permission gate; this launch
+context reports Accessibility and Screen Recording missing. No TCC edits
+or further bypass attempts are permitted. Human OS approval may be needed.
+Gateway was stopped during restoration and has NOT been restarted.
+Manual permission steps: System Settings -> Privacy & Security ->
+Accessibility -> enable CuaDriver; then Screen & System Audio Recording
+(or Screen Recording) -> enable CuaDriver. If already enabled, report
+that rather than granting broader apps: the launch-context attribution
+needs resolution. Do not edit TCC databases or disable the consent gate.
+Live desktop testing is paused pending this human step; offline work can
+continue. No further daemon checks until permission resolution.
+Do not use MCP discovery that auto-starts standard mode while restoring.
+
+Next: finish constraints/memory/checkpoint integration and strict validation
+with planner disabled; repair real observation contracts and native schema
+validation; add actual provider-wire and shared-budget tests; finish WP7/WP8.
+Earlier COMPLETE claims below are historical and superseded.
+
 ## Current checkpoint
 
-Branch: `phase-1.1-latency`. Committed through `9d069be`:
-- WP4 COMPLETE (parts 1-4): durable run registry + atomic claim
-  (UNIQUE(user_id, user_message_id)), action ledger with unknown-effect
-  state, gateway claim before external work, terminal marking on all
-  paths, duplicate delivery observe-only (SSE + JSON), production wiring
-  live-verified, and durable action-ledger rows written around REAL CUA
-  dispatch (planned -> confirmed/failed/unknown; timeout/cancel = unknown,
-  never blind replay). DesktopLease documented non-fencing, unwired.
-- WP5 COMPLETE (parts 1-2): strict router (master-plan regressions
-  verbatim), three local recipes with bounded arithmetic evaluator,
-  RecipeExecutor (per-native-mutation budget + ledger, fail-closed
-  schemas, no pixel coordinates), render_result with evidence recheck,
-  gateway recipe route BEFORE the agent path, and an e2e gate proving
-  'Open Chrome' -> 'Opened chrome.' with model call count 0.
-Suite: 268 passed, 1 skipped; ruff/mypy clean (44 files). No push.
+Branch: `phase-1.1-latency`. WP6 initial implementation committed at
+`643ad09`; completion claims for WP4–WP6 are RETRACTED pending the
+integration repairs below. Compact planning defaults OFF after review. WP6 adds runtime/planner.py
+(plan_supported_task -> RecipeRequest | NeedsClarification | UnsupportedTask;
+master-plan shell-payload regression verbatim; fail-closed validate_plan
+rejecting any unknown executable field and truncated JSON; bounded
+recovery = exactly one repair attempt, never open-ended), budget tests
+(planner call consumes zero mutation budget), provider request contract
+test (single compact message, NO tool bindings, settings-bound model),
+and the gateway planner route between exact-match and the agent, behind
+`compact_planner_enabled` (WP8 rollback lever). Suite: 286 passed,
+1 skipped; ruff/mypy clean (45 files). No push.
+
+## Round-6 live verification (production gateway)
+
+Natural phrasing live smoke ('please launch chrome for me', real
+stealth/union-alpha): one OpenRouter call (the planner decision), then
+local recipe execution, final answer = honest failure text with usage
+0 prompt / 0 completion tokens in the response — this was an ACCOUNTING
+BUG, not evidence of free model use. Repaired with the shared usage ledger
+callback; a discriminating e2e regression first failed (0 != 123), then
+passed with 123 input / 24 output tokens from fake provider metadata.
+The corrected accounting has NOT yet been live-tested. Log evidence (job
+bash-21): run_started -> one openrouter POST -> desktop session attempt
+-> run_finished ok in 3.39s. The GUI effect itself failed with
+DesktopDriverError (expected: real-driver dispatch compatibility is WP8
+live scope; the capability manifest also logged an idle-timeout policy
+error on end_session — daemon restart still pending). E2E (production
+lifespan + fake driver with real schemas): 'please launch chrome for me'
+-> 'Opened chrome.' with call_index == 1 exactly.
+
+## Integration repair queue (round-6 review)
+
+- Recipe routes accept action_ledger but pass run_store=None: no durable
+  recipe action rows. Existing zero-row live evidence exposed this gap.
+- CuaConnection.tools_by_name contains policy-wrapped tools, whereas the
+  executor requires raw normalized tools. Production evidence is flattened;
+  fake dictionaries in current e2e tests do not expose this incompatibility.
+- Streaming agent scope omits action_ledger; audit and regression required.
+- Planner context argument is unused; clarification is discarded into agent
+  fallback. Constraints/memory, strict decision shapes, length/arithmetic
+  validation, streaming response format and cancellation need hardening.
+- Budget tests with an unconnected local RunBudget do not prove shared
+  gateway accounting. Provider contract test does not capture wire payload.
+- Preserve current stealth/union-alpha selection and bounded permissions.
+  Do not work around the expired capability manifest.
+
+## WP6 NOT done (honest leftovers)
+
+- Open WebUI auxiliary-generation accounting (untouched).
+- Prompt caching/routing: NOT enabled; requires real metadata + owner
+  price/privacy policy decision (master plan 15.2).
+- Provider request contract is scripted-model based; a real
+  stealth/union-alpha request capture is still pending (WP8 live scope).
+- SKILL.md YAML frontmatter still breaks skill loading (WP7).
 
 ## Round-5 verification
 

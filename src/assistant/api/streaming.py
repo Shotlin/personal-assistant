@@ -117,7 +117,7 @@ async def sse_agent_stream(
     async with manager_cm as run:  # type: ignore[attr-defined]
         try:
             async with cua_run_scope(
-                budget=budget, run=run, artifact_dir=artifact_dir
+                budget=budget, run=run, artifact_dir=artifact_dir, ledger=action_ledger
             ):
                 if run is not None and run.cancelled:
                     status = "cancelled"

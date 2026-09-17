@@ -20,10 +20,23 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
 from assistant.runtime.recipe_errors import RecipeFailure
-from assistant.runtime.runs import ActionState
+from assistant.runtime.runs import ActionState, RunActionLedger
 from assistant.runtime.session import DesktopRunCancelled
 from assistant.tools.policy import CUA_ALLOWED_TOOL_NAMES, MUTATING_TOOL_NAMES, OBSERVATION_DEFAULTS
 from assistant.tools.result_normalizer import ToolOutcome, normalize_mcp_result
+
+#: Semantic app identities (master plan WP5): recipe vocabulary stays
+#: stable (chrome/notes/...) while the real driver's launch schema wants
+#: macOS bundle identifiers. Verified live against cua-driver v0.28.2.
+APP_BUNDLE_IDS: dict[str, str] = {
+    "chrome": "com.google.Chrome",
+    "safari": "com.apple.Safari",
+    "terminal": "com.apple.Terminal",
+    "calculator": "com.apple.calculator",
+    "notes": "com.apple.Notes",
+    "finder": "com.apple.finder",
+    "mail": "com.apple.Mail",
+}
 
 
 class Budget(Protocol):
@@ -83,9 +96,11 @@ class RecipeExecutor:
         self, *, cua_tools_by_name: Mapping[str, BaseTool],
         run_store: ActionStore | None = None, run_id: str | None = None,
         budget: Budget | None = None, run: ActiveRun | None = None,
+        action_ledger: RunActionLedger | None = None,
     ) -> None:
         self._tools = dict(cua_tools_by_name)
         self._store = run_store
+        self._ledger = action_ledger
         self._run_id = run_id
         self._budget = budget
         self._run = run
@@ -107,13 +122,17 @@ class RecipeExecutor:
         tool = self._tools[name]
         self._step += 1
         ledger_id = None
-        if self._store is not None and self._run_id is not None:
+        if self._ledger is not None and name in MUTATING_TOOL_NAMES:
+            ledger_id = await self._ledger.plan(tool_name=name)
+        elif self._store is not None and self._run_id is not None:
             ledger_id = await self._store.record_action(
                 self._run_id, step_id=f"{self._recipe}:{self._step}", tool_name=name,
             )
 
         async def mark(state: ActionState, evidence: str = "") -> None:
-            if self._store is not None and ledger_id is not None:
+            if self._ledger is not None and ledger_id is not None:
+                await self._ledger.observe(ledger_id, state, evidence)
+            elif self._store is not None and ledger_id is not None:
                 await self._store.mark_action(ledger_id, state, evidence)
 
         try:
@@ -156,16 +175,28 @@ class RecipeExecutor:
 
         if app_id not in APP_IDS:
             raise RecipeFailure("Unsupported application")
-        return await self._invoke("launch_app", {"app_id": app_id})
+        # Semantic lowering (verified against the real cua-driver v0.28.2
+        # schema, 2026-09-17): launch_app exposes bundle_id/name with
+        # additionalProperties=false -- there is no app_id parameter, so a
+        # raw app_id payload is rejected by the driver's schema.
+        payload: dict[str, object] = {"bundle_id": APP_BUNDLE_IDS[app_id]}
+        tool_args = self._tools["launch_app"].args if "launch_app" in self._tools else {}
+        if "bundle_id" not in tool_args:
+            if "app_id" not in tool_args:
+                raise RecipeFailure("launch_app lacks a supported identity parameter")
+            payload = {"app_id": app_id}
+        return await self._invoke("launch_app", payload)
 
     async def read_state(self) -> ToolOutcome:
         """Fresh observation via any available allowlisted observation tool.
 
         cua-driver exposes window/desktop state under different native
         names; a recipe needs identity evidence, not one specific name.
+        get_window_state requires pid+window_id in v0.28.2 (verified
+        live), so it is only usable with a prior window listing.
         """
-        for name in ("get_window_state", "list_windows", "get_desktop_state",
-                     "get_accessibility_tree"):
+        for name in ("get_desktop_state", "get_accessibility_tree",
+                     "get_window_state"):
             if name in self._tools:
                 return await self._invoke(name, {})
         raise RecipeFailure("Required native tool unavailable: any observation tool")
