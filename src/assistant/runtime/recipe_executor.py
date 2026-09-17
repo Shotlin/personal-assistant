@@ -162,7 +162,12 @@ class RecipeExecutor:
             raise
         except Exception as exc:
             await mark("failed")
-            raise RecipeFailure(f"{name} failed: {type(exc).__name__}") from exc
+            # Keep the driver's own actionable text (e.g. the live-observed
+            # 'permissions_pending: macOS Accessibility or Screen Recording
+            # permission is still pending...'), not just the exception type:
+            # a bare 'DesktopDriverError' hides what the user must fix.
+            detail = str(exc).strip() or type(exc).__name__
+            raise RecipeFailure(f"{name} failed: {detail[:300]}") from exc
         state: ActionState = (
             "confirmed" if outcome.status == "ok" else
             "unknown" if outcome.status == "unknown" else "failed"
