@@ -169,11 +169,20 @@ docker compose up -d postgres      # integration/e2e tests need it
 uv run pytest                      # unit + integration + e2e (no live model/CUA)
 ```
 
-Live checks (spend real tokens / need the driver):
+Live checks (spend real tokens / need the driver). The one-command path
+once `.env` has the key and CuaDriver has TCC grants:
 
 ```bash
-RUN_LIVE_MODEL=1 uv run pytest tests -k live_model        # provider smoke
-RUN_LIVE_CUA=1 uv run pytest tests -k live_cua            # calculator flow
+uv run python scripts/pick_model.py          # list cheap tool-capable models
+uv run python scripts/pick_model.py --set <model-id>   # set MODEL_NAME
+./scripts/go_live.sh                         # run every live check in order
+```
+
+Individual checks:
+
+```bash
+RUN_LIVE_MODEL=1 uv run pytest tests/integration/test_live_model.py
+RUN_LIVE_CUA=1 uv run pytest tests/e2e/test_cua_calculator.py
 uv run python scripts/verify_cua.py --live
 ```
 
