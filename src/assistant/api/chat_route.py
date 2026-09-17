@@ -20,7 +20,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from assistant.agent.context import (
     MAX_RUN_WALL_CLOCK_SECONDS,
@@ -399,6 +399,40 @@ async def stop_run(run_id: str, request: Request) -> dict[str, str]:
     return {"status": "cancelling", "run_id": run_id}
 
 
+async def _persist_recipe_turn(
+    request: Request,
+    identity: RequestIdentity,
+    user_text: str,
+    assistant_text: str,
+) -> None:
+    """Record a fast-path exchange on the agent's thread (review P1-3).
+
+    Without this, the recipe turn is invisible to later agent turns: the
+    checkpoint holds zero messages and general-agent fallback cannot
+    remember what was just done (violates the memory contract F04).
+    Best-effort: a persistence failure is logged, never raised -- the
+    user's answer must not depend on memory writes.
+    """
+    agent = getattr(request.app.state, "agent", None)
+    if agent is None:
+        return
+    config: dict[str, Any] = {"configurable": {"thread_id": identity.thread_id}}
+    try:
+        await agent.aupdate_state(
+            config,
+            {"messages": [HumanMessage(content=user_text), AIMessage(content=assistant_text)]},
+        )
+        logger.info(
+            "recipe_turn_persisted",
+            extra={"event": "recipe_turn_persisted", "run_id": identity.chat_id},
+        )
+    except Exception:  # noqa: BLE001 -- memory must never break the run
+        logger.exception(
+            "recipe_turn_persist_failed",
+            extra={"event": "recipe_turn_persist_failed", "run_id": identity.chat_id},
+        )
+
+
 async def _try_recipe_route(
     body: ChatCompletionRequest,
     request: Request,
@@ -477,6 +511,8 @@ async def _try_recipe_route(
     text = render_result(result)
     # Terminal status is the recipe's own truth: a verified result is
     # completed; an honest failure is failed (P2-5b) -- never completed.
+    # The exchange is persisted for later agent turns (P1-3, best-effort).
+    await _persist_recipe_turn(request, identity, str(last), text)
     return ChatCompletionResponse(
         id=f"chatcmpl-{run_id}",
         created=int(time.time()),
