@@ -57,3 +57,39 @@ def is_fresh(
         observed = observed.replace(tzinfo=UTC)
     age = (now or datetime.now(tz=UTC)) - observed
     return abs(age.total_seconds()) <= max_age_s
+
+
+def observation_is_fresh(
+    outcome: object,
+    *,
+    current_epoch: int | None = None,
+    max_age_s: float = DEFAULT_MAX_AGE_S,
+    now: datetime | None = None,
+) -> bool:
+    """Freshness policy for a normalized ToolOutcome observation.
+
+    Reads the ``observed_at``/``navigation_epoch`` stamps the executor
+    attaches to observations. Unstamped evidence (a driver that provides
+    neither field) is NOT treated as fresh: an unverifiable timestamp
+    must not validate an effect.
+    """
+    structured = getattr(outcome, "structured", None)
+    if not isinstance(structured, dict):
+        return False
+    observed_at = structured.get("observed_at")
+    if not isinstance(observed_at, str) or not observed_at:
+        return False
+    try:
+        observed = datetime.fromisoformat(observed_at)
+    except ValueError:
+        return False
+    epoch = structured.get("navigation_epoch")
+    if current_epoch is not None:
+        if not isinstance(epoch, int) or epoch != current_epoch:
+            return False
+    elif not isinstance(epoch, int):
+        return False
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=UTC)
+    age = ((now or datetime.now(tz=UTC)) - observed).total_seconds()
+    return abs(age) <= max_age_s

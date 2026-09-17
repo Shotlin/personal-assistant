@@ -1,5 +1,33 @@
 # Phase 1.1 implementation progress
 
+## Round-15 checkpoint — observation freshness policy wired
+
+`scene.observation_is_fresh(outcome)` (TDD, red first): a normalized
+ToolOutcome observation is fresh only when it carries an ISO `observed_at`
+within the age bound AND a `navigation_epoch` consistent with the current
+scene epoch. Unstamped or unparseable evidence is NOT fresh (must not
+validate an effect); stale-stamped observations (old epoch or old
+timestamp) fail even when `foreground_app` matches, closing the WP7
+regression 'an unchanged unrelated screenshot does not prove current
+input focus'. Recipe identity matching (`foreground_matches`) is
+unchanged; freshness is the additional gate.
+
+Red evidence: 2 failures (missing policy) before `observation_is_fresh`
+existed; after, 8 scene/freshness tests pass. One test-side fixture fix
+during the cycle: the fake tool's `get_input_schema` must return a
+pydantic BaseModel subclass (the executor's real convention; a plain dict
+raised `issubclass() arg 1 must be a class` — the same unfaithful-fixture
+class of error as the round-7 keyword-expansion incident). Full gates:
+347 passed, 1 skipped; ruff/mypy clean (46 files); diff check clean.
+
+Scope note: unit-level policy wired into the observation contract; the
+epoch is currently driver-stamped only when the driver provides it, and
+no live desktop call was made (permission gate still pending, probing
+paused). Recipes do not yet bump epochs themselves. Remaining:
+constraints wiring on both routes, cancellation/disconnect truth,
+provider-wire capture, epoch management across recipes, live desktop run.
+WP1-WP8 full completion and measured latency improvement remain unclaimed.
+
 ## Round-14 checkpoint — WP7 scene freshness + fallback contract
 
 Two WP7 pieces landed, both TDD:
