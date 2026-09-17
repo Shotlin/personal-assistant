@@ -44,6 +44,7 @@ CUA_ALLOWED_TOOL_NAMES = frozenset(
         "get_accessibility_tree",
         "verify_state",
         "bring_to_front",
+        "zoom",
         # cua-driver v0.28.1 native interaction tools.
         "double_click",
         "hotkey",
