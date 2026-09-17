@@ -1,5 +1,35 @@
 # Phase 1.1 implementation progress
 
+## Round-13 checkpoint — planner wire-boundary hardening
+
+`validate_plan` now enforces the wire contract before trusting any payload:
+- size check first (`MAX_PLAN_CHARS`; oversized input raises before
+  `json.loads` is ever reached, proven by a fail-loud monkeypatch),
+- strict UTF-8 decode for bytes (`b"\xff"` raised UnicodeDecodeError out of
+  json previously; now a domain `InvalidPlan`),
+- decision plans must carry EXACTLY the menu shape (`clarification` with
+  only `question`; `unsupported` with nothing else) and the decision string
+  must be one of the two enumerated values; nulls, booleans, ints and
+  unknown decisions are all invalid instead of silently mapping to
+  UnsupportedTask,
+- malformed context (`decision: True/42`, duplicate keys, deep nesting)
+  still fail closed, and one bounded repair attempt survives for all of
+  them (repairable oversized replies included).
+
+Red evidence: 14 failures across the new `test_planner_boundaries.py`
+before the change, including 8 accepted-but-should-reject decision shapes
+and two oversized replies that validated as recipes. After the fix: 31
+planner tests pass; one test-side regex mismatch (`match="size"` vs the
+real message) was fixed in the test, not the code. Full gates: 338 passed,
+1 skipped, ruff/mypy clean (45 files), diff check clean. No live desktop or
+provider calls; the planner rollout flag stays false by default.
+
+Scope note: this hardens planner INPUT validation only. It does not wire
+constraints/memory into the planner (`context` is still ignored), does not
+change execution permissions, and does not claim any live latency
+improvement. Remaining: constraints on both routes, cancellation/disconnect
+truth, provider-wire capture, WP7 compact window state, live desktop run.
+
 ## Round-12 checkpoint — planner outcome memory continuity
 
 Planner-route success and honest failure responses now use the same

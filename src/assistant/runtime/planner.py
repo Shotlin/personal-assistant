@@ -115,22 +115,35 @@ class _DuplicateKeyRejector:
         return result
 
 
-def validate_plan(plan: object) -> RecipeRequest:
-    """Validate a plan payload into a RecipeRequest; fail closed.
-
-    Accepts ONLY an enumerated recipe id whose arguments match that
-    recipe's schema exactly. Any extra executable field -- ``shell``,
-    ``command``, ``path``, anything unrequested -- is rejected before any
-    execution can observe it. Truncated JSON cannot validate because it
-    never parses.
-    """
+def _decode_plan(plan: object) -> dict[str, Any]:
+    """Wire-level decode: size first, strict UTF-8, then strict JSON."""
     if isinstance(plan, (str, bytes)):
+        if len(plan) > MAX_PLAN_CHARS:
+            raise InvalidPlan(f"plan exceeds {MAX_PLAN_CHARS} char wire limit")
+        if isinstance(plan, bytes):
+            try:
+                plan = plan.decode("utf-8", "strict")
+            except UnicodeDecodeError as exc:
+                raise InvalidPlan("plan is not valid UTF-8") from exc
         try:
             plan = json.loads(plan, object_pairs_hook=_DuplicateKeyRejector())
         except json.JSONDecodeError as exc:
             raise InvalidPlan(f"plan is not valid JSON: {exc.msg}") from exc
     if not isinstance(plan, dict):
         raise InvalidPlan("plan must be a JSON object")
+    return plan
+
+
+def validate_plan(plan: object) -> RecipeRequest:
+    """Validate a plan payload into a RecipeRequest; fail closed.
+
+    Accepts ONLY an enumerated recipe id whose arguments match that
+    recipe's schema exactly, or one exact menu decision shape. Any extra
+    executable field -- ``shell``, ``command``, ``path``, anything
+    unrequested -- is rejected before any execution can observe it.
+    Truncated JSON cannot validate because it never parses.
+    """
+    plan = _decode_plan(plan)
     _reject_mixed_shape(plan)
     allowed_top = {"recipe_id", "arguments", "decision", "question", "reason"}
     unknown_top = set(plan) - allowed_top
@@ -139,14 +152,22 @@ def validate_plan(plan: object) -> RecipeRequest:
             f"unknown executable payload in plan: {sorted(unknown_top)!r}"
         )
     decision = plan.get("decision")
-    if decision is None and "decision" in plan:
-        raise InvalidPlan("decision must be a non-null string")
-    if decision == "clarification":
-        question = plan.get("question")
-        if not isinstance(question, str) or not question.strip():
-            raise InvalidPlan("clarification requires a question string")
-        raise _ClarificationSignal(question.strip())
-    if decision is not None:
+    if "decision" in plan:
+        # Decision shapes are exact menu entries; stray metadata on a
+        # decision plan is invalid, and the decision string must be one
+        # of the two enumerated values (arbitrary strings are not a
+        # command channel -- they fall back as UnsupportedTask at the
+        # plan_supported_task layer, not by validating as a decision).
+        if not isinstance(decision, str) or decision not in ("clarification", "unsupported"):
+            raise InvalidPlan("decision must be 'clarification' or 'unsupported'")
+        expected = {"question"} if decision == "clarification" else set()
+        if set(plan) - {"decision"} != expected:
+            raise InvalidPlan(f"{decision} plan must carry exactly {sorted(expected) or 'nothing'}")
+        if decision == "clarification":
+            question = plan["question"]
+            if not isinstance(question, str) or not question.strip():
+                raise InvalidPlan("clarification requires a question string")
+            raise _ClarificationSignal(question.strip())
         raise _UnsupportedSignal(str(decision))
     recipe_id = plan.get("recipe_id")
     if not isinstance(recipe_id, str):
