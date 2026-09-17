@@ -214,15 +214,22 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
     defaults = OBSERVATION_DEFAULTS.get(name, {})
     accepts_session = isinstance(getattr(tool, "args", None), dict) and "session" in tool.args
     captures_screenshot = name in SCREENSHOT_CAPABLE_TOOLS
-    artifact_dir = cua_artifact_dir.get()
 
     async def safe(**kwargs: Any) -> Any:
+        # ContextVars must be read at call time: the gateway sets them
+        # inside the request scope, after tools were wrapped (master plan
+        # 7.2 -- never rely on wrap-time snapshots).
+        artifact_dir = cua_artifact_dir.get()
         if accepts_session:
             session = cua_current_session.get()
             if session and not kwargs.get("session"):
                 kwargs["session"] = session
         for key, value in defaults.items():
-            kwargs.setdefault(key, value)
+            # Schema defaults arrive as None (LangChain fills every schema
+            # field), so None means "unset" here -- setdefault would keep
+            # the None and silently drop the text-first baseline.
+            if kwargs.get(key) is None:
+                kwargs[key] = value
         if (
             captures_screenshot
             and artifact_dir
