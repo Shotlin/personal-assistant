@@ -45,6 +45,7 @@ from assistant.api.turns import decide_turn, last_user_content, message_text, no
 from assistant.models import build_chat_model
 from assistant.observability.timing import RunTimeline
 from assistant.observability.usage import LedgerCallbackHandler, UsageLedger
+from assistant.runtime.runs import RunActionLedger
 from assistant.settings import Settings
 from assistant.tools.policy import cua_run_scope
 
@@ -252,8 +253,16 @@ async def chat_completions(
         if identity.is_utility:
             response = await _run_utility(body, request, settings, run_id, ledger)
         else:
+            # The action ledger exists only for claimed runs: rows are
+            # FK-bound to the registry entry created by the claim.
+            action_ledger = (
+                RunActionLedger(run_store, run_id=run_id)
+                if claimed and run_store is not None
+                else None
+            )
             response = await _run_agent_turn(
-                body, request, settings, identity, run_id, ledger, timeline
+                body, request, settings, identity, run_id, ledger, timeline,
+                action_ledger=action_ledger,
             )
     except GatewayError as exc:
         if claimed and run_store is not None:
@@ -322,6 +331,7 @@ async def _run_agent_turn(
     run_id: str,
     ledger: UsageLedger,
     timeline: RunTimeline,
+    action_ledger: RunActionLedger | None = None,
 ) -> Any:
     agent = getattr(request.app.state, "agent", None)
     if agent is None:
@@ -389,6 +399,7 @@ async def _run_agent_turn(
                 status_events_enabled=settings.status_events_enabled,
                 status_quiet_seconds=settings.status_quiet_seconds,
                 run_store=getattr(request.app.state, "run_store", None),
+                action_ledger=action_ledger,
             ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -398,7 +409,7 @@ async def _run_agent_turn(
     # desktop session on every terminal path (result, error, timeout).
     async with _open_desktop_run(desktop_manager, run_id) as run:
         async with cua_run_scope(
-            budget=budget, run=run, artifact_dir=artifact_dir
+            budget=budget, run=run, artifact_dir=artifact_dir, ledger=action_ledger
         ):
             try:
                 async with asyncio.timeout(MAX_RUN_WALL_CLOCK_SECONDS):

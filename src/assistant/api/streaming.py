@@ -87,6 +87,7 @@ async def sse_agent_stream(
     status_events_enabled: bool = True,
     status_quiet_seconds: float = 6.0,
     run_store: Any | None = None,
+    action_ledger: Any | None = None,
 ) -> AsyncIterator[str]:
     """Yield OpenAI-compatible SSE chunks for one agent run, ending with [DONE].
 
