@@ -16,9 +16,10 @@ from typing import Any
 
 from langchain_core.tools import BaseTool, StructuredTool
 
-from assistant.agent.context import RunBudget
+from assistant.agent.context import CuaBudgetExceeded, RunBudget
 
 logger = logging.getLogger("assistant.tools.policy")
+
 
 #: Phase 1 application-side allowlist (spec section 13.6).
 #:
@@ -125,11 +126,13 @@ def assert_observation_available(enabled_names: list[str]) -> None:
 
 
 def wrap_mutating_tool(tool: BaseTool) -> BaseTool:
-    """Gate a mutating CUA tool with the per-run budget and action logging.
+    """Gate a mutating CUA tool with the per-run budget and error conversion.
 
-    Observation tools pass through unchanged. When no per-run budget is
-    installed (direct scripts), the action is logged but not counted; the
-    gateway always installs a budget for agent runs (spec section 17).
+    Observation tools pass through unchanged (see :func:`wrap_tool_errors`).
+    Driver-side failures are returned as error text so the agent can observe
+    and recover (spec rule 15) instead of aborting the run. When no per-run
+    budget is installed (direct scripts), the action is logged but not
+    counted; the gateway always installs a budget for agent runs (section 17).
     """
     if getattr(tool, "name", None) not in MUTATING_TOOL_NAMES:
         return tool
@@ -147,7 +150,12 @@ def wrap_mutating_tool(tool: BaseTool) -> BaseTool:
             "cua_mutating_action",
             extra={"event": "cua_mutating_action", "tool": tool_name},
         )
-        return await original(**kwargs)
+        try:
+            return await original(**kwargs)
+        except CuaBudgetExceeded:
+            raise
+        except Exception as exc:  # noqa: BLE001 -- tool errors become agent-visible text
+            return f"Error: {exc}"
 
     return StructuredTool(
         name=getattr(tool, "name", "cua_tool"),
@@ -157,9 +165,57 @@ def wrap_mutating_tool(tool: BaseTool) -> BaseTool:
     )
 
 
+#: v0.28.2 addressing contract appended to tool descriptions so the model
+#: addresses targets correctly on the first attempt (spec section 13.2).
+ADDRESSING_CONTRACT = (
+    " Driver contract (cua-driver v0.28.2): address a target element with "
+    "`element_token` from the latest get_window_state `elements` output, or "
+    "with `snapshot_id` plus `element_index`; a bare element_index is rejected. "
+    "After important UI actions, re-run get_window_state before the next action "
+    "and verify the observed state."
+)
+
+_DESCRIPTION_ENRICHED_TOOLS = frozenset(
+    {"click", "double_click", "type_text", "press_key", "scroll", "set_value", "hotkey"}
+)
+
+
+def _enriched_description(tool: BaseTool) -> str:
+    base = getattr(tool, "description", "") or ""
+    if getattr(tool, "name", None) in _DESCRIPTION_ENRICHED_TOOLS:
+        return f"{base}{ADDRESSING_CONTRACT}"
+    return base
+
+
+def wrap_tool_errors(tool: BaseTool) -> BaseTool:
+    """Convert driver-side failures of any CUA tool into agent-visible text.
+
+    The MCP adapter raises on ``isError`` results (including validation
+    errors like wrong argument shapes). The agent must see the error text
+    to recover per spec rule 15, so every enabled CUA tool gets this
+    conversion; mutating tools additionally carry the budget gate.
+    """
+    original = getattr(tool, "coroutine", None)
+    if original is None:
+        return tool
+
+    async def safe(**kwargs: Any) -> Any:
+        try:
+            return await original(**kwargs)
+        except Exception as exc:  # noqa: BLE001 -- tool errors become agent-visible text
+            return f"Error: {exc}"
+
+    return StructuredTool(
+        name=getattr(tool, "name", "cua_tool"),
+        description=_enriched_description(tool),
+        args_schema=getattr(tool, "args_schema", None),
+        coroutine=safe,
+    )
+
+
 def apply_tool_policy(tools: Sequence[BaseTool]) -> tuple[list[BaseTool], list[str]]:
-    """Wrap mutating tools with the budget gate; return (wrapped, wrapped_names)."""
-    wrapped = [wrap_mutating_tool(tool) for tool in tools]
+    """Apply budget gates (mutating) and error conversion (all) to CUA tools."""
+    wrapped = [wrap_mutating_tool(wrap_tool_errors(tool)) for tool in tools]
     return wrapped, [getattr(tool, "name", "?") for tool in wrapped]
 
 

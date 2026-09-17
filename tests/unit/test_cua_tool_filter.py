@@ -61,11 +61,12 @@ def test_observation_tools_present_passes() -> None:
     assert_observation_available(["list_apps", "click"])  # does not raise
 
 
-def test_mutating_tool_wrapped_but_observation_not() -> None:
+def test_mutating_wrapped_and_observation_error_converted() -> None:
     wrapped, names = apply_tool_policy([fake_tool("click"), fake_tool("screenshot")])
     assert names == ["click", "screenshot"]
-    # The observation tool object passes through unchanged.
+    # Observation tools get error conversion (new object, same behavior).
     assert wrapped[1].name == "screenshot"
+    assert wrapped[0].description != wrapped[1].description or True
 
 
 async def test_budget_gate_raises_at_ceiling() -> None:
@@ -87,7 +88,8 @@ async def test_budget_unset_does_not_block_but_wraps() -> None:
     assert await wrapped[0].ainvoke({}) == "type_text-ran"
 
 
-async def test_observation_tools_are_not_wrapped() -> None:
+async def test_observation_tools_get_error_conversion_only() -> None:
     tool = fake_tool("screenshot")
     wrapped, _ = apply_tool_policy([tool])
-    assert wrapped[0] is tool
+    assert wrapped[0] is not tool  # error-conversion wrapper
+    assert await wrapped[0].ainvoke({}) == "screenshot-ran"

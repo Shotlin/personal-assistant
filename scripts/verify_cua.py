@@ -50,7 +50,7 @@ async def main(argv: list[str] | None = None) -> int:
     if launch is None:
         print("launch_app not allowlisted; skipping launch check")
         return 0
-    result = await launch.ainvoke({"app_name": "Calculator"})
+    result = await launch.ainvoke({"bundle_id": "com.apple.calculator"})
     print("launch_app result (truncated):", str(result)[:200])
     print(f"mutating budget used: {budget.used}")
     return 0

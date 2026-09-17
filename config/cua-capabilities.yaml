@@ -62,6 +62,8 @@ resources:
       windows: all
       terminate: driver_launched
   desktop:
-    # Window-scoped observation/input only; no unfiltered desktop
-    # capture or desktop-coordinate input in Phase 1.
-    display: false
+    # v0.28.2 classifies list_apps/list_windows (Phase 1 required
+    # observation, spec section 2.3) as desktop-display tools, so display
+    # must be true. Input actions remain pid-bound to the allowlisted
+    # apps above; reviewed 2026-09-17 with the allowed/denied test cycle.
+    display: true
