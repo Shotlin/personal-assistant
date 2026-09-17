@@ -33,6 +33,13 @@ PLACEHOLDER = (
 )
 _TRIM_THRESHOLD_CHARS = 400
 
+#: Hard ceiling on the NEWEST observation too (master plan 6.3 / F03): a
+#: model requesting a huge accessibility tree must not receive an
+#: unbounded payload. Above the cap the model sees a bounded head plus a
+#: truncation marker with a refinement hint; the full payload stays in
+#: thread state for audit, never destroyed.
+NEWEST_HARD_CAP_CHARS = 12_000
+
 
 class ObservationTrimMiddleware(AgentMiddleware):
     """Collapse older observation tool results before each model call."""
@@ -70,6 +77,21 @@ class ObservationTrimMiddleware(AgentMiddleware):
                 continue
             messages[index] = message.model_copy(update={"content": PLACEHOLDER})
             changed = True
+
+        # Hard-cap the newest observation regardless of tool arguments.
+        if observation_indices:
+            newest_index = observation_indices[-1]
+            newest = messages[newest_index]
+            text = str(newest.content)
+            if len(text) > NEWEST_HARD_CAP_CHARS:
+                bounded = (
+                    text[:NEWEST_HARD_CAP_CHARS]
+                    + f"\n[observation truncated at {NEWEST_HARD_CAP_CHARS} chars; "
+                    "refine with smaller max_elements/max_depth or a targeted "
+                    "query instead of the full tree]"
+                )
+                messages[newest_index] = newest.model_copy(update={"content": bounded})
+                changed = True
         if changed:
             return request.override(messages=messages)
         return request
