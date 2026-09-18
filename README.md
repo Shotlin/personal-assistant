@@ -92,11 +92,23 @@ cua-driver --version          # must report the recorded pin (0.28.2)
 #   - Screen Recording     -> enable for CuaDriver.app
 cua-driver permissions status
 
-# Start the bounded daemon (TCC attribution stays with CuaDriver.app):
-open -n -g -a CuaDriver --args serve \
-  --permission-mode bounded \
-  --capability-manifest "/ABSOLUTE/PATH/config/cua-capabilities.yaml" \
-  --approve-capability-manifest
+# Bounded daemon (persistent; TCC attribution stays with CuaDriver.app):
+# Managed by the LaunchAgent installed 2026-09-18 — starts at login and
+# respawns the daemon after idle exit, so a gateway reconnect never
+# resurrects a standard-mode daemon without the capability manifest
+# (root cause of the recurring `permissions_pending` failures).
+#   ~/Library/LaunchAgents/com.trycua.cua_driver_daemon.plist
+#   launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.trycua.cua_driver_daemon.plist
+#   launchctl kickstart -k gui/501/com.trycua.cua_driver_daemon  # manual restart
+#   cua-driver status   # must show: permission mode: bounded (trusted_startup_configuration)
+#                       #             capability manifest: configured=true, approved_at_startup=true
+#
+# WARNING (this machine): `open -n -g -a CuaDriver --args serve ...` DROPS
+# the arguments — the daemon always came up in standard mode without the
+# manifest, re-triggering the TCC onboarding popup even with both toggles
+# already enabled. The LaunchAgent invokes the bundle executable directly
+# (/Applications/CuaDriver.app/Contents/MacOS/cua-driver serve ...), which
+# forwards argv correctly. Never rely on `open --args` here.
 
 # Verify from this repo (connectivity, filtering, allowed action):
 uv run python scripts/verify_cua.py --live
@@ -244,11 +256,17 @@ and reply text — the gateway does not retry around a permissions gate.
 | `/readyz` returns 503 | `docker compose up -d postgres`; check `DATABASE_URL` |
 | Model picker empty in Open WebUI | gateway reachable from container? `docker compose exec open-webui curl -s http://host.docker.internal:8787/healthz` |
 | CUA tools missing at startup | driver installed? `cua-driver --version`; manifest path absolute and existing; bounded daemon running |
+| Desktop actions fail with `permissions_pending` while both toggles are ON | the bounded daemon died (idle exit / reboot) and the gateway's `mcp` proxy resurrected it in standard mode. `cua-driver status` — if it says standard or no daemon: `launchctl kickstart -k gui/501/com.trycua.cua_driver_daemon`, then re-check. Never re-grant toggles for this; they are not the cause. |
 | Memory rejected warning in logs | the memory write policy blocked a secret-like write (by design) |
 
 ## Security posture (Phase 1)
 
 1. CUA runs bounded only; unrestricted is rejected at startup.
+   The gateway also verifies the *live daemon's* posture before any tool
+   is exposed (`cua_daemon_posture_verified` in the startup log): a
+   daemon not in bounded mode, or without the approved capability
+   manifest, fails gateway startup (added 2026-09-18 after the silent
+   standard-mode resurrection incident).
 2. Tool allowlist enforced twice (native manifest + application filter).
 3. Gateway, Open WebUI, and PostgreSQL all listen on loopback only.
 4. Provider keys never leave the gateway process; Open WebUI only holds
