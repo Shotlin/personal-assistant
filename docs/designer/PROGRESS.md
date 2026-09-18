@@ -1,8 +1,8 @@
 # Agent Designer — Progress Log
 
-**Last updated:** 2026-09-19T03:20:00Z
-**Current package:** P2 — Registry & validation (complete; committed)
-**Next action for a new session:** Begin P3 (Open WebUI adapters) per `docs/designer/PLAN.md`: adapters/openwebui.py + adapters/sources.py (catalog/resolve/create-update for prompts+skills from P0 fixture contracts), model-preset import preview, built-in skills read-only + copy-as-custom, immutable snapshots with provenance, Knowledge listing + BLOCKED KnowledgeSource adapter (Fix 2), test_sources.py.
+**Last updated:** 2026-09-19T04:10:00Z
+**Current package:** P3 — Open WebUI adapters (complete; committed)
+**Next action for a new session:** Begin P4 (Connectors) per `docs/designer/PLAN.md`: adapters/mcp.py (stdio + Streamable HTTP, operator-approved stdio, schema digests + generation), adapters/openapi.py (SSRF guards), ConnectorRuntimeState with O(1) hot-path check (C3), ephemeral validation leases (Clar 1), CUA as registered connection, Terminal blocked-without-sandbox, native plugins CATALOG_ONLY, test_connectors.py.
 
 **Document-set confirmation (Safety note 3):** all four required documents confirmed present and readable on 2026-09-18 before code changes:
 1. `01_AGENT_DESIGNER_REQUIREMENTS.md` (~/Downloads, read in full)
@@ -19,8 +19,8 @@
 | P0 Baseline & evidence | Complete (probe pending) | Gates: 372 passed/4 skipped, ruff+mypy clean; Open WebUI probes await owner account |
 | P1 Auth, RBAC & credentials | Complete | 16 tests; flag-on/-off boundary proven; AESGCM credentials w/ generations |
 | P2 Registry & validation | Complete | schemas + migration 002 + R06 validation + ETag CAS; 24 designer tests |
-| P3 Open WebUI adapters | Not started | |
-| P4 Connectors | Not started | |
+| P3 Open WebUI adapters | Complete | contract-first catalog + skill CRUD + BLOCKED Knowledge adapter (Fix 2); 11 tests |
+| P4 Connectors | Not started | Next up |
 | P5 Compiler, runtimes, authorization & migration | Not started | |
 | P6 Context policies | Not started | |
 | P7 Activation & revocation | Not started | |
@@ -48,6 +48,29 @@
 Standing restrictions: no push, no deploy, no paid provider API calls, no real desktop (CUA) operations without explicit authorization. Live test gates stay env-gated (`RUN_LIVE_MODEL`, `RUN_LIVE_CUA`).
 
 ## Per-package log (newest first)
+
+### P3 — Open WebUI adapters (complete 2026-09-19)
+
+**Status:** Complete (contract-first; live probes still pending owner account). Committed on `agent-designer`.
+
+**Implemented (frozen plan: R03/R07-08 + Fix 2 + Clar 4):**
+- `adapters/openwebui.py`: authenticated client over the user's own upstream credential (resolved server-side, never in the browser); redirects never followed (SSRF guard); 401/403 surfaced as designer errors — denial is never hidden behind an empty list; prompts/skills/knowledge list+get; skill create/update through Open WebUI's API (authoring stays upstream, R07).
+- `adapters/knowledge.py`: the Fix-2 `KnowledgeSource` contract. `UnverifiedKnowledgeSource` is BLOCKED ("Runtime adapter unverified") and refuses retrieval; `OpenWebUIKnowledgeSource` exists contract-first but is only constructible with `verified=True` after the P0 probe contract test passes. Disconnect ⇒ zero retrieval calls by construction (compiler mounts retrieval only for connected+executable nodes, P5).
+- `adapters/sources.py`: normalized `SourceService` — catalog with dual status dimensions (CapabilityStatus vs HealthStatus kept separate; gateway skills read-only with content-hash provenance; upstream skills editable in place; model presets CATALOG_ONLY pending import-preview work; Knowledge BLOCKED with reason); create_skill; update_skill with explicit read-compare-write conflict detection (upstream has no transactional CAS — declared, not faked, 409 on concurrent change); copy_builtin_skill (never writes app source).
+- `service.py`: per-actor upstream client factory resolving the actor's encrypted credential; SourceService wired into designer state.
+- `routes.py`: `GET /catalog?kind=`, `POST /resources/skills`, `POST /resources/skills/{id}/update`, `POST /resources/skills/copy-builtin` — all require `designer.view`/`designer.edit` (C1).
+- `validation.py`: connected+enabled knowledge/terminal nodes now FAIL validation (`capability_blocked`) — activation fails for those nodes while adapters are unverified (Fix 2 / Fix 5); disconnected nodes remain draft-only.
+- `tests/designer/test_sources.py`: 11 tests — catalog normalization (gateway+upstream skills, prompts, knowledge BLOCKED, model CATALOG_ONLY), upstream denial surfaced (403 → DesignerError, not empty list), skill creation hits upstream, update conflict detection (stale hash → 409 without overwrite), built-in read-only + copy-as-custom, BLOCKED retrieval raises, connected knowledge node fails validation, disconnected knowledge allowed but inert.
+
+**Commands/results:**
+- `uv run pytest tests/designer/` → **51 passed** (16 auth + 24 graph + 11 sources)
+- `uv run pytest` → **423 passed, 4 skipped**
+- `uv run ruff check .` → clean · `uv run mypy` → clean (129 files)
+
+**Notes for next packages:**
+- Live acceptance A5/A6 still require the owner-provided Open WebUI account (probe → contract verification → flip Knowledge adapter to EXECUTABLE only after the live test passes).
+- Model-preset import preview remains CATALOG_ONLY until P0 probe records the presets contract; not silently counted as done.
+- Fix-2 requires P5 compiler to gate retrieval tool mounting on `knowledge_source.capability_status == "EXECUTABLE"`.
 
 ### P2 — Registry & validation (complete 2026-09-19)
 

@@ -12,12 +12,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from assistant.designer.adapters.openwebui import OpenWebUIClient
 from assistant.designer.auth import (
     LoginRateLimiter,
     SessionManager,
     UpstreamAuthAdapter,
 )
 from assistant.designer.credentials import CredentialKeyMissing, CredentialStore, load_key
+from assistant.designer.errors import DesignerError
 from assistant.designer.store import DesignerStore
 from assistant.settings import Settings
 
@@ -58,11 +60,44 @@ async def build_designer_state(settings: Settings, app: Any) -> dict[str, Any]:
     limiter = LoginRateLimiter(
         max_attempts=settings.designer_login_max_attempts,
     )
+
+    # 4. Source adapters (P3): Open WebUI client per actor (credential
+    # resolved server-side), Knowledge BLOCKED until the probe verifies
+    # the retrieval contract (Fix 2).
+    from assistant.designer.adapters.knowledge import UnverifiedKnowledgeSource
+    from assistant.designer.adapters.sources import SourceService
+
+    async def client_for_actor(actor: Any) -> Any:
+        session = await store.load_session(actor.session_id_hash)
+        credential_id = (
+            str(session["credential_id"])
+            if session and session.get("credential_id")
+            else ""
+        )
+        if not credential_id:
+            raise DesignerError("session_required", "session has no upstream credential")
+        ref = await store.load_credential(credential_id)
+        if ref is None or str(ref["status"]) != "active":
+            raise DesignerError("session_required", "upstream credential unavailable")
+        from assistant.designer.credentials import CredentialRef
+
+        plaintext = await credential_store.resolve_plaintext(
+            actor_user_id=actor.user_id,
+            ref=CredentialRef(
+                credential_id=credential_id,
+                generation=int(ref["generation"]),
+                purpose=str(ref["purpose"]),
+            ),
+        )
+        return OpenWebUIClient(settings.designer_openwebui_base_url, plaintext)
+
+    sources = SourceService(client_for_actor, UnverifiedKnowledgeSource())
     return {
         "store": store,
         "credentials": credential_store,
         "sessions": sessions,
         "upstream": adapter,
         "limiter": limiter,
+        "sources": sources,
         "migrations_applied": applied,
     }

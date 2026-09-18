@@ -241,6 +241,22 @@ def validate_graph(graph: GraphDocument) -> ValidationReport:
                 report.add(node_id=node_id, edge_id=None, code="duplicate_memory_kind",
                            message=f"at most one connected memory node per kind ({kind})")
 
+    # --- capability gating (Clar 4, Fix 2, Fix 5) ---
+    # Resource types whose runtime adapter is not verified for this
+    # deployment cannot join an activatable graph. Knowledge is BLOCKED
+    # until the P0 probe verifies the retrieval contract; Terminal stays
+    # BLOCKED until an operator-provisioned sandbox is tested (P4).
+    _BLOCKED_TYPES: dict[str, str] = {
+        "knowledge": "Runtime adapter unverified",
+        "terminal": "sandbox adapter untested",
+    }
+    for node in graph.nodes:
+        if node.type in _BLOCKED_TYPES and node.id in connected_targets and node.data.enabled:
+            report.add(
+                node_id=node.id, edge_id=None, code="capability_blocked",
+                message=f"{node.type} is BLOCKED: {_BLOCKED_TYPES[node.type]}",
+            )
+
     # --- secret/executable scanning + disabled/attachment bookkeeping ---
     for node in graph.nodes:
         _scan_config(node.data.model_dump(), node.id, report)

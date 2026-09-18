@@ -429,3 +429,82 @@ async def archive_agent(request: Request, agent_id: str) -> dict[str, Any]:
         subject={"agent_id": agent_id, "slug": agent["slug"]},
     )
     return {"archived": True}
+
+
+# ---------------------------------------------------------------------------
+# Sources & catalog (P3): Open WebUI stays the authoring owner (R07).
+# ---------------------------------------------------------------------------
+
+
+@router.get("/catalog")
+async def get_catalog(request: Request, kind: str = "skill") -> dict[str, Any]:
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    require_permission(actor, "designer.view", {"kind": kind})
+    entries = await designer["sources"].catalog(actor, kind)
+    return {"kind": kind, "entries": entries}
+
+
+class SkillCreateRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    name: str
+    description: str = ""
+    content: str
+
+
+class SkillUpdateRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    name: str
+    description: str = ""
+    content: str
+    expected_hash: str
+
+
+class SkillCopyRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    builtin_id: str
+    name: str
+
+
+@router.post("/resources/skills")
+async def create_skill(request: Request, body: SkillCreateRequest) -> dict[str, Any]:
+    """Create an Open WebUI-owned custom skill (R07: text only; the skill
+    lives in Open WebUI afterwards — acceptance A5)."""
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    require_permission(actor, "designer.edit", {"resource": "skill.create"})
+    return await designer["sources"].create_skill(
+        actor, name=body.name, description=body.description, content=body.content
+    )
+
+
+@router.post("/resources/skills/{skill_id}/update")
+async def update_skill(request: Request, skill_id: str, body: SkillUpdateRequest) -> dict[str, Any]:
+    """Conflict-detected update: upstream has no transactional CAS, so the
+    Designer does read-compare-write and 409s on concurrent change (R07)."""
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    require_permission(actor, "designer.edit", {"resource": "skill.update"})
+    return await designer["sources"].update_skill(
+        actor,
+        skill_id=skill_id,
+        name=body.name,
+        description=body.description,
+        content=body.content,
+        expected_hash=body.expected_hash,
+    )
+
+
+@router.post("/resources/skills/copy-builtin")
+async def copy_builtin_skill(request: Request, body: SkillCopyRequest) -> dict[str, Any]:
+    """Explicit copy of a read-only gateway skill into a new Open WebUI
+    custom skill (R07: never writes into application source)."""
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    require_permission(actor, "designer.edit", {"resource": "skill.copy"})
+    return await designer["sources"].copy_builtin_skill(
+        actor, builtin_id=body.builtin_id, name=body.name
+    )
