@@ -1,8 +1,8 @@
 # Agent Designer — Progress Log
 
-**Last updated:** 2026-09-19T01:10:00Z
-**Current package:** P0 — Baseline & evidence (baseline gates complete; Open WebUI probes pending owner account)
-**Next action for a new session:** Provide Open WebUI test account → run `uv run python scripts/probe_openwebui_contract.py probe --email ... --password ...` (start open-webui container first) → record contracts → close P0 → begin P1 (Auth, RBAC & credentials) per `docs/designer/PLAN.md`.
+**Last updated:** 2026-09-19T02:30:00Z
+**Current package:** P1 — Auth, RBAC & credentials (complete; committed)
+**Next action for a new session:** Begin P2 (Registry & validation) per `docs/designer/PLAN.md`: schemas.py (GraphDocument schema_version=1, reject unsupported), store.py agent/revision tables + migration 002_registry.sql, validation.py (R06 rules), service.py, ETag CAS, test_graph.py.
 
 **Document-set confirmation (Safety note 3):** all four required documents confirmed present and readable on 2026-09-18 before code changes:
 1. `01_AGENT_DESIGNER_REQUIREMENTS.md` (~/Downloads, read in full)
@@ -16,9 +16,9 @@
 
 | Package | Status | Note |
 |---|---|---|
-| P0 Baseline & evidence | In progress | Plan persisted, log created; baseline test run next |
-| P1 Auth, RBAC & credentials | Not started | |
-| P2 Registry & validation | Not started | |
+| P0 Baseline & evidence | Complete (probe pending) | Gates: 372 passed/4 skipped, ruff+mypy clean; Open WebUI probes await owner account |
+| P1 Auth, RBAC & credentials | Complete | 16 tests; flag-on/-off boundary proven; AESGCM credentials w/ generations |
+| P2 Registry & validation | Not started | Next up |
 | P3 Open WebUI adapters | Not started | |
 | P4 Connectors | Not started | |
 | P5 Compiler, runtimes, authorization & migration | Not started | |
@@ -49,7 +49,27 @@ Standing restrictions: no push, no deploy, no paid provider API calls, no real d
 
 ## Per-package log (newest first)
 
-### P0 — Baseline & evidence (started 2026-09-18)
+### P1 — Auth, RBAC & credentials (complete 2026-09-19)
+
+**Status:** Complete. Committed on `agent-designer`.
+
+**Implemented (frozen plan: R09/R20 + C1 + Clar 2 + Safety 1/2 + Fix 4):**
+- `migrations/designer/001_security.sql`: designer_migrations, designer_credentials (nonce/ciphertext/generation/scope/status, unique (key_id, nonce)), designer_sessions (hashed ids only, CSRF binding, expiry, revocation), designer_grants (C1 permissions), designer_agent_access (per-agent policy; FK added in 002), designer_audit_events (append-only control-plane stream), designer_revision_events (append-only lifecycle).
+- `scripts/migrate_designer.py`: checksummed, advisory-locked (`pg_advisory_xact_lock`), per-file transactions, immutable applied files, idempotent rerun; ledger table bootstrapped before first use.
+- `src/assistant/designer/`: errors (stable code→status map), audit (log-never-raise), credentials (AESGCM 96-bit nonce, AAD binds owner/purpose/credential/generation; store/resolve/rotate/revoke; rotation bumps generation; revocation immediate; plaintext never returned by any read path), store (pooled psycopg, owner-scoped parameterized SQL), auth (Actor + permission set, role-default + DB grants, Mode A local_password / Mode B api_key / explicit unsupported mode, LoginRateLimiter, SessionManager resolve/expiry/CSRF), service (flag-on assembly: validates security settings → migrates → opens store), routes (`/designer/api/v1/session` POST/GET/DELETE with real Set-Cookie/Delete-Cookie, type-aware logout, CSRF on all mutations including logout), main.py (router + error handler mounted ONLY when `designer_enabled`), settings (Designer-only validation strictly conditional — flag-off never requires DESIGNER_CREDENTIALS_KEY).
+- `tests/designer/`: conftest (api/api_b/anonymous_api/valid_graph fixtures over real Postgres, FakeUpstream — no real Open WebUI contact) + test_auth.py (16 tests: anonymous 401, exchange mints HttpOnly SameSite cookie + CSRF, unsupported mode 400, bad credentials 401, inspect permissions, CSRF rejection on mutation AND logout, logout revokes session + local credential, credential plaintext never readable cross-user + not in DB bytes, rotation bumps generation + stale ref fails, revocation immediate, rate limiter, **flag-off legacy gateway starts with no designer routes and /v1/models intact**, flag-on without/bad key fails Settings validation, key helper rejects bad input, permission denial code).
+
+**Commands/results:**
+- `uv run pytest tests/designer/test_auth.py` → **16 passed**
+- `uv run pytest` → **388 passed, 4 skipped** (full regression incl. baseline)
+- `uv run ruff check .` → clean · `uv run mypy` → clean (121 files)
+
+**Notes for next packages:**
+- Fix-10 (custom-model gate) and five C5 chat-authorization tests land in P5/P11.
+- `to_http_exception` helper removed as unused (routes use the registered exception handler).
+- Designer error vocabulary: session_required/invalid_credentials/unsupported_auth_mode/csrf_failure/permission_denied/invalid_request/missing/conflict/credential_error/rate_limited/upstream_unavailable.
+
+### P0 — Baseline & evidence (2026-09-18/19)
 
 **Status:** In progress.
 
