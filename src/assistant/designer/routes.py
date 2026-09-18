@@ -24,9 +24,11 @@ from assistant.designer.auth import (
     SessionManager,
     UpstreamAuthAdapter,
     permissions_for_role,
+    require_permission,
 )
 from assistant.designer.credentials import CredentialRef, CredentialStore
 from assistant.designer.errors import DesignerError
+from assistant.designer.validation import layout_hash, semantic_hash
 
 router = APIRouter(prefix="/designer/api/v1")
 
@@ -232,3 +234,198 @@ async def disconnect(request: Request) -> Any:
     )
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
     return response
+
+
+# ---------------------------------------------------------------------------
+# Agents & revisions (P2): registry + immutable drafts with ETag CAS.
+# ---------------------------------------------------------------------------
+
+
+class AgentCreateRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    name: str
+    description: str = ""
+
+
+def _slugify(name: str) -> str:
+    import re as _re
+
+    slug = _re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug or "agent"
+
+
+async def _agent_for_actor(designer: dict[str, Any], actor: Actor, agent_id: str) -> dict[str, Any]:
+    """Load an agent and enforce per-actor visibility (C1).
+
+    Existence of other users' agents is not disclosed: unauthorized access
+    is indistinguishable from a missing row.
+    """
+    agent = await designer["store"].get_agent(agent_id)
+    if agent is None or (
+        agent["owner_user_id"] != actor.user_id and not actor.has("designer.admin")
+    ):
+        raise DesignerError("missing", "agent not found")
+    return agent
+
+
+def _agent_etag(agent: dict[str, Any]) -> str:
+    return f'W/"{agent["row_version"]}"'
+
+
+@router.get("/agents")
+async def list_agents(request: Request) -> dict[str, Any]:
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    agents = await designer["store"].list_agents(actor.user_id)
+    return {
+        "agents": [
+            {**agent, "etag": _agent_etag(agent)} for agent in agents
+        ]
+    }
+
+
+@router.post("/agents")
+async def create_agent(request: Request, body: AgentCreateRequest) -> dict[str, Any]:
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    require_permission(actor, "designer.edit", {"action": "agent.create"})
+    if not body.name.strip():
+        raise DesignerError("invalid_request", "agent name must not be empty")
+    agent = await designer["store"].insert_agent(
+        owner_user_id=actor.user_id,
+        slug=_slugify(body.name) or "agent",
+        display_name=body.name.strip(),
+        description=body.description.strip(),
+    )
+    await audit.record(
+        designer["store"],
+        actor_user_id=actor.user_id,
+        event="agent.created",
+        subject={"agent_id": agent["agent_id"], "name": agent["display_name"]},
+    )
+    return {**agent, "etag": _agent_etag(agent)}
+
+
+@router.get("/agents/{agent_id}")
+async def get_agent(request: Request, agent_id: str) -> dict[str, Any]:
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    agent = await _agent_for_actor(designer, actor, agent_id)
+    return {**agent, "etag": _agent_etag(agent)}
+
+
+class RevisionSaveRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    graph: dict[str, Any]
+    parent_revision_id: str | None = None
+
+
+@router.post("/agents/{agent_id}/revisions")
+async def save_revision(request: Request, agent_id: str, body: RevisionSaveRequest) -> Any:
+    """Append an immutable draft revision (R12). Save NEVER activates:
+    active_revision_id is untouched, and no external process starts."""
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    agent = await _agent_for_actor(designer, actor, agent_id)
+    require_permission(actor, "designer.edit", {"agent_id": agent_id})
+
+    # Optimistic concurrency: If-Match must carry the current row_version.
+    if_match = request.headers.get("if-match", "")
+    expected_version = _version_from_etag(if_match)
+    if expected_version is None or expected_version != int(agent["row_version"]):
+        raise DesignerError("conflict", "stale write: agent was modified concurrently")
+
+    # Version check + deterministic validation only — no externals (Clar 1).
+    from assistant.designer.schemas import UnsupportedSchemaError, parse_graph_document
+    from assistant.designer.validation import validate_graph
+
+    try:
+        graph = parse_graph_document(body.graph)
+    except UnsupportedSchemaError as exc:
+        raise DesignerError("invalid_request", str(exc)) from exc
+    report = validate_graph(graph)
+    if not report.ok:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": {"error": {
+                "code": "invalid_graph",
+                "message": "graph validation failed",
+                "validation": report.to_dict(),
+            }}},
+        )
+
+    revision_number = await designer["store"].next_revision_number(agent_id)
+    from assistant.designer.store import new_id
+
+    revision_id = new_id("revision")
+    new_row_version = await designer["store"].insert_revision(
+        revision_id=revision_id,
+        agent_id=agent_id,
+        revision_number=revision_number,
+        schema_version=graph.schema_version,
+        graph_json=body.graph,
+        semantic_hash=semantic_hash(graph),
+        layout_hash=layout_hash(graph),
+        dependency_lock={},
+        parent_revision_id=body.parent_revision_id,
+        created_by=actor.user_id,
+    )
+    await designer["store"].record_revision_event(
+        revision_id=revision_id,
+        agent_id=agent_id,
+        event="draft.saved",
+        actor_user_id=actor.user_id,
+        data={"revision_number": revision_number},
+    )
+    await audit.record(
+        designer["store"],
+        actor_user_id=actor.user_id,
+        event="draft.saved",
+        subject={"agent_id": agent_id, "revision_id": revision_id},
+    )
+    return JSONResponse(
+        status_code=201,
+        content={
+            "revision_id": revision_id,
+            "agent_id": agent_id,
+            "revision_number": revision_number,
+            "semantic_hash": semantic_hash(graph),
+            "layout_hash": layout_hash(graph),
+            "row_version": new_row_version,
+            "active_revision_id": agent["active_revision_id"],
+        },
+    )
+
+
+def _version_from_etag(if_match: str) -> int | None:
+    import re as _re
+
+    match = _re.search(r'"(\d+)"', if_match)
+    return int(match.group(1)) if match else None
+
+
+@router.get("/agents/{agent_id}/revisions")
+async def list_revisions(request: Request, agent_id: str) -> dict[str, Any]:
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    await _agent_for_actor(designer, actor, agent_id)
+    revisions = await designer["store"].list_revisions(agent_id)
+    return {"revisions": revisions}
+
+
+@router.delete("/agents/{agent_id}")
+async def archive_agent(request: Request, agent_id: str) -> dict[str, Any]:
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    agent = await _agent_for_actor(designer, actor, agent_id)
+    require_permission(actor, "designer.edit", {"agent_id": agent_id})
+    await designer["store"].archive_agent(agent_id)
+    await audit.record(
+        designer["store"],
+        actor_user_id=actor.user_id,
+        event="agent.archived",
+        subject={"agent_id": agent_id, "slug": agent["slug"]},
+    )
+    return {"archived": True}

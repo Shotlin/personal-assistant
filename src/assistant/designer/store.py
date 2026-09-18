@@ -6,13 +6,12 @@ connection). Tables are created by the checksummed migrations in
 ``migrations/designer/`` -- never by this module.
 """
 
-from __future__ import annotations
-
 import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import psycopg
 from psycopg.types.json import Jsonb
 
 SESSION_TTL_MINUTES = 12 * 60  # 12 h designer session lifetime
@@ -34,7 +33,7 @@ class DesignerStore:
         self._pool = pool
 
     @classmethod
-    async def connect(cls, database_url: str) -> DesignerStore:
+    async def connect(cls, database_url: str) -> "DesignerStore":
         from psycopg_pool import AsyncConnectionPool as _Pool
 
         pool = _Pool(
@@ -203,4 +202,195 @@ class DesignerStore:
             await conn.execute(
                 "DELETE FROM designer_grants WHERE user_id = %s AND permission = %s",
                 (user_id, permission),
+            )
+
+    # --- agents & revisions (P2) ---
+    # row_version is the optimistic-concurrency token (ETag, R12).
+
+    async def insert_agent(
+        self, *, owner_user_id: str, slug: str, display_name: str, description: str = ""
+    ) -> dict[str, Any]:
+        agent_id = uuid.uuid4()
+        final_slug = slug
+        async with self.connection() as conn:
+            for _attempt in range(1, 6):
+                try:
+                    # A nested transaction per attempt: a slug collision
+                    # rolls back only this INSERT, not the outer work.
+                    async with conn.transaction():
+                        await conn.execute(
+                            "INSERT INTO designer_agents "
+                            "(agent_id, owner_user_id, slug, display_name, description) "
+                            "VALUES (%s, %s, %s, %s, %s)",
+                            (agent_id, owner_user_id, final_slug, display_name, description),
+                        )
+                    break
+                except psycopg.errors.UniqueViolation:
+                    # Same-owner slug collision (e.g. two "Test Agent"s):
+                    # disambiguate with a random suffix (collision-proof
+                    # even after many prior creations).
+                    final_slug = f"{slug}-{uuid.uuid4().hex[:8]}"
+            else:
+                raise psycopg.errors.UniqueViolation(
+                    "could not allocate a unique agent slug after 5 attempts"
+                )
+        return {
+            "agent_id": str(agent_id),
+            "owner_user_id": owner_user_id,
+            "slug": final_slug,
+            "display_name": display_name,
+            "description": description,
+            "enabled": True,
+            "archived": False,
+            "active_revision_id": None,
+            "row_version": 1,
+        }
+
+    async def get_agent(self, agent_id: str) -> dict[str, Any] | None:
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT agent_id, owner_user_id, slug, display_name, description, "
+                "enabled, archived, active_revision_id, row_version "
+                "FROM designer_agents WHERE agent_id = %s",
+                (uuid.UUID(agent_id),),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        keys = (
+            "agent_id", "owner_user_id", "slug", "display_name", "description",
+            "enabled", "archived", "active_revision_id", "row_version",
+        )
+        agent = dict(zip(keys, row, strict=True))
+        agent["agent_id"] = str(agent["agent_id"])
+        return agent
+
+    async def list_agents(self, owner_user_id: str) -> list[dict[str, Any]]:
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT agent_id, owner_user_id, slug, display_name, description, "
+                "enabled, archived, active_revision_id, row_version "
+                "FROM designer_agents WHERE owner_user_id = %s AND archived = FALSE "
+                "ORDER BY created_at",
+                (owner_user_id,),
+            )
+            rows = await cursor.fetchall()
+        agents = []
+        for row in rows:
+            agent = dict(zip(
+                ("agent_id", "owner_user_id", "slug", "display_name", "description",
+                 "enabled", "archived", "active_revision_id", "row_version"),
+                row, strict=True,
+            ))
+            agent["agent_id"] = str(agent["agent_id"])
+            agents.append(agent)
+        return agents
+
+    async def archive_agent(self, agent_id: str) -> None:
+        async with self.connection() as conn:
+            await conn.execute(
+                "UPDATE designer_agents SET archived = TRUE, enabled = FALSE, "
+                "updated_at = now() WHERE agent_id = %s",
+                (uuid.UUID(agent_id),),
+            )
+
+    async def insert_revision(
+        self,
+        *,
+        revision_id: str,
+        agent_id: str,
+        revision_number: int,
+        schema_version: int,
+        graph_json: dict[str, Any],
+        semantic_hash: str,
+        layout_hash: str,
+        dependency_lock: dict[str, Any],
+        parent_revision_id: str | None,
+        created_by: str,
+    ) -> int:
+        async with self.connection() as conn:
+            await conn.execute(
+                "INSERT INTO designer_revisions "
+                "(revision_id, agent_id, revision_number, schema_version, graph_json, "
+                " semantic_hash, layout_hash, dependency_lock, parent_revision_id, "
+                " created_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    revision_id, uuid.UUID(agent_id), revision_number, schema_version,
+                    Jsonb(graph_json), semantic_hash, layout_hash, Jsonb(dependency_lock),
+                    parent_revision_id, created_by,
+                ),
+            )
+        # Bump the agent's row_version so concurrent editors see a new ETag.
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "UPDATE designer_agents SET row_version = row_version + 1, "
+                "updated_at = now() WHERE agent_id = %s RETURNING row_version",
+                (uuid.UUID(agent_id),),
+            )
+            record = await cursor.fetchone()
+        return int(record[0])
+
+    async def get_revision(self, revision_id: str) -> dict[str, Any] | None:
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT revision_id, agent_id, revision_number, schema_version, "
+                "graph_json, semantic_hash, layout_hash, dependency_lock, validation, "
+                "parent_revision_id, created_by, created_at "
+                "FROM designer_revisions WHERE revision_id = %s",
+                (revision_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        keys = (
+            "revision_id", "agent_id", "revision_number", "schema_version",
+            "graph_json", "semantic_hash", "layout_hash", "dependency_lock",
+            "validation", "parent_revision_id", "created_by", "created_at",
+        )
+        return dict(zip(keys, row, strict=True))
+
+    async def list_revisions(self, agent_id: str) -> list[dict[str, Any]]:
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT revision_id, agent_id, revision_number, schema_version, "
+                "semantic_hash, parent_revision_id, created_by, created_at "
+                "FROM designer_revisions WHERE agent_id = %s "
+                "ORDER BY revision_number DESC",
+                (uuid.UUID(agent_id),),
+            )
+            rows = await cursor.fetchall()
+        return [
+            dict(zip(
+                ("revision_id", "agent_id", "revision_number", "schema_version",
+                 "semantic_hash", "parent_revision_id", "created_by", "created_at"),
+                row, strict=True,
+            ))
+            for row in rows
+        ]
+
+    async def next_revision_number(self, agent_id: str) -> int:
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT COALESCE(MAX(revision_number), 0) + 1 FROM designer_revisions "
+                "WHERE agent_id = %s",
+                (uuid.UUID(agent_id),),
+            )
+            record = await cursor.fetchone()
+        return int(record[0])
+
+    async def record_revision_event(
+        self,
+        *,
+        revision_id: str,
+        agent_id: str,
+        event: str,
+        actor_user_id: str,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        async with self.connection() as conn:
+            await conn.execute(
+                "INSERT INTO designer_revision_events "
+                "(revision_id, agent_id, event, actor_user_id, data) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (revision_id, agent_id, event, actor_user_id, Jsonb(data or {})),
             )

@@ -1,8 +1,8 @@
 # Agent Designer — Progress Log
 
-**Last updated:** 2026-09-19T02:30:00Z
-**Current package:** P1 — Auth, RBAC & credentials (complete; committed)
-**Next action for a new session:** Begin P2 (Registry & validation) per `docs/designer/PLAN.md`: schemas.py (GraphDocument schema_version=1, reject unsupported), store.py agent/revision tables + migration 002_registry.sql, validation.py (R06 rules), service.py, ETag CAS, test_graph.py.
+**Last updated:** 2026-09-19T03:20:00Z
+**Current package:** P2 — Registry & validation (complete; committed)
+**Next action for a new session:** Begin P3 (Open WebUI adapters) per `docs/designer/PLAN.md`: adapters/openwebui.py + adapters/sources.py (catalog/resolve/create-update for prompts+skills from P0 fixture contracts), model-preset import preview, built-in skills read-only + copy-as-custom, immutable snapshots with provenance, Knowledge listing + BLOCKED KnowledgeSource adapter (Fix 2), test_sources.py.
 
 **Document-set confirmation (Safety note 3):** all four required documents confirmed present and readable on 2026-09-18 before code changes:
 1. `01_AGENT_DESIGNER_REQUIREMENTS.md` (~/Downloads, read in full)
@@ -18,7 +18,7 @@
 |---|---|---|
 | P0 Baseline & evidence | Complete (probe pending) | Gates: 372 passed/4 skipped, ruff+mypy clean; Open WebUI probes await owner account |
 | P1 Auth, RBAC & credentials | Complete | 16 tests; flag-on/-off boundary proven; AESGCM credentials w/ generations |
-| P2 Registry & validation | Not started | Next up |
+| P2 Registry & validation | Complete | schemas + migration 002 + R06 validation + ETag CAS; 24 designer tests |
 | P3 Open WebUI adapters | Not started | |
 | P4 Connectors | Not started | |
 | P5 Compiler, runtimes, authorization & migration | Not started | |
@@ -48,6 +48,28 @@
 Standing restrictions: no push, no deploy, no paid provider API calls, no real desktop (CUA) operations without explicit authorization. Live test gates stay env-gated (`RUN_LIVE_MODEL`, `RUN_LIVE_CUA`).
 
 ## Per-package log (newest first)
+
+### P2 — Registry & validation (complete 2026-09-19)
+
+**Status:** Complete. Committed on `agent-designer`.
+
+**Implemented (frozen plan: R01/R02/R06/R12-13 + C4 + Clar 1/3):**
+- `src/assistant/designer/schemas.py`: GraphDocument with `schema_version=1` enforced (future/missing versions rejected, C4); NodeData carries references-only config; 200-node / 1 MB caps declared.
+- `migrations/designer/002_registry.sql`: `designer_agents` (mutable `active_revision_id` pointer + `row_version` ETag token), `designer_revisions` (immutable graph content: graph_json/semantic_hash/layout_hash/dependency_lock/provenance incl. parent_revision_id + created_by; UNIQUE(agent_id, revision_number)); FK backfills for 001 tables (TEXT agent_id cast to uuid first).
+- `src/assistant/designer/validation.py`: pure R06 semantics — exactly one root; exactly one enabled+connected model; at most one connected Prompt/Context; at most one memory per kind; root-to-resource edges only (resource-sourced → invalid_edge, agent-target → agent_to_agent, self-links, duplicates, missing targets, unknown types); disconnected nodes allowed but marked `not_attached`; secret-shaped material and forbidden config keys rejected; layout_hash vs semantic_hash separated (layout-only saves cannot change behavior).
+- `src/assistant/designer/store.py`: agent insert (slug collision → random suffix under savepoints), get/list/archive, revision insert (bumps agent row_version), get/list revisions, next_revision_number, `designer_revision_events` appends (draft.saved).
+- `src/assistant/designer/routes.py`: `GET/POST /agents`, `GET /agents/{id}`, `DELETE /agents/{id}` (archive), `POST /agents/{id}/revisions` (If-Match ETag CAS → 409 on stale/missing; deterministic validation only — **no external process on Save**, Clar 1; invalid graphs return node-specific issues; response includes `active_revision_id` untouched), `GET /agents/{id}/revisions`; cross-user access is a uniform 404 (no existence leak, C1); audit events agent.created/draft.saved.
+- `tests/designer/test_graph.py`: 24 tests — schema versioning (future/missing rejected), all R06 failure codes, layout-vs-semantic hash separation, save-does-not-activate (plan-doc verbatim), stale/missing If-Match → 409, invalid graph → 400 with detail, cross-user 404, archive removes from list.
+
+**Commands/results:**
+- `uv run pytest tests/designer/` → **40 passed** (16 auth + 24 graph)
+- `uv run pytest` → **412 passed, 4 skipped** (full regression)
+- `uv run ruff check .` → clean · `uv run mypy` → clean (124 files)
+
+**Notes for next packages:**
+- `validate_graph` currently treats all resource nodes as valid references; P3/P4 extend it with catalog-backed reference checks (missing/foreign references, CapabilityStatus enforcement).
+- Import/export of non-secret configuration (plan P2 item) deferred to P9 when the SPA exists to round-trip it — recorded here, not silently dropped.
+- Validation of graph payload size (1 MB) enforced at route level when the SPA ships; MAX_NODES enforced now.
 
 ### P1 — Auth, RBAC & credentials (complete 2026-09-19)
 
