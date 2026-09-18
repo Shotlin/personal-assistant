@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "status": "pending-probe",
+  "note": "Populated by scripts/probe_openwebui_contract.py once the Open WebUI stack is running and a test account is provided. Until then all Designer adapters are contract-first against recorded fixtures; no route trusts model-discovery identity for authorization (C5).",
+  "pinned_openwebui": {
+    "image": "ghcr.io/open-webui/open-webui:v0.11.3",
+    "source_refs": [
+      "backend/open_webui/routers/skills.py",
+      "backend/open_webui/models/skills.py",
+      "backend/open_webui/routers/auths.py"
+    ]
+  },
+  "model_discovery_capture": {
+    "status": "not-captured",
+    "tool": "scripts/probe_openwebui_contract.py capture",
+    "output": "docs/designer/model-discovery-capture.json"
+  },
+  "resource_kinds": {
+    "current_user": { "status": "pending-probe", "candidates": ["/api/v1/auths/", "/api/v1/auths/me", "/api/v1/users/"] },
+    "models_gateway_view": { "status": "pending-probe", "candidates": ["/openai/models", "/api/v1/models/"] },
+    "models_openai_compat": { "status": "pending-probe", "candidates": ["/api/chat/models", "/openai/models"] },
+    "prompts": { "status": "pending-probe", "candidates": ["/api/v1/prompts/"] },
+    "skills": { "status": "pending-probe", "candidates": ["/api/v1/skills/", "/api/v1/skills"] },
+    "knowledge": { "status": "pending-probe", "candidates": ["/api/v1/knowledge/"] },
+    "tools": { "status": "pending-probe", "candidates": ["/api/v1/tools/"] }
+  },
+  "knowledge_retrieval_adapter": {
+    "status": "BLOCKED",
+    "reason": "Runtime adapter unverified: retrieval contract not yet captured from the running instance. Knowledge nodes fail validation until the live contract test passes (plan Fix 2)."
+  }
+}
