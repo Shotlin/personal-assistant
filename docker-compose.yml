@@ -34,6 +34,13 @@ services:
     environment:
       # Loopback-only Phase 1: the UI is reachable at http://127.0.0.1:3000.
       ENABLE_FORWARD_USER_INFO_HEADERS: "true"
+      # Token conservation (Phase 1.1): each of these fires a hidden model
+      # request per message through the gateway. All disabled by owner
+      # direction ("less, less, less token").
+      ENABLE_TITLE_GENERATION: "false"
+      ENABLE_TAGS_GENERATION: "false"
+      ENABLE_FOLLOW_UP_GENERATION: "false"
+      ENABLE_AUTOCOMPLETE_GENERATION: "false"
       # The pinned Open WebUI image connects to our gateway for the assistant model.
       OPENAI_API_BASE_URL: http://host.docker.internal:8787/v1
       OPENAI_API_KEY: ${AGENT_GATEWAY_API_KEY:-change-me}

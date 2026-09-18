@@ -8,15 +8,19 @@ per-run budget, and never auto-enables newly introduced CUA tools.
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
-from typing import Any
+from datetime import UTC
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import BaseTool, StructuredTool
 
 from assistant.agent.context import CuaBudgetExceeded, RunBudget
+from assistant.runtime.session import DesktopRunCancelled, _session_revive_demanded
 
 logger = logging.getLogger("assistant.tools.policy")
 
@@ -50,11 +54,29 @@ CUA_ALLOWED_TOOL_NAMES = frozenset(
         "double_click",
         "hotkey",
         "set_value",
-        # Session lifecycle (makes the visible agent cursor available).
+    }
+)
+
+#: Session/cursor lifecycle controls. Controller-owned (master plan 7.2):
+#: the DesktopSessionManager calls these through the trusted path; they
+#: must never appear in the model-visible tool inventory.
+SESSION_LIFECYCLE_TOOL_NAMES = frozenset(
+    {
         "start_session",
         "end_session",
         "set_agent_cursor_enabled",
+        "set_agent_cursor_motion",
+        "set_agent_cursor_theme",
+        "get_agent_cursor_state",
+        "get_session",
+        "list_sessions",
+        "get_session_state",
+        "escalate_session",
     }
+)
+
+assert CUA_ALLOWED_TOOL_NAMES.isdisjoint(SESSION_LIFECYCLE_TOOL_NAMES), (
+    "session lifecycle tools must stay out of the model-visible inventory"
 )
 
 #: Tools that only observe state; at least one must be available at startup.
@@ -93,9 +115,65 @@ cua_run_budget: contextvars.ContextVar[RunBudget | None] = contextvars.ContextVa
 #: Per-run driver session id. Set by the gateway; observation/action wrappers
 #: inject it into every call that accepts a ``session`` argument so all
 #: actions of one run share the visible agent cursor.
+cua_artifact_dir: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "cua_artifact_dir", default=""
+)
 cua_current_session: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "cua_current_session", default=None
 )
+
+#: Per-run desktop session handle (WP3). Set by the gateway inside the
+#: execution scope that owns the run; tool wrappers read it at call time
+#: to lazily activate the driver session, force the trusted session id,
+#: and check local cancellation before every new action.
+if TYPE_CHECKING:  # pragma: no cover
+    from assistant.runtime.session import DesktopRun as _DesktopRun
+
+cua_desktop_run: contextvars.ContextVar[_DesktopRun | None] = contextvars.ContextVar(
+    "cua_desktop_run", default=None
+)
+
+#: Per-run action ledger writer (WP4). Set inside cua_run_scope; mutating
+#: dispatch records 'planned' before and a terminal state after the native
+#: call. Observations never write rows.
+if TYPE_CHECKING:  # pragma: no cover
+    from assistant.runtime.runs import RunActionLedger as _RunActionLedger
+
+cua_action_ledger: contextvars.ContextVar[_RunActionLedger | None] = (
+    contextvars.ContextVar("cua_action_ledger", default=None)
+)
+
+#: Returned to the model instead of executing an action after a local
+#: stop was requested (master plan 7.5: stop is local, not a model ask).
+CANCELLED_ACTION_NOTICE = "[Run cancelled by user; no action taken.]"
+
+
+@asynccontextmanager
+async def cua_run_scope(
+    *,
+    budget: RunBudget | None,
+    run: Any | None,
+    artifact_dir: str = "",
+    ledger: Any | None = None,
+) -> AsyncIterator[None]:
+    """Bind run-scoped policy state inside the scope that owns it.
+
+    The gateway sets these per request (or per stream generator) and the
+    tokens are reset on exit -- never set at import/wrap time, never left
+    to leak across runs (master plan 7.2). ``ledger`` is the optional
+    RunActionLedger for durable action accounting around real dispatch.
+    """
+    budget_token = cua_run_budget.set(budget)
+    run_token = cua_desktop_run.set(run)
+    dir_token = cua_artifact_dir.set(artifact_dir)
+    ledger_token = cua_action_ledger.set(ledger)
+    try:
+        yield
+    finally:
+        cua_action_ledger.reset(ledger_token)
+        cua_artifact_dir.reset(dir_token)
+        cua_desktop_run.reset(run_token)
+        cua_run_budget.reset(budget_token)
 
 #: Text-first observation defaults (latency + token control): skip the
 #: base64 screenshot and cap the accessibility tree; the model may opt
@@ -108,6 +186,21 @@ OBSERVATION_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "get_accessibility_tree": {"max_elements": 120},
 }
+
+#: Tools that can emit screenshots. When the model explicitly asks for a
+#: screenshot, the PNG is diverted to the artifact store (never base64 in
+#: the prompt) and the file path is reported back.
+SCREENSHOT_CAPABLE_TOOLS = frozenset({"get_window_state", "get_desktop_state", "zoom"})
+
+
+def _artifact_screenshot_path(artifact_dir: str, tool_name: str) -> str:
+    from datetime import datetime
+    from pathlib import Path
+
+    base = Path(artifact_dir)
+    base.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")[:-3]
+    return str(base / f"{tool_name}-{stamp}.png")
 
 
 class CuaUnavailableError(RuntimeError):
@@ -151,21 +244,52 @@ def assert_observation_available(enabled_names: list[str]) -> None:
 #: v0.28.2 addressing contract appended to tool descriptions so the model
 #: addresses targets correctly on the first attempt (spec section 13.2).
 ADDRESSING_CONTRACT = (
-    " Driver contract (cua-driver v0.28.2): address a target element with "
-    "`element_token` from the latest get_window_state `elements` output, or "
-    "with `snapshot_id` plus `element_index`; a bare element_index is rejected. "
-    "After important UI actions, re-run get_window_state before the next action "
-    "and verify the observed state."
+    " Address targets with `element_token` from the latest get_window_state "
+    "output (or snapshot_id+element_index); bare element_index is rejected. "
+    "Re-observe after important actions and verify the result."
 )
 
 _DESCRIPTION_ENRICHED_TOOLS = frozenset(
     {"click", "double_click", "type_text", "press_key", "scroll", "set_value", "hotkey"}
 )
 
+#: Token-budget compaction (Phase 1.1): the driver ships verbose per-tool
+#: prose (~19.8k chars total ≈ 5-6k tokens of every agent turn). Known
+#: tools get a one-line description here; the addressing contract stays
+#: on action tools (correctness-critical). Unknown tools keep the
+#: driver's own description (fail-open for new driver versions).
+COMPACT_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "list_apps": "List running apps: pid, bundle_id, name, window ids.",
+    "list_windows": "List an app's windows (pid): window_id, title, bounds.",
+    "get_window_state": (
+        "Read one window's UI: elements with element_token, role, label, "
+        "value. THE source of element_token for actions."
+    ),
+    "verify_state": "Assert an expected UI condition; returns ok or the mismatch.",
+    "launch_app": "Launch an app by bundle_id; returns pid + window ids.",
+    "bring_to_front": "Bring a window to the foreground (pid/window_id).",
+    "click": "Click an element_token (or point) once.",
+    "double_click": "Double-click an element_token (or point).",
+    "type_text": "Type text into the focused or targeted element.",
+    "press_key": "Press a key, with optional modifiers.",
+    "hotkey": "Press a key combo given as a combo string.",
+    "set_value": "Set an element's value directly (fastest way to fill fields).",
+    "scroll": "Scroll at a target by amount and direction.",
+    "get_screen_size": "Get screen pixel size and scale factor.",
+    "get_desktop_state": "Full-screen PNG (to file) + true size for desktop-coordinate actions.",
+    "get_accessibility_tree": "Bounded accessibility tree across apps.",
+    "zoom": "Capture an enlarged view of a screen region.",
+}
+
 
 def _enriched_description(tool: BaseTool) -> str:
-    base = getattr(tool, "description", "") or ""
-    if getattr(tool, "name", None) in _DESCRIPTION_ENRICHED_TOOLS:
+    name = getattr(tool, "name", None)
+    base = ""
+    if isinstance(name, str) and name in COMPACT_TOOL_DESCRIPTIONS:
+        base = COMPACT_TOOL_DESCRIPTIONS[name]
+    else:
+        base = getattr(tool, "description", "") or ""
+    if name in _DESCRIPTION_ENRICHED_TOOLS:
         return f"{base}{ADDRESSING_CONTRACT}"
     return base
 
@@ -194,14 +318,40 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
     is_mutating = name in MUTATING_TOOL_NAMES
     defaults = OBSERVATION_DEFAULTS.get(name, {})
     accepts_session = isinstance(getattr(tool, "args", None), dict) and "session" in tool.args
+    captures_screenshot = name in SCREENSHOT_CAPABLE_TOOLS
 
     async def safe(**kwargs: Any) -> Any:
+        run = cua_desktop_run.get()
+        try:
+            async with run.action() if run is not None else nullcontext():
+                if run is not None:
+                    run.require_active()
+                return await dispatch(kwargs)
+        except DesktopRunCancelled:
+            return CANCELLED_ACTION_NOTICE
+
+    async def dispatch(kwargs: dict[str, Any]) -> Any:
+        # Read scope at call time, and force the controller's session even
+        # when the model supplied a different nonempty value.
+        artifact_dir = cua_artifact_dir.get()
+        run = cua_desktop_run.get()
         if accepts_session:
-            session = cua_current_session.get()
-            if session and not kwargs.get("session"):
+            session = run.session_id if run is not None else cua_current_session.get()
+            if session:
                 kwargs["session"] = session
         for key, value in defaults.items():
-            kwargs.setdefault(key, value)
+            # Schema defaults arrive as None (LangChain fills every schema
+            # field), so None means "unset" here -- setdefault would keep
+            # the None and silently drop the text-first baseline.
+            if kwargs.get(key) is None:
+                kwargs[key] = value
+        if (
+            captures_screenshot
+            and artifact_dir
+            and kwargs.get("include_screenshot", True)
+            and not kwargs.get("screenshot_out_file")
+        ):
+            kwargs["screenshot_out_file"] = _artifact_screenshot_path(artifact_dir, name)
         if is_mutating:
             budget = cua_run_budget.get()
             if budget is not None:
@@ -210,12 +360,93 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
                 "cua_mutating_action",
                 extra={"event": "cua_mutating_action", "tool": name},
             )
+        ledger = cua_action_ledger.get()
+        ledger_id: int | None = None
+        if is_mutating and ledger is not None:
+            ledger_id = await _ledger_plan(ledger, name, kwargs)
         try:
-            return await original(**kwargs)
+            result = await original(**kwargs)
         except CuaBudgetExceeded:
+            if ledger_id is not None:
+                await _ledger_observe(ledger, ledger_id, "failed", "budget_exceeded")
             raise
+        except asyncio.CancelledError:
+            # Outcome was never observed and must never be replayed blind.
+            if ledger_id is not None:
+                await _ledger_observe(ledger, ledger_id, "unknown")
+            raise
+        except TimeoutError as exc:
+            # Dispatched but no acknowledgement: unknown_effect, readback
+            # required (master plan 11.2); agent sees the error text.
+            if ledger_id is not None:
+                await _ledger_observe(ledger, ledger_id, "unknown", str(exc)[:120])
+            return f"Error: outcome unobserved (timeout): {exc}"
         except Exception as exc:  # noqa: BLE001 -- tool errors become agent-visible text
+            if ledger_id is not None:
+                await _ledger_observe(ledger, ledger_id, "failed", str(exc)[:120])
+            # Live 2026-09-18: a session can end mid-run; the driver's own
+            # error demands revival. OBSERVATIONS may be retried after one
+            # explicit revival (no effect to corrupt). Mutating actions are
+            # NEVER blindly retried here — their outcome is unknown; the
+            # model sees the error and decides.
+            if (
+                not is_mutating
+                and run is not None
+                and _session_revive_demanded(str(exc))
+            ):
+                try:
+                    await run.revive()
+                    result = await original(**kwargs)
+                    if ledger_id is not None:
+                        await _ledger_observe(ledger, ledger_id, "confirmed")
+                    return _model_text(result)
+                except Exception as revive_exc:  # noqa: BLE001
+                    detail = str(revive_exc).strip() or str(exc)
+                    return f"Error: session revive failed: {detail[:200]}"
             return f"Error: {exc}"
+        if ledger_id is not None:
+            await _ledger_observe(ledger, ledger_id, "confirmed")
+        return _model_text(result)
+
+    async def _ledger_plan(ledger: Any, tool_name: str, kwargs: dict[str, Any]) -> int | None:
+        """Write the 'planned' row before dispatch; never break the action."""
+        import hashlib
+
+        digest = hashlib.sha256(repr(sorted(kwargs.items())).encode()).hexdigest()[:16]
+        try:
+            return await ledger.plan(tool_name=tool_name, args_digest=digest)
+        except Exception:
+            logger.exception("action_ledger_plan_failed", extra={"event": "ledger_plan_failed"})
+            return None
+
+    async def _ledger_observe(
+        ledger: Any, ledger_id: int, outcome: str, evidence: str = ""
+    ) -> None:
+        try:
+            await ledger.observe(ledger_id, outcome, evidence)
+        except Exception:
+            logger.exception(
+                "action_ledger_observe_failed", extra={"event": "ledger_observe_failed"}
+            )
+
+    def _model_text(result: Any) -> Any:
+        """Render normalized ToolOutcomes as bounded model-facing text.
+
+        Never a dataclass repr, never base64: image payloads are reported
+        by count only; structured evidence stays in the outcome for the
+        trusted executor (master plan WP2).
+        """
+        from assistant.tools.result_normalizer import ToolOutcome
+
+        if not isinstance(result, ToolOutcome):
+            return result
+        blocks = result.model_content(allow_images=False)
+        text = "\n".join(str(block.get("text", "")) for block in blocks)
+        if result.images:
+            text += f"\n[{len(result.images)} screenshot(s) retained locally]"
+        if result.truncated:
+            text += "\n[observation truncated]"
+        return text or "(no content)"
 
     return StructuredTool(
         name=name,

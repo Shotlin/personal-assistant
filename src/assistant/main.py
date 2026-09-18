@@ -8,8 +8,10 @@ filtered CUA tools, and assembles the one Deep Agent.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -22,9 +24,17 @@ from assistant.api import chat_route, models_route
 from assistant.memory.postgres import open_memory_resources
 from assistant.models import build_chat_model
 from assistant.observability.logging import setup_logging
+from assistant.runtime.runs import RunStore
+from assistant.runtime.session import (
+    DesktopSessionConfig,
+    DesktopSessionManager,
+    McpToolDesktopDriver,
+)
 from assistant.settings import Settings
 from assistant.tools.cua import open_cua_connection
 from assistant.tools.registry import assemble_tool_inventory
+
+logger = logging.getLogger("assistant.main")
 
 
 def _null_cua_connection() -> AbstractAsyncContextManager[dict[str, Any]]:
@@ -33,6 +43,35 @@ def _null_cua_connection() -> AbstractAsyncContextManager[dict[str, Any]]:
         yield {}
 
     return cm()
+
+
+#: Interval for the driver keepalive ping (seconds). The daemon's manifest
+#: idles sessions out after 30m; a cheap read-only ping every 5 minutes
+#: keeps the daemon process and the persistent transport's session alive
+#: so a run never starts against a dead session (live 2026-09-18).
+KEEPALIVE_INTERVAL_SECONDS = 300
+
+
+async def _driver_keepalive(connection: Any) -> None:
+    """Periodic read-only ping over the persistent MCP session.
+
+    Never touches the model, never mutates anything: one bounded
+    observation call per interval. Stops quietly on shutdown.
+    """
+    tools_by_name = dict(getattr(connection, "tools_by_name", {}) or {})
+    ping = tools_by_name.get("get_screen_size")
+    if ping is None:
+        return
+    while True:
+        await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
+        try:
+            await asyncio.wait_for(ping.ainvoke({}), timeout=30)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 -- keepalive must never break the gateway
+            logger.warning(
+                "cua_keepalive_ping_failed", extra={"event": "cua_keepalive_ping_failed"}
+            )
 
 
 def _skills_root() -> Path:
@@ -89,26 +128,55 @@ def create_app(
     return app
 
 
+async def _cancel_keepalive(task: Any) -> None:
+    """Stop the keepalive task on shutdown without surfacing cancellation."""
+    task.cancel()
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        pass
+
+
 def _build_lifespan(settings: Settings) -> LifespanFn:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        resources_cm = open_memory_resources(settings.database_url)
-        resources = await resources_cm.__aenter__()
-        app.state.store = resources.store
-        app.state.saver = resources.saver
+        # Register each cleanup before the next fallible startup operation.
+        # The same stack covers startup failure and ordinary shutdown.
+        async with AsyncExitStack() as stack:
+            resources = await stack.enter_async_context(
+                open_memory_resources(settings.database_url)
+            )
+            app.state.store = resources.store
+            app.state.saver = resources.saver
+            run_store = await RunStore.connect(settings.database_url)
+            stack.push_async_callback(run_store.close)
+            await run_store.setup()
+            app.state.run_store = run_store
 
-        model = build_chat_model(settings)
-        app.state.utility_model = model
-
-        cua_cm = (
-            open_cua_connection(settings)
-            if settings.cua_enabled
-            else _null_cua_connection()
-        )
-        try:
-            connection: Any = await cua_cm.__aenter__()
+            model = build_chat_model(settings)
+            app.state.utility_model = model
+            connection: Any = await stack.enter_async_context(
+                open_cua_connection(settings)
+                if settings.cua_enabled
+                else _null_cua_connection()
+            )
             extra_tools = assemble_tool_inventory(list(getattr(connection, "tools", [])))
             app.state.cua_tools_by_name = dict(getattr(connection, "tools_by_name", {}))
+            # Keepalive: one read-only ping per interval so the daemon and
+            # its transport session never idle out between user turns.
+            keepalive_task = asyncio.create_task(_driver_keepalive(connection))
+            stack.push_async_callback(_cancel_keepalive, keepalive_task)
+            # One trusted DesktopSessionManager over the persistent
+            # connection's lifecycle tools (WP3): lazy run-scoped sessions,
+            # controller-owned cursor motion, single desktop lease. The
+            # manager never recreates the transport.
+            lifecycle = dict(getattr(connection, "lifecycle_tools_by_name", {}) or {})
+            app.state.desktop_sessions = DesktopSessionManager(
+                McpToolDesktopDriver(lifecycle),
+                config=DesktopSessionConfig(),
+                enabled=settings.active_cursor_persistence_enabled,
+            )
+            stack.push_async_callback(app.state.desktop_sessions.close_all)
             bundle = build_agent(
                 model=model,
                 checkpointer=resources.saver,
@@ -117,16 +185,7 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
                 extra_tools=extra_tools,
             )
             app.state.agent = bundle.agent
-        except BaseException:
-            await cua_cm.__aexit__(None, None, None)
-            await resources_cm.__aexit__(None, None, None)
-            raise
-
-        try:
             yield
-        finally:
-            await cua_cm.__aexit__(None, None, None)
-            await resources_cm.__aexit__(None, None, None)
 
     return lifespan
 

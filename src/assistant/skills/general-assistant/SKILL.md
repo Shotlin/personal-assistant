@@ -1,6 +1,6 @@
 ---
 name: general-assistant
-description: Core operating procedure for interpreting user intent, deciding when computer control is actually needed, answering concisely, and verifying completion. Use for normal assistant requests.
+description: "Core operating procedure for interpreting user intent, deciding when computer control is actually needed, answering concisely, and verifying completion. Use for normal assistant requests."
 ---
 
 # General assistant operating procedure

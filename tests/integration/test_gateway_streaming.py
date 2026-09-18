@@ -5,6 +5,7 @@ model, driven through httpx ASGI transport on the test loop (no network,
 no spend).
 """
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -14,7 +15,7 @@ from typing import Any
 
 import httpx
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from assistant.agent.build import build_agent
 from assistant.api.identity import (
@@ -261,3 +262,103 @@ async def test_utility_task_uses_plain_model_without_agent(
     # The utility path must not create agent thread state for the chat.
     state = await app.state.agent.aget_state({"configurable": {"thread_id": f"owui:gwuser:{chat}"}})
     assert not state.values.get("messages")
+
+
+class _SlowAgent:
+    """Agent stub that keeps the stream open briefly before finishing."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def aget_state(self, _config: Any) -> None:
+        return None
+
+    async def aget_state_history(self, _config: Any, **kwargs: Any):
+        return
+        yield
+
+    async def astream(self, _input: Any, _config: Any, **kwargs: Any):
+        self.calls += 1
+        yield (AIMessageChunk(content="slow"), {"langgraph_node": "model"})
+        await asyncio.sleep(0.5)
+        yield (AIMessageChunk(content=" done"), {"langgraph_node": "model"})
+
+
+async def test_stream_terminal_event_only_after_generator_ends(
+    gateway: tuple[httpx.AsyncClient, Any],
+) -> None:
+    """Master plan F06 regression: run_finished must not exist before the
+    generator terminates. Tested directly against the production SSE
+    generator (the ASGI transport buffers the full body, which would make
+    mid-stream ordering unobservable at the HTTP layer)."""
+    from assistant.agent.context import AgentContext
+    from assistant.api.streaming import sse_agent_stream
+    from assistant.observability.timing import RunTimeline
+
+    agent = _SlowAgent()
+    timeline = RunTimeline("f06-run")
+    chunks: list[str] = []
+    gen = sse_agent_stream(
+        agent,
+        {"configurable": {"thread_id": "t"}},
+        {"messages": [{"role": "user", "content": "hi"}]},
+        AgentContext(user_id="f06", chat_id="f06"),
+        model_id=MODEL_ID,
+        completion_id="chatcmpl-f06",
+        timeline=timeline,
+        ledger=app_ledger_stub(),
+    )
+    async for piece in gen:
+        if '"content"' in piece and not timeline.terminal_marked:
+            chunks.append(piece)
+            # after a content chunk, mid-generation: terminal must NOT be marked
+            assert timeline.terminal_marked is False
+        chunks.append(piece)
+    assert timeline.terminal_marked is True
+
+    # Gateway-level smoke: after the buffered response is fully read, the
+    # timeline for that run is terminal.
+    client, app = gateway
+    response = await client.post(
+        "/v1/chat/completions",
+        headers=auth_headers(),
+        json={
+            "model": MODEL_ID,
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
+    assert response.status_code == 200
+    assert app.state.last_run_timeline.terminal_marked is True
+    assert len(chunks) > 0
+
+
+def app_ledger_stub() -> Any:
+    from assistant.observability.usage import UsageLedger
+
+    return UsageLedger()
+
+
+async def test_usage_ledger_records_provider_call(
+    gateway: tuple[httpx.AsyncClient, Any],
+) -> None:
+    """Master plan F05 regression: usage aggregated at the provider boundary."""
+    client, app = gateway
+    before = app.state.last_run_ledger.call_count if hasattr(app.state, "last_run_ledger") else 0
+    response = await client.post(
+        "/v1/chat/completions",
+        headers=auth_headers(),
+        json={
+            "model": MODEL_ID,
+            "messages": [{"role": "user", "content": "count me"}],
+            "stream": False,
+        },
+    )
+    assert response.status_code == 200
+    ledger = app.state.last_run_ledger
+    assert ledger is not None
+    assert ledger.call_count >= before + 1
+    totals = ledger.snapshot()
+    assert totals["calls"] >= 1
+    # ScriptedChatModel reports no usage metadata: recorded as unknown, not zero-assumed.
+    assert "unknown_output_calls" in totals

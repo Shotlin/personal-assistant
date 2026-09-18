@@ -62,9 +62,24 @@ class Settings(BaseSettings):
     cua_permission_mode: str = "bounded"
     cua_capability_manifest_path: str = ""
     cua_existing_profile_grant: bool = False
+    cua_artifact_dir: str = "var/artifacts"
 
     # Open WebUI integration
     openwebui_forward_headers: bool = True
+
+    # WP3: trusted desktop session ownership (feature flag, master plan 17).
+    # false disables cursor sessions entirely: runs execute without a
+    # visible agent cursor and the driver is never contacted for sessions.
+    active_cursor_persistence_enabled: bool = True
+    # Deterministic progress text in the SSE stream (WP3 section 7.4);
+    # status lines are interface output only, never model history.
+    status_events_enabled: bool = True
+    status_quiet_seconds: float = 6.0
+    # WP6: compact same-model planner route (natural phrasing -> one model
+    # decision -> local recipe). Feature flag for staged rollout and
+    # rollback (master plan 15.2/WP8): false sends every non-exact turn to
+    # the general agent exactly as before WP6.
+    compact_planner_enabled: bool = False
 
     @property
     def is_production(self) -> bool:
@@ -93,6 +108,10 @@ class Settings(BaseSettings):
             )
         if self.model_max_tokens < 200:
             errors.append(f"MODEL_MAX_TOKENS must be >= 200, got {self.model_max_tokens}")
+        if self.status_quiet_seconds <= 0:
+            errors.append(
+                f"STATUS_QUIET_SECONDS must be > 0, got {self.status_quiet_seconds}"
+            )
 
         if self.model_provider not in SUPPORTED_MODEL_PROVIDERS:
             errors.append(

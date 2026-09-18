@@ -1,6 +1,6 @@
 ---
 name: computer-use
-description: Step-by-step procedure for operating the user's desktop through CUA tools: identify the target, observe before acting, act minimally, and verify every important action. Use whenever computer control is required.
+description: "Step-by-step procedure for operating the user's desktop through CUA tools: identify the target, observe before acting, act minimally, and verify every important action. Use whenever computer control is required."
 ---
 
 # Computer use operating procedure

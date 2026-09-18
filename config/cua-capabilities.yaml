@@ -29,6 +29,11 @@ allow:
     - end_session
     - set_agent_cursor_enabled
     - get_agent_cursor_state
+    # WP3 (reviewed addition, 2026-09-17): motion physics only --
+    # visibility timing (idle_hide_ms=0 during an active run), glide and
+    # dwell. Session-scoped, controller-invoked only; never in the
+    # model-visible tool inventory. No new application scope is granted.
+    - set_agent_cursor_motion
     - list_apps
     - list_windows
     # observation
