@@ -47,6 +47,21 @@ scripts/       init_db.py, verify_cua.py, smoke_openwebui.py, run_agent_api.sh
 tests/         unit / integration / e2e
 ```
 
+## Quick start
+
+Already have `.env` filled in once (see Setup below)? One command brings
+up containers, the DB schema, the Cua Driver check, and the gateway, then
+opens the chat UI:
+
+```bash
+./scripts/start.sh
+```
+
+Stop everything with `./scripts/stop.sh`. Safe to re-run either any time
+— see [CLAUDE.md](CLAUDE.md#run-it-one-command) for what each step does.
+The manual, step-by-step version of the same process is below, useful for
+first-time setup or debugging a single step in isolation.
+
 ## Prerequisites
 
 - macOS 14+ (verified on macOS 26.2, Apple Silicon) with Docker Desktop running.
