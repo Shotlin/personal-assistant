@@ -27,6 +27,7 @@ def build_test_app(
     model_responses: list[Any] | None = None,
 ) -> Any:
     """Full app with scripted model and an optional fake desktop driver."""
+    driver: Any = desktop_driver
 
     @asynccontextmanager
     async def lifespan(app: Any) -> AsyncIterator[None]:
@@ -46,7 +47,7 @@ def build_test_app(
             app.state.saver = mem.saver
             app.state.utility_model = ScriptedChatModel(responses=[AIMessage("Concise Title")])
             app.state.desktop_sessions = DesktopSessionManager(
-                desktop_driver, config=DesktopSessionConfig()
+                driver, config=DesktopSessionConfig(), enabled=desktop_driver is not None
             )
             from assistant.runtime.runs import RunStore
 

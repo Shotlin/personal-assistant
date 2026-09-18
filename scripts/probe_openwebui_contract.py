@@ -43,7 +43,7 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -105,12 +105,15 @@ def probe(client: httpx.Client, headers: dict[str, str], route: str) -> dict[str
         response = client.get(f"{client.base_url}{route}", headers=headers)
     except httpx.HTTPError as exc:
         return {"route": route, "error": f"{type(exc).__name__}"}
+    error_excerpt = None
+    if response.status_code != 200:
+        error_excerpt = _redact_string(response.text[:200])
     return {
         "route": route,
         "status": response.status_code,
         "content_type": response.headers.get("content-type", ""),
         "shape": describe_shape(response.json()) if response.status_code == 200 else None,
-        "error_excerpt": _redact_string(response.text[:200]) if response.status_code != 200 else None,
+        "error_excerpt": error_excerpt,
     }
 
 
@@ -137,12 +140,12 @@ def run_probe(args: argparse.Namespace) -> int:
 
         result = {
             "schema_version": 1,
-            "probed_at": datetime.now(timezone.utc).isoformat(),
+            "probed_at": datetime.now(UTC).isoformat(),
             "openwebui_base_url": args.base_url,
             "credential_mechanism": "Bearer token obtained via POST /api/v1/auths/signin",
             "probe_notes": [
                 "Read-only GET probes; no resource content persisted, shapes only.",
-                "Candidate routes that 404 do not exist on this build; 401/403 exist but deny this user.",
+                "404 candidates do not exist on this build; 401/403 exist but deny this user.",
             ],
             "kinds": kinds,
         }
@@ -171,7 +174,7 @@ class _CaptureHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(length).decode("utf-8", errors="replace") if length else ""
         _CaptureHandler.captured.append(
             {
-                "received_at": datetime.now(timezone.utc).isoformat(),
+                "received_at": datetime.now(UTC).isoformat(),
                 "method": self.command,
                 "path": self.path,
                 "headers": headers,

@@ -1,8 +1,8 @@
 """Rendering never turns a dispatch acknowledgement into verified success."""
 
 import pytest
-from assistant.runtime.recipe_result import render_result
 
+from assistant.runtime.recipe_result import render_result
 from assistant.tools.result_normalizer import ToolOutcome
 
 

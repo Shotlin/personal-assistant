@@ -31,7 +31,7 @@ from tests.helpers.scripted_model import ScriptedChatModel
 _MUTATING = {"clear_display", "type_text", "press_key"}
 
 
-def _calculator_tools() -> list[StructuredTool]:
+def _calculator_tools() -> tuple[list[StructuredTool], dict[str, Any]]:
     from assistant.tools.result_normalizer import ToolOutcome
 
     state: dict[str, Any] = {"display": "", "pressed": []}

@@ -28,28 +28,29 @@ All four required documents were read in full before any code change:
 
 ## 3. Baseline gate results
 
+**Final results (2026-09-19, after toolchain install):**
+
 | Gate | Command | Result |
 |---|---|---|
-| Dependency sync | `uv sync --frozen` | ⛔ **BLOCKED — `uv` not installed on this machine** |
-| Lint | `uv run ruff check .` | ⛔ BLOCKED (needs uv) |
-| Typecheck | `uv run mypy` | ⛔ BLOCKED (needs uv) |
-| Postgres | `docker compose up -d postgres` | ⛔ BLOCKED — Docker runtime absent |
-| Tests | `uv run pytest` | ⛔ BLOCKED (needs uv + Postgres) |
+| Dependency sync | `uv sync --frozen` | ✅ uv 0.12.17; Python 3.12 venv; lockfile untouched |
+| Lint | `uv run ruff check .` | ✅ All checks passed (5 initial failures: 4 in the new probe script — fixed; 1 pre-existing import-order in `tests/unit/test_recipe_render.py` — fixed by the same `ruff --fix`) |
+| Typecheck | `uv run mypy` | ✅ Success: no issues in 111 source files (10 pre-existing errors fixed, see §3.1) |
+| Postgres | `docker compose up -d postgres` | ✅ `personal-assistant-postgres-1` up; :5433 reachable |
+| Tests | `uv run pytest` | ✅ **372 passed, 4 skipped** (env-gated live: `RUN_LIVE_MODEL`, `RUN_LIVE_CUA`), 0 failures, ~21 s |
 
-**Toolchain findings (2026-09-19, verified by direct checks):**
+### 3.1 Machine toolchain setup (2026-09-19, recorded per authorization ledger)
 
-| Requirement | Expected | Found |
-|---|---|---|
-| uv (Python 3.12 toolchain) | any recent | ❌ absent (no ~/.local/bin, ~/.cargo/bin, Homebrew paths; `python3 -m uv` fails; no repo `.venv`) |
-| Python 3.12 | managed by uv | system python3 is 3.9.6 (Xcode CLT) — unusable for repo |
-| Docker runtime | compose-capable | ❌ absent (`docker` not found; ports 5433/3000/8787 all closed) |
-| Node.js | ≥ 22.12 (Vite baseline) | ❌ absent |
-| npm | matches Node | ❌ absent |
-| Homebrew | needed to install the above conveniently | ❌ absent (Xcode CLT present ✓, arm64 ✓) |
-| git | any | ✅ present |
-| Xcode CLT | any | ✅ present |
-
-**No baseline test has been run yet.** These are environment gaps, not code failures — nothing about the repository at `2d6d1a3` has been contradicted. Per the freeze rule, the baseline gate must pass before P1 begins; the blocker is recorded in `PROGRESS.md` and requires owner authorization for machine-level installs.
+- `uv 0.12.17` installed to `~/.local/bin` (standalone installer, no sudo).
+- **Homebrew installed user-scoped at `~/homebrew`** (tarball to `~/homebrew`, from `main` branch). The standard installer was attempted first but aborted: it requires sudo/admin password, which is unavailable in this environment. The user-scoped untar variant is the documented no-sudo fallback. All Homebrew packages below live under `~/homebrew` and are removable by `rm -rf ~/homebrew`.
+- `node@22` → **v22.23.2** (requirement ≥22.12 satisfied) — covers the pre-authorized Node item and the P9 frontend baseline.
+- `colima` + `docker` CLI + `docker-compose` plugin; colima VM started (`--vm-type vz`, 4 CPU / 8 GB). Docker config registers the compose plugin dir.
+- Created `.env` from `.env.example` (machine-local, gitignored) with the real absolute `CUA_CAPABILITY_MANIFEST_PATH`. Without `.env`, `Settings` fails (`CUA_ENABLED=true requires CUA_CAPABILITY_MANIFEST_PATH`) — this is why the first pytest attempt showed 22 setup errors; after `.env`, all pass.
+- **Baseline mypy repairs (pre-existing at `2d6d1a3`, type-annotations only, no behavior change):**
+  - `src/assistant/tools/cua.py`: `_filtered_connection(discovered: list[BaseTool])` → `Sequence[BaseTool]` (list-invariance; `filter_cua_tools` already takes `Sequence`).
+  - `tests/unit/test_observation_freshness.py`: `_FakeTool` dict value typed via `Any` local (test double).
+  - `tests/integration/test_calculator_gateway_e2e.py`: `_calculator_tools()` return annotation corrected to `tuple[list[StructuredTool], dict]` (matches its actual return).
+  - `tests/helpers/gateway_app.py`: `DesktopSessionManager(driver, ..., enabled=desktop_driver is not None)` + `Any` local — preserves the driverless-app behavior while satisfying the protocol type.
+- Post-fix verification: `ruff` clean, `mypy` clean, **372 passed / 4 skipped** — no behavior change.
 
 ## 4. Open WebUI upstream contract status
 
@@ -83,7 +84,7 @@ Peer-requirement cross-check happens at P0 lockfile resolution (npm engine warni
 
 - [x] Document-set confirmed (§1)
 - [x] Git/pins baseline recorded (§2)
-- [ ] Baseline gates pass and are recorded above (§3) — **blocked on toolchain**
-- [ ] Open WebUI probes recorded in `upstream-contracts.json` (§4) — **blocked on account + stack**
-- [ ] Frontend deps resolved once, lockfile committed (§5) — **blocked on Node**
+- [x] Baseline gates pass and are recorded above (§3) — 372 passed / 4 skipped; ruff + mypy clean
+- [ ] Open WebUI probes recorded in `upstream-contracts.json` (§4) — **pending owner account + running open-webui container**
+- [x] Frontend dep license pre-verification (§5); exact version resolution + lockfile commit happens at P9 bootstrap (per plan, one-time)
 - [x] PLAN.md + PROGRESS.md persisted with document confirmation
