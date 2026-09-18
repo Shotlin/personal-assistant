@@ -73,6 +73,22 @@ def _clean(value: object) -> object:
     return value
 
 
+def _pid_from(outcome: ToolOutcome) -> int | None:
+    """Extract the launched app's pid from structured evidence or text.
+
+    cua-driver launch_app reports 'Launched <App> (pid NNN)...'; the
+    adapter path may or may not expose a structured pid field, so the
+    text remains a legitimate evidence source (bounded, own process).
+    """
+    pid = outcome.structured.get("pid")
+    if isinstance(pid, int) and pid > 0:
+        return pid
+    match = re.search(r"\bpid (\d+)", outcome.text)
+    if match:
+        return int(match.group(1))
+    return None
+
+
 def _outcome(raw: object) -> ToolOutcome:
     if isinstance(raw, ToolOutcome):
         outcome = raw
@@ -106,6 +122,7 @@ class RecipeExecutor:
         self._run = run
         self._recipe = "local"
         self._step = 0
+        self._launched_pid: int | None = None
 
     def begin_recipe(self, recipe_id: str) -> None:
         """Bind ledger labels; create one executor per serial request."""
@@ -190,7 +207,9 @@ class RecipeExecutor:
             if "app_id" not in tool_args:
                 raise RecipeFailure("launch_app lacks a supported identity parameter")
             payload = {"app_id": app_id}
-        return await self._invoke("launch_app", payload)
+        outcome = await self._invoke("launch_app", payload)
+        self._launched_pid = _pid_from(outcome)
+        return outcome
 
     async def read_state(self) -> ToolOutcome:
         """Fresh observation via any available allowlisted observation tool.
@@ -207,8 +226,110 @@ class RecipeExecutor:
         raise RecipeFailure("Required native tool unavailable: any observation tool")
 
     async def verify_foreground(self, app_id: str) -> ToolOutcome:
-        """Return fresh evidence; the recipe compares observed identity itself."""
+        """Fresh foreground evidence from list_apps' per-app active flag.
+
+        get_desktop_state carries NO foreground identity (verified live
+        2026-09-18: display/screenshot fields only), so deriving identity
+        from it can never satisfy ``foreground_matches`` on the real
+        driver. list_apps reports ``active`` per app; when list_apps is
+        unavailable the legacy read_state path remains the fallback.
+        """
+        if "list_apps" in self._tools:
+            outcome = await self._invoke("list_apps", {})
+            if outcome.status == "ok":
+                target = APP_BUNDLE_IDS.get(app_id, "")
+                for app in outcome.structured.get("apps", []) or []:
+                    if not isinstance(app, dict):
+                        continue
+                    identity = (
+                        app.get("bundle_id") == target
+                        or str(app.get("name", "")).lower() == app_id
+                    )
+                    if not identity:
+                        continue
+                    active = app.get("active") is True
+                    return ToolOutcome(
+                        status="ok" if active else "failed",
+                        effect="not_applicable",
+                        text=f"{app.get('name')}: active={app.get('active')}",
+                        structured={
+                            "foreground_app": app_id if active else None,
+                            "foreground_name": app.get("name"),
+                            "pid": app.get("pid"),
+                            "modal": False,
+                        },
+                    )
+                return ToolOutcome(
+                    "failed",
+                    "unverifiable",
+                    text=f"{app_id} is not running",
+                    structured={"foreground_app": None, "modal": False},
+                )
         return await self.read_state()
+
+    async def activate(self, app_id: str) -> ToolOutcome:
+        """Bring the launched app to the foreground via its pid.
+
+        macOS may open a freshly launched app behind the current
+        frontmost app (observed live 2026-09-18: 'Launched Calculator
+        (pid NNN) in background'). With multiple top-level windows the
+        driver refuses a pid-only activation and reports eligible
+        window candidates (verified live 2026-09-18); the first
+        candidate is then targeted explicitly. This is a budgeted
+        mutation like any other native action.
+        """
+        self._require_tools("bring_to_front")
+        pid = self._launched_pid
+        if pid is None:
+            raise RecipeFailure("No launch pid available to bring to front")
+        outcome = await self._invoke("bring_to_front", {"pid": pid})
+        if outcome.status == "ok":
+            return outcome
+        window_id = self._window_id_from(outcome)
+        if window_id is None:
+            return outcome
+        return await self._invoke(
+            "bring_to_front", {"pid": pid, "window_id": window_id}
+        )
+
+    @staticmethod
+    def _pick_window_id(candidates: object) -> int | None:
+        """Usable window id from a driver candidate list.
+
+        Prefer the on-screen, titled window (the one a user means by
+        'open the app'); fall back to the first listed candidate.
+        """
+        if not isinstance(candidates, list):
+            return None
+        usable: list[tuple[int, int]] = []  # (score, window_id)
+        for candidate in candidates:
+            window_id = (
+                candidate.get("window_id")
+                if isinstance(candidate, dict)
+                else candidate
+            )
+            if not isinstance(window_id, int) or window_id <= 0:
+                continue
+            score = 0
+            if isinstance(candidate, dict):
+                if candidate.get("is_on_screen") is True:
+                    score += 2
+                if str(candidate.get("title", "")).strip():
+                    score += 1
+            usable.append((score, window_id))
+        if not usable:
+            return None
+        return max(usable, key=lambda item: (item[0], -item[1]))[1]
+
+    def _window_id_from(self, outcome: ToolOutcome) -> int | None:
+        """Extract a window id from refusal evidence or the launch report."""
+        window_id = self._pick_window_id(outcome.structured.get("candidates"))
+        if window_id is not None:
+            return window_id
+        windows = outcome.structured.get("windows")
+        if isinstance(windows, list):
+            return self._pick_window_id(windows)
+        return None
 
     async def clear_display(self) -> ToolOutcome:
         return await self._invoke("press_key", {"key": "Escape"})

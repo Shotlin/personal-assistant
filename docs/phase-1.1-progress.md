@@ -1,5 +1,47 @@
 # Phase 1.1 implementation progress
 
+## Round-17 checkpoint — live release: fast path proven live, token cuts, activation fix
+
+Owner go-live round. All changes live-tested ONCE through the real chain
+(no repeated UI testing; DB/log probes used for verification):
+
+- LIVE (production gateway, real driver, real TCC): 'open calculator' ->
+  'Opened calculator.' in 2.6s wall clock with ZERO model calls. This is
+  the first honest live success of the exact recipe route (WP8 live
+  scope); the macOS permission blocker was cleared earlier today
+  (LaunchAgent + bounded daemon + posture guard).
+- Live bug fixed (TDD, 7 new unit tests): verify_foreground derived
+  identity from get_desktop_state, which carries NO foreground field on
+  the real driver — every open_app recipe failed honestly but wrongly.
+  Now derives foreground from list_apps' per-app active flag (live-
+  verified payload), with the legacy read_state fallback for fakes.
+- Live bug fixed: macOS launched apps in background; bring_to_front
+  refuses pid-only when the app owns multiple top-level windows
+  (code=ambiguous_window_target, candidates list). activate() now picks
+  the best candidate (on-screen titled window preferred) and retries
+  once with pid+window_id (verified live: active=true afterwards).
+- Fixed recipe_turn_persist_failed (live: langgraph InvalidUpdateError
+  'Ambiguous update, specify as_node' on the second turn of a chat):
+  aupdate_state now passes as_node='model'.
+- Token cuts (owner direction 'less, less, less token'):
+  (a) compact tool descriptions: 19.8k chars -> ~1.6k chars (one-liners
+  in policy.py; addressing contract kept on action tools);
+  (b) compact system prompt (same 15 spec rules, ~40% shorter, added
+  explicit concision rule); (c) COMPACT_PLANNER_ENABLED=true in .env
+  (natural phrasing -> ONE compact call; flag documented for rollback);
+  (d) Open WebUI auxiliary generation disabled via compose env
+  (ENABLE_TITLE_GENERATION, ENABLE_TAGS_GENERATION,
+  ENABLE_FOLLOW_UP_GENERATION, ENABLE_AUTOCOMPLETE_GENERATION=false —
+  each fired a hidden model request per message).
+- Full gates: 361 passed, 1 skipped (unit+integration); ruff/mypy clean
+  (46 files). Model unchanged: z-ai/glm-5.3-flash via OpenRouter.
+
+Open queue (unchanged truths): SceneEntry consumption by
+executor/recipes, constraints wiring on both routes (still {}), real
+p50/p95 benchmark (schema exists, no measured claim), Open WebUI
+auxiliary-generation accounting parity now that generation is off,
+prompt-caching decision (owner policy).
+
 ## Round-16 checkpoint — failed-turn retry (live incident) + model switch
 
 LIVE INCIDENT (user screenshot, Open WebUI '2/2' regeneration): a turn

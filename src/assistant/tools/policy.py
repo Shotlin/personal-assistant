@@ -244,21 +244,52 @@ def assert_observation_available(enabled_names: list[str]) -> None:
 #: v0.28.2 addressing contract appended to tool descriptions so the model
 #: addresses targets correctly on the first attempt (spec section 13.2).
 ADDRESSING_CONTRACT = (
-    " Driver contract (cua-driver v0.28.2): address a target element with "
-    "`element_token` from the latest get_window_state `elements` output, or "
-    "with `snapshot_id` plus `element_index`; a bare element_index is rejected. "
-    "After important UI actions, re-run get_window_state before the next action "
-    "and verify the observed state."
+    " Address targets with `element_token` from the latest get_window_state "
+    "output (or snapshot_id+element_index); bare element_index is rejected. "
+    "Re-observe after important actions and verify the result."
 )
 
 _DESCRIPTION_ENRICHED_TOOLS = frozenset(
     {"click", "double_click", "type_text", "press_key", "scroll", "set_value", "hotkey"}
 )
 
+#: Token-budget compaction (Phase 1.1): the driver ships verbose per-tool
+#: prose (~19.8k chars total ≈ 5-6k tokens of every agent turn). Known
+#: tools get a one-line description here; the addressing contract stays
+#: on action tools (correctness-critical). Unknown tools keep the
+#: driver's own description (fail-open for new driver versions).
+COMPACT_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "list_apps": "List running apps: pid, bundle_id, name, window ids.",
+    "list_windows": "List an app's windows (pid): window_id, title, bounds.",
+    "get_window_state": (
+        "Read one window's UI: elements with element_token, role, label, "
+        "value. THE source of element_token for actions."
+    ),
+    "verify_state": "Assert an expected UI condition; returns ok or the mismatch.",
+    "launch_app": "Launch an app by bundle_id; returns pid + window ids.",
+    "bring_to_front": "Bring a window to the foreground (pid/window_id).",
+    "click": "Click an element_token (or point) once.",
+    "double_click": "Double-click an element_token (or point).",
+    "type_text": "Type text into the focused or targeted element.",
+    "press_key": "Press a key, with optional modifiers.",
+    "hotkey": "Press a key combo given as a combo string.",
+    "set_value": "Set an element's value directly (fastest way to fill fields).",
+    "scroll": "Scroll at a target by amount and direction.",
+    "get_screen_size": "Get screen pixel size and scale factor.",
+    "get_desktop_state": "Full-screen PNG (to file) + true size for desktop-coordinate actions.",
+    "get_accessibility_tree": "Bounded accessibility tree across apps.",
+    "zoom": "Capture an enlarged view of a screen region.",
+}
+
 
 def _enriched_description(tool: BaseTool) -> str:
-    base = getattr(tool, "description", "") or ""
-    if getattr(tool, "name", None) in _DESCRIPTION_ENRICHED_TOOLS:
+    name = getattr(tool, "name", None)
+    base = ""
+    if isinstance(name, str) and name in COMPACT_TOOL_DESCRIPTIONS:
+        base = COMPACT_TOOL_DESCRIPTIONS[name]
+    else:
+        base = getattr(tool, "description", "") or ""
+    if name in _DESCRIPTION_ENRICHED_TOOLS:
         return f"{base}{ADDRESSING_CONTRACT}"
     return base
 

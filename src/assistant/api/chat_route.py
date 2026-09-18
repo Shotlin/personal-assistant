@@ -451,6 +451,10 @@ async def _persist_recipe_turn(
         await agent.aupdate_state(
             config,
             {"messages": [HumanMessage(content=user_text), AIMessage(content=assistant_text)]},
+            # An existing thread checkpoint makes a bare message update
+            # ambiguous (live: langgraph InvalidUpdateError on the second
+            # turn of one chat); the agent node owns these messages.
+            as_node="model",
         )
         logger.info(
             "recipe_turn_persisted",

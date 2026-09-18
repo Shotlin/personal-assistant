@@ -21,7 +21,11 @@ BOUNDED_OK = """Cua Driver daemon is running
 STANDARD_MODE = BOUNDED_OK.replace(
     "permission mode: bounded (trusted_startup_configuration)",
     "permission mode: standard (built_in_default)",
-).replace("  capability manifest sha256: 107ff67558fbf72ca96690eea7f01de41cb4eaf8a2ff28f886b25ca91ba32eb7\n", "")
+).replace(
+    "  capability manifest sha256:"
+    " 107ff67558fbf72ca96690eea7f01de41cb4eaf8a2ff28f886b25ca91ba32eb7\n",
+    "",
+)
 
 NOT_RUNNING = "Cua Driver daemon is not running"
 

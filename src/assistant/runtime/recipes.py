@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import math
 import re
 from collections.abc import Mapping
@@ -20,6 +19,7 @@ class RecipeRuntime(Protocol):
     def begin_recipe(self, recipe_id: str) -> None: ...
     async def launch_app(self, app_id: str) -> ToolOutcome: ...
     async def verify_foreground(self, app_id: str) -> ToolOutcome: ...
+    async def activate(self, app_id: str) -> ToolOutcome: ...
     async def clear_display(self) -> ToolOutcome: ...
     async def type_text(self, text: str) -> ToolOutcome: ...
     async def read_display(self) -> ToolOutcome: ...
@@ -152,11 +152,21 @@ def _acknowledged(outcome: ToolOutcome) -> None:
 
 
 async def _open(executor: RecipeRuntime, app_id: str) -> ToolOutcome:
-    _acknowledged(await executor.launch_app(app_id))
+    launched = await executor.launch_app(app_id)
+    _acknowledged(launched)
     observation = await executor.verify_foreground(app_id)
-    # Only failed observation gets one read-only retry, never another launch.
-    if observation.status == "failed" and not observation.structured.get("foreground_app"):
-        await asyncio.sleep(0.05)
+    if (observation.status == "failed"
+            and not foreground_matches(observation, app_id)):
+        # macOS may open the app behind the current frontmost app
+        # (observed live 2026-09-18). One honest activation attempt on a
+        # DEFINITIVE 'not foreground' reading, then final verification
+        # decides the reported truth. Unknown observations are never
+        # re-dispatched; a missing activation tool must not mask the
+        # real foreground state.
+        try:
+            await executor.activate(app_id)
+        except RecipeFailure:
+            pass
         observation = await executor.verify_foreground(app_id)
     return observation
 
