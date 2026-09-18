@@ -39,6 +39,16 @@ class DesktopDriverError(RuntimeError):
     """A trusted controller call failed at the driver."""
 
 
+#: Marker in the driver's own error text (live 2026-09-18) that the
+#: session ended and the driver EXPLICITLY invites one revival attempt.
+_SESSION_REVIVE_MARKERS = ("has ended and must be revived", "must be revived")
+
+
+def _session_revive_demanded(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in _SESSION_REVIVE_MARKERS)
+
+
 class DesktopDriver(Protocol):
     """What a desktop session manager needs from the driver."""
 
@@ -155,7 +165,15 @@ class DesktopRun:
         self._action_lock = asyncio.Lock()
 
     async def ensure_started(self) -> None:
-        """Start once; uncertain startup must not be retried implicitly."""
+        """Start once; uncertain startup must not be retried implicitly.
+
+        One bounded exception (live incident 2026-09-18): when the driver
+        DEFINITIVELY reports the session ended and demands revival
+        ('... has ended and must be revived'), that error is not
+        uncertainty — it is an instruction. Exactly one revival attempt
+        is permitted; any other startup failure keeps the fail-closed
+        refusing-retry behavior.
+        """
         async with self._activation_lock:
             self.require_active()
             self._acquire_lease()
@@ -164,7 +182,15 @@ class DesktopRun:
             if self._start_attempted:
                 raise DesktopDriverError("session startup outcome unknown; refusing retry")
             self._start_attempted = True
-            await self._driver.start_session(self.session_id)
+            try:
+                await self._driver.start_session(self.session_id)
+            except DesktopDriverError as exc:
+                if not _session_revive_demanded(str(exc)):
+                    raise
+                # The driver itself says the session must be revived;
+                # one explicit revival attempt, never a loop.
+                self._start_attempted = False
+                await self._driver.start_session(self.session_id)
             self.require_active()
             await self._driver.set_cursor_motion(
                 self.session_id,
@@ -176,6 +202,19 @@ class DesktopRun:
             await self._driver.set_cursor_enabled(self.session_id, enabled=True)
             self.require_active()
             self._started = True
+
+    async def revive(self) -> None:
+        """Explicit recovery after a mid-run session end (live 2026-09-18).
+
+        Resets the lazy-start state and starts the session again once.
+        Raises when the driver still refuses — the caller reports the
+        driver's own text; nothing is guessed.
+        """
+        async with self._activation_lock:
+            self.require_active()
+            self._started = False
+            self._start_attempted = False
+        await self.ensure_started()
 
     @asynccontextmanager
     async def action(self) -> AsyncIterator[None]:

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from langchain_core.tools import BaseTool, StructuredTool
 
 from assistant.agent.context import CuaBudgetExceeded, RunBudget
-from assistant.runtime.session import DesktopRunCancelled
+from assistant.runtime.session import DesktopRunCancelled, _session_revive_demanded
 
 logger = logging.getLogger("assistant.tools.policy")
 
@@ -384,6 +384,25 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
         except Exception as exc:  # noqa: BLE001 -- tool errors become agent-visible text
             if ledger_id is not None:
                 await _ledger_observe(ledger, ledger_id, "failed", str(exc)[:120])
+            # Live 2026-09-18: a session can end mid-run; the driver's own
+            # error demands revival. OBSERVATIONS may be retried after one
+            # explicit revival (no effect to corrupt). Mutating actions are
+            # NEVER blindly retried here — their outcome is unknown; the
+            # model sees the error and decides.
+            if (
+                not is_mutating
+                and run is not None
+                and _session_revive_demanded(str(exc))
+            ):
+                try:
+                    await run.revive()
+                    result = await original(**kwargs)
+                    if ledger_id is not None:
+                        await _ledger_observe(ledger, ledger_id, "confirmed")
+                    return _model_text(result)
+                except Exception as revive_exc:  # noqa: BLE001
+                    detail = str(revive_exc).strip() or str(exc)
+                    return f"Error: session revive failed: {detail[:200]}"
             return f"Error: {exc}"
         if ledger_id is not None:
             await _ledger_observe(ledger, ledger_id, "confirmed")

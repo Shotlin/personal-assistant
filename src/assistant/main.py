@@ -8,6 +8,8 @@ filtered CUA tools, and assembles the one Deep Agent.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from pathlib import Path
@@ -32,6 +34,8 @@ from assistant.settings import Settings
 from assistant.tools.cua import open_cua_connection
 from assistant.tools.registry import assemble_tool_inventory
 
+logger = logging.getLogger("assistant.main")
+
 
 def _null_cua_connection() -> AbstractAsyncContextManager[dict[str, Any]]:
     @asynccontextmanager
@@ -39,6 +43,35 @@ def _null_cua_connection() -> AbstractAsyncContextManager[dict[str, Any]]:
         yield {}
 
     return cm()
+
+
+#: Interval for the driver keepalive ping (seconds). The daemon's manifest
+#: idles sessions out after 30m; a cheap read-only ping every 5 minutes
+#: keeps the daemon process and the persistent transport's session alive
+#: so a run never starts against a dead session (live 2026-09-18).
+KEEPALIVE_INTERVAL_SECONDS = 300
+
+
+async def _driver_keepalive(connection: Any) -> None:
+    """Periodic read-only ping over the persistent MCP session.
+
+    Never touches the model, never mutates anything: one bounded
+    observation call per interval. Stops quietly on shutdown.
+    """
+    tools_by_name = dict(getattr(connection, "tools_by_name", {}) or {})
+    ping = tools_by_name.get("get_screen_size")
+    if ping is None:
+        return
+    while True:
+        await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
+        try:
+            await asyncio.wait_for(ping.ainvoke({}), timeout=30)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 -- keepalive must never break the gateway
+            logger.warning(
+                "cua_keepalive_ping_failed", extra={"event": "cua_keepalive_ping_failed"}
+            )
 
 
 def _skills_root() -> Path:
@@ -95,6 +128,15 @@ def create_app(
     return app
 
 
+async def _cancel_keepalive(task: Any) -> None:
+    """Stop the keepalive task on shutdown without surfacing cancellation."""
+    task.cancel()
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        pass
+
+
 def _build_lifespan(settings: Settings) -> LifespanFn:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -120,6 +162,10 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
             )
             extra_tools = assemble_tool_inventory(list(getattr(connection, "tools", [])))
             app.state.cua_tools_by_name = dict(getattr(connection, "tools_by_name", {}))
+            # Keepalive: one read-only ping per interval so the daemon and
+            # its transport session never idle out between user turns.
+            keepalive_task = asyncio.create_task(_driver_keepalive(connection))
+            stack.push_async_callback(_cancel_keepalive, keepalive_task)
             # One trusted DesktopSessionManager over the persistent
             # connection's lifecycle tools (WP3): lazy run-scoped sessions,
             # controller-owned cursor motion, single desktop lease. The
