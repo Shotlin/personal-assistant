@@ -1,8 +1,8 @@
 # Agent Designer — Progress Log
 
-**Last updated:** 2026-09-19T04:10:00Z
-**Current package:** P3 — Open WebUI adapters (complete; committed)
-**Next action for a new session:** Begin P4 (Connectors) per `docs/designer/PLAN.md`: adapters/mcp.py (stdio + Streamable HTTP, operator-approved stdio, schema digests + generation), adapters/openapi.py (SSRF guards), ConnectorRuntimeState with O(1) hot-path check (C3), ephemeral validation leases (Clar 1), CUA as registered connection, Terminal blocked-without-sandbox, native plugins CATALOG_ONLY, test_connectors.py.
+**Last updated:** 2026-09-19T07:10:00Z
+**Current package:** P4 — Connectors (complete; committed)
+**Next action for a new session:** Begin P5 (Compiler, runtimes, authorization & migration) per `docs/designer/PLAN.md`: full compiler (ExecutionConfig), runtime pool with RuntimeCacheKey + credential generations, agent-scoped memory namespaces + epochs, run-registry extension + dedup index backfill, bootstrap_designer.py (Vion → registry), /v1/models per-actor listing + recursion rejection, chat authorization before claim/recipe/planner/runtime/provider (C5 + five integration tests), disabled-CUA blocks every route.
 
 **Document-set confirmation (Safety note 3):** all four required documents confirmed present and readable on 2026-09-18 before code changes:
 1. `01_AGENT_DESIGNER_REQUIREMENTS.md` (~/Downloads, read in full)
@@ -20,8 +20,8 @@
 | P1 Auth, RBAC & credentials | Complete | 16 tests; flag-on/-off boundary proven; AESGCM credentials w/ generations |
 | P2 Registry & validation | Complete | schemas + migration 002 + R06 validation + ETag CAS; 24 designer tests |
 | P3 Open WebUI adapters | Complete | contract-first catalog + skill CRUD + BLOCKED Knowledge adapter (Fix 2); 11 tests |
-| P4 Connectors | Not started | Next up |
-| P5 Compiler, runtimes, authorization & migration | Not started | |
+| P4 Connectors | Complete | MCP stdio/HTTP specs, ConnectorRuntimeState + O(1) gate, validation leases, scope refusal; 14 tests incl. real stdio transport |
+| P5 Compiler, runtimes, authorization & migration | Not started | Next up |
 | P6 Context policies | Not started | |
 | P7 Activation & revocation | Not started | |
 | P8 Events & SSE | Not started | |
@@ -48,6 +48,26 @@
 Standing restrictions: no push, no deploy, no paid provider API calls, no real desktop (CUA) operations without explicit authorization. Live test gates stay env-gated (`RUN_LIVE_MODEL`, `RUN_LIVE_CUA`).
 
 ## Per-package log (newest first)
+
+### P4 — Connectors (complete 2026-09-19)
+
+**Status:** Complete. Committed on `agent-designer`.
+
+**Implemented (frozen plan: R10/R11 + C3 + Clar 1 + Fix 3 + Safety 2):**
+- `connectors.py`: `ConnectorRuntimeState` (discovered_schema_digest, generation, status, checked_at, error, quarantine_reason); `NormalizedTool` with per-tool schema digests; `schema_digest` over selected set; `ConnectorLease` with the **local O(1) dispatch gate** (`can_invoke` = selected ∧ digest matches ∧ generation matches ∧ not quarantined — no network, no model call); `ValidationLease` that structurally refuses tool execution (Clar 1); `ScopeKind` SHARED/USER_SCOPED/RUN_SCOPED (Fix 3).
+- `adapters/mcp.py`: `StdioSpec` (absolute path only, shell metacharacters rejected — no `npx latest`, no shell strings) and `HttpSpec` (https required outside loopback, metadata endpoints blocked); `validate_connector` runs discovery inside one anyio task with start→list→close in `finally` (ephemeral process never outlives the call — success/failure/timeout/cancellation), updates the runtime state (generation++), and returns an inert record lease.
+- `compiler.py` (P5 skeleton): `RuntimeScopeRequest` + `refuse_mismatched_scope` — a SHARED runtime compiled with a USER_SCOPED connector raises `permission_denied` naming the offender; no guessing (Fix 3).
+- `tests/designer/fixture_mcp_server.py` + `test_connectors.py`: 14 tests — spec validation (relative command, shell metachars, metadata endpoints, non-TLS remote all rejected; loopback http allowed), O(1) gate (pass / schema-change block / generation block / quarantine block / unselected tool cannot execute — plan-doc verbatim), scope mapping + user-scoped-in-shared refusal, validation lease refuses execution, and a **real stdio transport contract test** spawning `fixture_mcp_server.py` (FastMCP: harmless `echo` + forbidden `delete_file`) with the lease closed in finally.
+
+**Commands/results:**
+- `uv run pytest tests/designer/` → **65 passed** (16 auth + 24 graph + 11 sources + 14 connectors)
+- `uv run pytest` → **437 passed, 4 skipped** (one colima VM restart needed mid-run — environment, not code; recorded here)
+- `uv run ruff check .` → clean · `uv run mypy` → clean (134 files)
+
+**Notes for next packages:**
+- Runtime invocation binding (real MCP sessions into ConnectorLease) lands in P5's runtime pool; the dispatch gate contract is pinned here.
+- Streamable HTTP transport test needs a fixture HTTP MCP server (P5/P11 — A7 requires both transports live).
+- CUA registered connection + Terminal blocked node land with the compiler in P5 (CUA is the existing bounded connection; Terminal stays BLOCKED until an operator sandbox is tested).
 
 ### P3 — Open WebUI adapters (complete 2026-09-19)
 
