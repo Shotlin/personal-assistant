@@ -109,9 +109,10 @@ def create_app(
         from assistant.designer.routes import router as designer_router
 
         app.include_router(designer_router)
-        from assistant.designer.routes import install_error_handler
+        from assistant.designer.routes import install_error_handler, mount_designer_spa
 
         install_error_handler(app)
+        mount_designer_spa(app)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

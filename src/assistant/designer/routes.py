@@ -9,6 +9,7 @@ services (Safety note 1).
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request
@@ -313,7 +314,23 @@ async def get_agent(request: Request, agent_id: str) -> dict[str, Any]:
     designer = _designer_state(request)
     actor = await resolve_actor(request)
     agent = await _agent_for_actor(designer, actor, agent_id)
-    return {**agent, "etag": _agent_etag(agent)}
+    revisions = await designer["store"].list_revisions(agent_id)
+    draft = None
+    if revisions:
+        latest = await designer["store"].get_revision(revisions[0]["revision_id"])
+        if latest:
+            draft = {
+                "revision_id": latest["revision_id"],
+                "revision_number": latest["revision_number"],
+                "graph": latest["graph_json"],
+                "row_version": agent["row_version"],
+            }
+    return {
+        **agent,
+        "etag": _agent_etag(agent),
+        "revisions_count": len(revisions),
+        "draft": draft,
+    }
 
 
 class RevisionSaveRequest(BaseModel):
@@ -416,6 +433,17 @@ async def list_revisions(request: Request, agent_id: str) -> dict[str, Any]:
     return {"revisions": revisions}
 
 
+@router.get("/agents/{agent_id}/revisions/{revision_id}")
+async def get_revision(request: Request, agent_id: str, revision_id: str) -> dict[str, Any]:
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    await _agent_for_actor(designer, actor, agent_id)
+    rev = await designer["store"].get_revision(revision_id)
+    if rev is None or str(rev["agent_id"]) != agent_id:
+        raise DesignerError("missing", "revision not found")
+    return rev
+
+
 @router.delete("/agents/{agent_id}")
 async def archive_agent(request: Request, agent_id: str) -> dict[str, Any]:
     designer = _designer_state(request)
@@ -430,6 +458,46 @@ async def archive_agent(request: Request, agent_id: str) -> dict[str, Any]:
         subject={"agent_id": agent_id, "slug": agent["slug"]},
     )
     return {"archived": True}
+
+
+class ValidateGraphRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    graph: dict[str, Any]
+
+
+@router.post("/agents/{agent_id}/validate")
+async def validate_graph_endpoint(
+    request: Request, agent_id: str, body: ValidateGraphRequest
+) -> dict[str, Any]:
+    """Dry-run graph validation (P2/P9, R06).
+
+    Validates syntax, schemas, singletons, and connectivity without creating a
+    revision or mutating state. Zero external side effects.
+    """
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    await _agent_for_actor(designer, actor, agent_id)
+    require_permission(actor, "designer.view", {"agent_id": agent_id})
+
+    from assistant.designer.schemas import UnsupportedSchemaError, parse_graph_document
+    from assistant.designer.validation import validate_graph
+
+    try:
+        graph = parse_graph_document(body.graph)
+    except UnsupportedSchemaError as exc:
+        return {
+            "ok": False,
+            "issues": [{
+                "node_id": None,
+                "edge_id": None,
+                "code": "unsupported_schema",
+                "message": str(exc),
+            }],
+        }
+
+    report = validate_graph(graph)
+    return report.to_dict()
 
 
 class ContextPreviewRequest(BaseModel):
@@ -894,3 +962,49 @@ async def copy_builtin_skill(request: Request, body: SkillCopyRequest) -> dict[s
     return await designer["sources"].copy_builtin_skill(
         actor, builtin_id=body.builtin_id, name=body.name
     )
+
+
+def mount_designer_spa(app: FastAPI, dist_dir: Path | None = None) -> None:
+    """Mount the built React SPA static assets and HTML fallback for /designer/."""
+    if dist_dir is None:
+        dist_dir = Path(__file__).resolve().parents[3] / "frontend" / "agent-designer" / "dist"
+
+    assets_dir = dist_dir / "assets"
+    if assets_dir.is_dir():
+        from starlette.staticfiles import StaticFiles
+
+        app.mount(
+            "/designer/assets",
+            StaticFiles(directory=str(assets_dir)),
+            name="designer_assets",
+        )
+
+    from fastapi.responses import FileResponse, HTMLResponse
+
+    @app.get("/designer/{full_path:path}")
+    async def designer_spa_fallback(full_path: str) -> Any:
+        # Never intercept API routes
+        if full_path.startswith("api/") or full_path == "api":
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+        index_file = dist_dir / "index.html"
+        if index_file.is_file():
+            return FileResponse(index_file)
+        placeholder = (
+            "<!DOCTYPE html><html><head><title>Agent Designer</title></head>"
+            "<body><div id='root'><h1>Agent Designer</h1>"
+            "<p>Frontend assets not built yet.</p></div></body></html>"
+        )
+        return HTMLResponse(placeholder, status_code=200)
+
+    @app.get("/designer")
+    async def designer_root() -> Any:
+        index_file = dist_dir / "index.html"
+        if index_file.is_file():
+            return FileResponse(index_file)
+        placeholder = (
+            "<!DOCTYPE html><html><head><title>Agent Designer</title></head>"
+            "<body><div id='root'><h1>Agent Designer</h1>"
+            "<p>Frontend assets not built yet.</p></div></body></html>"
+        )
+        return HTMLResponse(placeholder, status_code=200)
+

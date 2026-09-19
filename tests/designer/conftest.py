@@ -119,9 +119,10 @@ def build_designer_app(
     upstream = upstream or FakeUpstream()
     app = FastAPI()
     app.include_router(designer_router)
-    from assistant.designer.routes import install_error_handler
+    from assistant.designer.routes import install_error_handler, mount_designer_spa
 
     install_error_handler(app)
+    mount_designer_spa(app)
     # Designer state assembled directly (equivalent to the flag-on lifespan).
     app.state.settings = designer_settings()
     from assistant.designer.events import EventHub

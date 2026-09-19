@@ -1,8 +1,8 @@
 # Agent Designer — Progress Log
 
-**Last updated:** 2026-09-19T10:35:00Z
-**Current package:** P8 — Events & SSE (complete)
-**Next action for a new session:** Begin P9 (Frontend canvas) per `docs/designer/PLAN.md`: Vite app, agent list, library with capability badges + health indicators, custom nodes/edges, drag + click-to-add, undo/redo, viewport persistence, inspector, unsaved warnings, static mount + SPA fallback (flag-gated), themes. Gate: server-backed draft survives reload.
+**Last updated:** 2026-09-19T12:35:00Z
+**Current package:** P9 — Frontend canvas (complete)
+**Next action for a new session:** Begin P10 (Live & activation UI) per `docs/designer/PLAN.md`: Live view with real-time SSE stream, step-by-step token and tool timeline, live metrics strip (tokens, cost, latency, zero-LLM snapshot), activation dialog with dry-run validation gate, rollback trigger, and revocation modal.
 
 **Document-set confirmation (Safety note 3):** all four required documents confirmed present and readable on 2026-09-18 before code changes:
 1. `01_AGENT_DESIGNER_REQUIREMENTS.md` (~/Downloads, read in full)
@@ -25,8 +25,8 @@
 | P6 Context policies | Complete | BudgetLedger, PreparedContext, Fix 8 token vocabulary, operator ceilings, non-billable context preview; 11 tests |
 | P7 Activation & revocation | Complete | Prepare -> CAS Activate, Revoke Now, drain, desktop queue; 15 tests |
 | P8 Events & SSE | Complete | 14 tests; append-only events store, Last-Event-ID replay, heartbeat, snapshot, sanitized capped payloads, disconnect safety |
-| P9 Frontend canvas | Not started | Next up |
-| P10 Live & activation UI | Not started | |
+| P9 Frontend canvas | Complete | Vite + React 18 + TS SPA in `frontend/agent-designer/`, custom nodes/edges, Zustand store w/ 50-state undo/redo, validation & gates, static mount & SPA fallback in FastAPI; 6 backend tests, 7 frontend tests |
+| P10 Live & activation UI | Not started | Next up |
 | P11 Release & acceptance | Not started | |
 
 ## Open blockers
@@ -48,6 +48,45 @@
 Standing restrictions: no push, no deploy, no paid provider API calls, no real desktop (CUA) operations without explicit authorization. Live test gates stay env-gated (`RUN_LIVE_MODEL`, `RUN_LIVE_CUA`).
 
 ## Per-package log (newest first)
+
+### P9 — Frontend canvas (complete 2026-09-19)
+
+**Status:** Complete.
+
+**Implemented (frozen plan: R01-R03, R06-R07, R10-R12, 03_AGENT_DESIGNER_VISUAL_DESIGN.md):**
+- **Vite + React 18 + TS SPA (`frontend/agent-designer/`):**
+  - Scaffolded with React 18, TypeScript (`^5.7.3`), `@xyflow/react` (React Flow), `@radix-ui` primitives (dialog, tooltip, dropdown, tabs), `zustand`, `lucide-react`, and `@codemirror` editor.
+  - Production build generates clean optimized bundle (`dist/index.html`, `dist/assets/*.js`, `dist/assets/*.css`) in ~280ms.
+- **Visual Design System (`03_AGENT_DESIGNER_VISUAL_DESIGN.md`):**
+  - CSS tokens in `src/styles/tokens.css` with dark/light themes, pure monochrome base palette, status colors (`EXECUTABLE`, `CATALOG_ONLY`, `BLOCKED`, `UNSUPPORTED`), and health badges (`ONLINE`, `DEGRADED`, `OFFLINE`, `QUARANTINED`).
+  - Strict UI layout: Header, ModeBar (`design`, `live`, `history`), ComponentLibrary, PropertiesPanel, DiagnosticsStrip, CanvasContent, and dialogs.
+- **Custom React Flow Nodes & Connections:**
+  - Nodes: `agent` (root), `model`, `prompt`, `skill`, `memory`, `context`, `connector`, `tool`.
+  - NodeWrapper with selection ring, status badge, drag handle, and error tooltip.
+  - Typed connection handles (`root` output, `model`, `prompt`, `tools`, `context`, `memory` inputs).
+  - Security invariant: node configuration data stores credential references only (`credential_ref`), never plaintext secret values or API keys (R09).
+- **Zustand Canvas Store (`src/state/canvasStore.ts`):**
+  - Graph editing state, node selection, dirty tracking, validation report integration.
+  - 50-state undo/redo history stack for canvas modifications.
+  - `loadGraph` and `exportGraph` converting between React Flow canvas representation and the strict backend wire schema `GraphDocument` (v1).
+- **Backend SPA Mount & Dry Validation (`src/assistant/designer/routes.py`, `src/assistant/main.py`):**
+  - Added `mount_designer_spa(app)`: mounts `/designer/assets` static directory and serves `/designer/` index with fallback for client routes, strictly excluding `/designer/api/*` and existing `/v1/*` routes.
+  - Added `POST /designer/api/v1/agents/{agent_id}/validate`: dry-run graph validation endpoint checking pure syntax and rules without creating database revisions or mutating state.
+  - Enriched `GET /designer/api/v1/agents/{agent_id}` with latest draft graph and `revisions_count`.
+- **Testing & Verification:**
+  - Vitest component & store unit tests: 7 tests passed (`src/tests/canvas.test.tsx`).
+  - Integration tests in `tests/designer/test_frontend_mount.py`: 6 tests passed.
+  - Gate verified: Server-backed draft persists after save and survives page reload (`test_gate_server_backed_draft_survives_reload`).
+
+**Commands/results:**
+- `npm --prefix frontend/agent-designer run typecheck` → **Passed with 0 errors**
+- `npm --prefix frontend/agent-designer run test -- --run` → **7 passed (573ms)**
+- `npm --prefix frontend/agent-designer run build` → **Built dist in 278ms**
+- `uv run pytest tests/designer/test_frontend_mount.py -v` → **6 passed (1.96s)**
+- `uv run pytest tests/designer/ -v` → **130 passed (3.31s)**
+- `uv run pytest -m "not live"` → **502 passed, 4 skipped, 0 failures (23.19s)**
+- `uv run ruff check .` → **All checks passed!**
+- `uv run mypy` → **Success: no issues found in 145 source files**
 
 ### P8 — Events & SSE (complete 2026-09-19)
 
