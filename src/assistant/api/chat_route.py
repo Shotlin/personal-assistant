@@ -602,6 +602,7 @@ async def _try_planner_route(
     run_id: str,
     action_ledger: RunActionLedger | None,
     ledger: UsageLedger,
+    chat_context: Any = None,
 ) -> Any:
     """WP6: one compact same-model decision for natural phrasing.
 
@@ -616,6 +617,9 @@ async def _try_planner_route(
     from assistant.runtime.recipe_executor import RecipeExecutor
     from assistant.runtime.recipe_result import render_result
     from assistant.runtime.recipes import execute_recipe
+
+    if chat_context is not None and not chat_context.execution_config.allows_native_dispatch():
+        return None
 
     incoming = normalize_history(body.messages)
     last = last_user_content(incoming)
