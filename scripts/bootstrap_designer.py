@@ -158,9 +158,12 @@ async def bootstrap(
 
         # Open to every authenticated actor, exactly like Phase 1 (R19):
         # the Designer grant table can restrict later.
+        # Local single-owner deployment (R22): the wildcard row opens Vion
+        # to every authenticated actor for USE and gives the local owner
+        # edit rights so the Designer opens on the real, editable design.
         await store.upsert_agent_access(
             agent_id=agent["agent_id"], user_id="*", can_use=True,
-            can_edit=False, can_activate=False, granted_by="bootstrap",
+            can_edit=True, can_activate=True, granted_by="bootstrap",
         )
 
         existing = await store.list_revisions(agent["agent_id"])

@@ -303,3 +303,80 @@ async def test_archive_removes_from_list(api: httpx.AsyncClient) -> None:
     listed = await api.get("/designer/api/v1/agents")
     ids = [a["agent_id"] for a in listed.json()["agents"]]
     assert agent["agent_id"] not in ids
+
+
+# ---------------------------------------------------------------------------
+# Agent visibility + detail contract (default open on the real design)
+# ---------------------------------------------------------------------------
+
+
+async def test_agents_list_includes_wildcard_accessible_agent(
+    designer_db: Any, api: httpx.AsyncClient
+) -> None:
+    """The bootstrapped-Vion pattern: an agent owned by someone else with a
+    wildcard can_use row is visible to every authenticated actor."""
+    from scripts.bootstrap_designer import bootstrap
+
+    await bootstrap(
+        "postgresql://assistant:assistant@127.0.0.1:5433/assistant",
+        cua_enabled=True, model_provider="openrouter", model_name="m1",
+    )
+    listed = await api.get("/designer/api/v1/agents")
+    assert listed.status_code == 200
+    slugs = [a["slug"] for a in listed.json()["agents"]]
+    assert "vion" in slugs
+    vion = next(a for a in listed.json()["agents"] if a["slug"] == "vion")
+    assert vion["can_edit"] is True  # local single-owner grant
+    assert vion["active_revision_number"] == 1
+
+
+async def test_agent_detail_returns_latest_revision_as_draft(
+    designer_db: Any, api: httpx.AsyncClient
+) -> None:
+    from scripts.bootstrap_designer import bootstrap
+
+    await bootstrap(
+        "postgresql://assistant:assistant@127.0.0.1:5433/assistant",
+        cua_enabled=True, model_provider="openrouter", model_name="m1",
+    )
+    listed = await api.get("/designer/api/v1/agents")
+    vion = next(a for a in listed.json()["agents"] if a["slug"] == "vion")
+    detail = await api.get(f"/designer/api/v1/agents/{vion['agent_id']}")
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["name"] == "Vion"
+    assert body["active_revision_number"] == 1
+    assert body["revisions_count"] >= 1  # shared dev DB accumulates drafts
+    assert body["draft"]["revision_number"] == body["revisions_count"]
+    assert body["draft"] is not None
+    graph = body["draft"]["graph"]
+    assert graph["schema_version"] == 1
+    types = [n["type"] for n in graph["nodes"]]
+    # The real design: model, prompt, skills, memory, context all attached.
+    for kind in ("agent", "model", "prompt", "skill", "memory", "context"):
+        assert kind in types, f"missing {kind} in bootstrapped graph"
+
+
+async def test_non_owner_with_can_edit_can_save_draft(
+    designer_db: Any, api: httpx.AsyncClient
+) -> None:
+    from scripts.bootstrap_designer import bootstrap
+
+    await bootstrap(
+        "postgresql://assistant:assistant@127.0.0.1:5433/assistant",
+        cua_enabled=True, model_provider="openrouter", model_name="m1",
+    )
+    listed = await api.get("/designer/api/v1/agents")
+    vion = next(a for a in listed.json()["agents"] if a["slug"] == "vion")
+    detail = (await api.get(f"/designer/api/v1/agents/{vion['agent_id']}")).json()
+    # Round-trip the existing design (never overwrite the real graph with
+    # a minimal fixture in the shared dev database).
+    saved = await api.post(
+        f"/designer/api/v1/agents/{vion['agent_id']}/revisions",
+        json={"graph": detail["draft"]["graph"]},
+        headers={"If-Match": vion["etag"]},
+    )
+    assert saved.status_code == 201, saved.text
+    # Saving still never activates (R12).
+    detail = (await api.get(f"/designer/api/v1/agents/{vion['agent_id']}")).json()
+    assert detail["active_revision_id"] == vion["active_revision_id"]

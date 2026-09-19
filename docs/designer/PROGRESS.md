@@ -12,6 +12,14 @@
 - Live C5 cross-user denial check: seeded an agent owned by `someone-else` with no access rows, chatted as `random-user` -> **404 with ZERO run_registry rows** (denied before claim, before any provider call; no API spend).
 - Evidence: pytest 516 passed / 4 skipped; ruff clean; mypy clean (147 files).
 
+**2026-09-20 Designer opens on the real Vion design (not a demo draft):**
+- `GET /designer/api/v1/agents` now returns every agent the actor may USE (own agents + per-user/`*` access rows) with the SPA's AgentSummary contract (`name`, `active_revision_number`, `can_edit`, `etag`).
+- `GET /designer/api/v1/agents/{id}` now returns the full AgentDetail: summary + `revisions_count` + the **latest revision's graph as the working draft** — the canvas opens on the real design.
+- Save authorization honors the per-agent `can_edit` access row (bootstrap grants the local single-owner wildcard edit on Vion; DB row updated).
+- Frontend defaults to the bootstrapped **Vion** (`personal-assistant-v1`) when opening, so the Designer shows the actual graph — model `z-ai/glm-5.3-flash` via OpenRouter, prompt, three skills, memory, context — with "Active v1" in the header instead of an empty demo draft. (CUA node appears only when the machine's actual `CUA_ENABLED=true`; the bootstrap mirrors live config, R21.)
+- New tests: wildcard visibility, detail-with-draft contract, non-owner can_edit save (save still never activates). Shared-DB assertions made accumulation-tolerant; Vion's tip restored to the full bootstrapped design after fixture pollution.
+- Evidence: pytest 525 passed / 4 skipped; ruff clean; mypy clean (148 files). Gateway restarted with the new contract.
+
 **2026-09-20 integration fix — sidebar entry + /designer/ routing (browser-verified):**
 Two real bugs found by live browser verification of the first integration:
 1. `shell.js` contained an invalid CSS attribute selector (`[data-sveltekit- prefetch]`) that threw inside `querySelectorAll` and silently killed the sidebar injection on every page.

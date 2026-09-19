@@ -104,8 +104,10 @@ export const App: React.FC = () => {
       const list = await api.listAgents()
       setAgents(list)
       if (list.length > 0) {
-        const targetId = list[0].agent_id
-        const detail = await api.getAgent(targetId)
+        // Default to the bootstrapped Vion agent (personal-assistant-v1)
+        // so the Designer opens on the real, active design.
+        const preferred = list.find((a) => a.slug === 'vion') || list[0]
+        const detail = await api.getAgent(preferred.agent_id)
         setAgent(detail)
       }
     } catch (err: any) {

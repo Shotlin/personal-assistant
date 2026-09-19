@@ -317,17 +317,53 @@ def _slugify(name: str) -> str:
 
 
 async def _agent_for_actor(designer: dict[str, Any], actor: Actor, agent_id: str) -> dict[str, Any]:
-    """Load an agent and enforce per-actor visibility (C1).
-
-    Existence of other users' agents is not disclosed: unauthorized access
+    """Load an agent the actor may SEE (C1): owner, admin, or agents opened
+    to the actor / deployment-wide via an access row. Unauthorized access
     is indistinguishable from a missing row.
     """
     agent = await designer["store"].get_agent(agent_id)
-    if agent is None or (
-        agent["owner_user_id"] != actor.user_id and not actor.has("designer.admin")
-    ):
+    if agent is None:
         raise DesignerError("missing", "agent not found")
-    return agent
+    if agent["owner_user_id"] == actor.user_id or actor.has("designer.admin"):
+        return agent
+    access = await designer["store"].get_agent_access(agent_id, actor.user_id)
+    wildcard = await designer["store"].get_agent_access(agent_id, "*")
+    if (access and access["can_use"]) or (wildcard and wildcard["can_use"]):
+        return agent
+    raise DesignerError("missing", "agent not found")
+
+
+async def _agent_can_edit(
+    designer: dict[str, Any], actor: Actor, agent: dict[str, Any]
+) -> bool:
+    """Edit permission: owner, admin, or an explicit can_edit access row
+    (the bootstrap grants the local owner wildcard edit on Vion)."""
+    if agent["owner_user_id"] == actor.user_id or actor.has("designer.admin"):
+        return True
+    access = await designer["store"].get_agent_access(agent["agent_id"], actor.user_id)
+    wildcard = await designer["store"].get_agent_access(agent["agent_id"], "*")
+    return bool((access and access["can_edit"]) or (wildcard and wildcard["can_edit"]))
+
+
+async def _agent_summary(
+    designer: dict[str, Any], actor: Actor, agent: dict[str, Any]
+) -> dict[str, Any]:
+    """AgentSummary contract consumed by the Designer SPA."""
+    active_number = await designer["store"].get_active_revision_number(agent["agent_id"])
+    can_edit = await _agent_can_edit(designer, actor, agent)
+    return {
+        "agent_id": agent["agent_id"],
+        "slug": agent["slug"],
+        "name": agent["display_name"],
+        "description": agent["description"],
+        "active_revision_id": agent["active_revision_id"],
+        "active_revision_number": active_number,
+        "row_version": int(agent["row_version"]),
+        "created_at": str(agent.get("created_at", "")),
+        "updated_at": str(agent.get("updated_at", "")),
+        "can_edit": can_edit,
+        "etag": _agent_etag(agent),
+    }
 
 
 def _agent_etag(agent: dict[str, Any]) -> str:
@@ -336,14 +372,30 @@ def _agent_etag(agent: dict[str, Any]) -> str:
 
 @router.get("/agents")
 async def list_agents(request: Request) -> dict[str, Any]:
+    """Agents the actor may see: own agents plus agents opened to them or
+    deployment-wide via an access row (the bootstrapped Vion)."""
     designer = _designer_state(request)
     actor = await resolve_actor(request)
-    agents = await designer["store"].list_agents(actor.user_id)
-    return {
-        "agents": [
-            {**agent, "etag": _agent_etag(agent)} for agent in agents
-        ]
-    }
+    summaries: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    async def add(agent: dict[str, Any]) -> None:
+        if agent["agent_id"] in seen:
+            return
+        seen.add(agent["agent_id"])
+        summaries.append(await _agent_summary(designer, actor, agent))
+
+    for agent in await designer["store"].list_agents(actor.user_id):
+        await add(agent)
+    # Deployment-wide and per-user grants (wildcard '*' row).
+    for agent in await designer["store"].list_all_agents():
+        if agent["archived"]:
+            continue
+        wildcard = await designer["store"].get_agent_access(agent["agent_id"], "*")
+        access = await designer["store"].get_agent_access(agent["agent_id"], actor.user_id)
+        if (wildcard and wildcard["can_use"]) or (access and access["can_use"]):
+            await add(agent)
+    return {"agents": summaries}
 
 
 @router.post("/agents")
@@ -370,25 +422,26 @@ async def create_agent(request: Request, body: AgentCreateRequest) -> dict[str, 
 
 @router.get("/agents/{agent_id}")
 async def get_agent(request: Request, agent_id: str) -> dict[str, Any]:
+    """AgentDetail: summary + revisions_count + the latest revision as the
+    working draft (graph included) so the canvas opens on the real design."""
     designer = _designer_state(request)
     actor = await resolve_actor(request)
     agent = await _agent_for_actor(designer, actor, agent_id)
-    revisions = await designer["store"].list_revisions(agent_id)
-    draft = None
-    if revisions:
-        latest = await designer["store"].get_revision(revisions[0]["revision_id"])
-        if latest:
-            draft = {
-                "revision_id": latest["revision_id"],
-                "revision_number": latest["revision_number"],
-                "graph": latest["graph_json"],
-                "row_version": agent["row_version"],
-            }
+    summary = await _agent_summary(designer, actor, agent)
+    latest = await designer["store"].get_latest_revision(agent_id)
     return {
-        **agent,
-        "etag": _agent_etag(agent),
-        "revisions_count": len(revisions),
-        "draft": draft,
+        **summary,
+        "revisions_count": await designer["store"].count_revisions(agent_id),
+        "draft": (
+            {
+                "revision_id": str(latest["revision_id"]),
+                "revision_number": int(latest["revision_number"]),
+                "graph": dict(latest["graph_json"]),
+                "row_version": int(agent["row_version"]),
+            }
+            if latest
+            else None
+        ),
     }
 
 
@@ -407,6 +460,8 @@ async def save_revision(request: Request, agent_id: str, body: RevisionSaveReque
     actor = await resolve_actor(request)
     agent = await _agent_for_actor(designer, actor, agent_id)
     require_permission(actor, "designer.edit", {"agent_id": agent_id})
+    if not await _agent_can_edit(designer, actor, agent):
+        raise DesignerError("permission_denied", "no edit permission on this agent")
 
     # Optimistic concurrency: If-Match must carry the current row_version.
     if_match = request.headers.get("if-match", "")

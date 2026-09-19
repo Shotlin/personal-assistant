@@ -533,6 +533,46 @@ class DesignerStore:
             for row in rows
         ]
 
+    async def get_latest_revision(self, agent_id: str) -> dict[str, Any] | None:
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT revision_id, agent_id, revision_number, schema_version, "
+                "graph_json, semantic_hash, layout_hash, dependency_lock, validation, "
+                "parent_revision_id, created_by, created_at "
+                "FROM designer_revisions WHERE agent_id = %s "
+                "ORDER BY revision_number DESC LIMIT 1",
+                (uuid.UUID(agent_id),),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        keys = (
+            "revision_id", "agent_id", "revision_number", "schema_version",
+            "graph_json", "semantic_hash", "layout_hash", "dependency_lock",
+            "validation", "parent_revision_id", "created_by", "created_at",
+        )
+        return dict(zip(keys, row, strict=True))
+
+    async def get_active_revision_number(self, agent_id: str) -> int | None:
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT r.revision_number FROM designer_revisions r "
+                "JOIN designer_agents a ON a.active_revision_id = r.revision_id "
+                "WHERE a.agent_id = %s",
+                (uuid.UUID(agent_id),),
+            )
+            row = await cursor.fetchone()
+        return int(row[0]) if row else None
+
+    async def count_revisions(self, agent_id: str) -> int:
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT COUNT(*) FROM designer_revisions WHERE agent_id = %s",
+                (uuid.UUID(agent_id),),
+            )
+            row = await cursor.fetchone()
+        return int(row[0])
+
     async def next_revision_number(self, agent_id: str) -> int:
         async with self.connection() as conn:
             cursor = await conn.execute(

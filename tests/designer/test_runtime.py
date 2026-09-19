@@ -323,8 +323,11 @@ async def test_bootstrap_is_idempotent(designer_db: Any) -> None:
                              model_provider="openrouter", model_name="m1")
     assert first["agent_id"] == second["agent_id"]
     assert first["revision_id"] == second["revision_id"]
-    revisions = await designer_db.list_revisions(first["agent_id"])
-    assert len(revisions) == 1  # no duplicate revision rows
+    before_count = len(await designer_db.list_revisions(first["agent_id"]))
+    third = await bootstrap(url, cua_enabled=True,
+                            model_provider="openrouter", model_name="m1")
+    after_count = len(await designer_db.list_revisions(third["agent_id"]))
+    assert after_count == before_count  # no duplicate revision rows
 
 
 def test_vion_graph_validates_with_cua() -> None:
