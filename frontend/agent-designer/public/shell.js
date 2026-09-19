@@ -211,6 +211,15 @@
     });
   }
 
+  function layoutWrapper() {
+    // Keep the wrapper fitted exactly between the sidebar edge and the
+    // viewport: immune to host layout changes (collapse/expand/resize).
+    if (!state.wrapper || !state.sidebarEl) return;
+    var box = state.sidebarEl.getBoundingClientRect();
+    var left = Math.max(0, Math.min(box.right, window.innerWidth * 0.45));
+    state.wrapper.style.left = left + "px";
+  }
+
   function hideMainPanes(sidebar) {
     var parent = sidebar.parentElement;
     if (!parent) return;
@@ -240,6 +249,7 @@
     var sidebar = findSidebarContainer();
     if (!sidebar) return Promise.resolve(); // no shell to mount into
     state.mounted = true;
+    state.sidebarEl = sidebar;
 
     // Theme: mirror Open WebUI's dark/light class onto the token root.
     document.documentElement.setAttribute(
@@ -248,18 +258,25 @@
     );
 
     hideMainPanes(sidebar);
-    var parent = sidebar.parentElement || document.body;
+    // Fixed positioning fitted beside the sidebar: pixel-exact full
+    // screen fill that no host layout can distort. Inline styles beat
+    // every host/Designer CSS rule.
     var wrapper = document.createElement("div");
     wrapper.id = MOUNT_ID;
     wrapper.style.cssText =
-      "flex:1 1 auto;min-width:0;height:100vh;position:relative;" +
-      "display:flex;flex-direction:column;overflow:hidden;";
+      "position:fixed;top:0;right:0;bottom:0;left:0;z-index:30;" +
+      "display:flex;flex-direction:column;overflow:hidden;" +
+      "background:var(--bg,#09090B);";
     var root = document.createElement("div");
     root.id = "root"; // the built Designer app mounts on #root
-    root.style.cssText = "flex:1 1 auto;display:flex;flex-direction:column;min-height:0;";
+    root.style.cssText =
+      "flex:1 1 auto;display:flex;flex-direction:column;" +
+      "width:100%;height:100%;min-height:0;min-width:0;";
     wrapper.appendChild(root);
-    parent.appendChild(wrapper);
+    document.body.appendChild(wrapper);
     state.wrapper = wrapper;
+    layoutWrapper();
+    window.addEventListener("resize", layoutWrapper);
     log("shell mount created; discovering designer assets");
 
     return loadDesignerAssets().then(function () {
@@ -303,6 +320,7 @@
       state.wrapper.remove();
       state.wrapper = null;
     }
+    state.sidebarEl = null;
     unhideMainPanes();
     log("designer unmounted (left the designer route)");
   }
@@ -336,6 +354,7 @@
       if (!state.available) return;
       if (isDesignerRoute()) {
         if (!state.mounted) mountDesigner(); // retry until the shell exists
+        layoutWrapper(); // track sidebar collapse/expand + window resizes
       } else if (state.mounted) {
         unmountDesigner();
       }
