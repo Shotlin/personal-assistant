@@ -167,6 +167,14 @@ async def list_models_for_actor(
             wildcard = await store.get_agent_access(agent["agent_id"], "*")
             if not ((access and access["can_use"]) or (wildcard and wildcard["can_use"])):
                 continue
+        if not user_id:
+            # C5: identity-less model discovery returns the SAFE deployment
+            # catalog only — agents explicitly opened to every authenticated
+            # actor (the bootstrap '*' row). It is never a grant: chat
+            # re-checks with verified identity.
+            wildcard = await store.get_agent_access(agent["agent_id"], "*")
+            if not (wildcard and wildcard["can_use"]):
+                continue
         alias = agent["slug"] if agent["slug"] != "vion" else settings.assistant_model_id
         entries.append({"id": alias, "owned_by": "local"})
     if not entries:

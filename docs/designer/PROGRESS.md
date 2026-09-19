@@ -4,6 +4,14 @@
 **Current package:** All packages complete (P0–P11)
 **Next action for a new session:** Implementation complete. Maintain test suites (`uv run pytest`, `npm test`), respect `DESIGNER_ENABLED=false` rollback path, and reference `docs/designer/acceptance.md` for A1–A14 verification ledger.
 
+**2026-09-19 live smoke verification (Designer enabled, full stack):**
+- Brought up the full local stack: postgres + open-webui containers (healthy) and the gateway on :8787 with `DESIGNER_ENABLED=true`.
+- Verified live: `/healthz` ok; `/readyz` ready; `/designer/` serves the built SPA (200, text/html); anonymous `GET /designer/api/v1/session` -> 401; `/v1/models` serves the registry catalog.
+- Found and fixed a real C5 gap: with no identity headers (model discovery without user context), `/v1/models` listed EVERY enabled agent. Now the identity-less catalog returns only agents explicitly opened deployment-wide (bootstrap `*` access row) — the safe catalog; chat still re-checks with verified identity.
+- Cleaned ~770 test-residue agent rows from the shared dev DB (pytest artifacts; regenerated on every test run — harmless now that the safe-catalog filter hides them).
+- Live C5 cross-user denial check: seeded an agent owned by `someone-else` with no access rows, chatted as `random-user` -> **404 with ZERO run_registry rows** (denied before claim, before any provider call; no API spend).
+- Evidence: pytest 516 passed / 4 skipped; ruff clean; mypy clean (147 files).
+
 **2026-09-19 late-session hardening (late commit):**
 - Wired the committed-but-unused `list_models_for_actor` into `GET /v1/models` (C5 per-actor listing; flag-off legacy single-model untouched).
 - Chat model gate now fails closed: flag-on + unknown model + missing Designer state -> 404 (no silent legacy fall-through for foreign model ids).
