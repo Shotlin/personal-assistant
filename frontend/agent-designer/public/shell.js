@@ -1,14 +1,16 @@
 /* Agent Designer shell integration (injected into Open WebUI pages).
  *
  * Runs on the Open WebUI origin (:3000) via the same-origin reverse
- * proxy. Responsibilities:
- *  1. Add an "Agent Designer" entry to Open WebUI's sidebar, directly
- *     after the Workspace entry — styled to match the native items.
- *  2. On /designer/ routes, mount the existing full Agent Designer React
- *     application inside the Open WebUI application shell (sidebar and
- *     header stay visible; no iframe; no redirect to :8787).
- *  3. Stay out of the way when the Designer is disabled (flag-off
- *     rollback): the sidebar item hides itself when the API is absent.
+ * proxy. The Designer mounts IN PLACE on the current Open WebUI page:
+ * sidebar stays, main pane is replaced by the full Designer React app,
+ * and the URL becomes /designer/ via pushState. Open WebUI's SvelteKit
+ * router never sees the /designer/ path as a navigation, so its 404 page
+ * never appears during normal use.
+ *
+ * Direct refresh at /designer/ (or a shared link): Open WebUI renders
+ * its bare 404 (no sidebar) for the unknown route, so the script bounces
+ * through '/' once with an intent flag and re-mounts — the user lands
+ * back on the mounted Designer at the /designer/ URL automatically.
  *
  * No second login: the gateway resolves the actor from the verified
  * Open WebUI session (SSO Mode C through the trusted proxy).
@@ -17,8 +19,15 @@
   "use strict";
 
   var MOUNT_ID = "agent-designer-shell-root";
-  var HIDDEN_ATTR = "data-designer-hidden";
-  var state = { sidebarItem: null, mounted: false, designerAvailable: null };
+  var INTENT_KEY = "agent-designer-intent";
+  var state = {
+    item: null,
+    mounted: false,
+    available: null,
+    hiddenMains: [],
+    wrapper: null,
+    assetsLoaded: false,
+  };
 
   function log() {
     try {
@@ -31,58 +40,68 @@
   }
 
   function probeDesigner() {
-    if (state.designerAvailable !== null) return Promise.resolve(state.designerAvailable);
+    if (state.available !== null) return Promise.resolve(state.available);
     return fetch("/designer/api/v1/session", {
       method: "GET",
       credentials: "same-origin",
     })
       .then(function (res) {
-        // 200 (SSO/standalone session) and 401 (designer on, standalone
-        // login flow) both mean the Designer is serving; 404 means the
+        // 200 (SSO or standalone session) and 401 (designer on, standalone
+        // login flow) both mean the Designer is serving; 404 is the
         // flag-off rollback boundary — no designer routes exist.
-        state.designerAvailable = res.status !== 404;
-        return state.designerAvailable;
+        state.available = res.status !== 404;
+        return state.available;
       })
       .catch(function () {
-        state.designerAvailable = false;
+        state.available = false;
         return false;
       });
   }
 
   /* ------------------------------------------------------------------ *
-   * Sidebar entry
+   * Sidebar entry (valid selectors only — scan anchors/buttons for the
+   * exact Workspace label and verify it lives in a sidebar-like column).
    * ------------------------------------------------------------------ */
 
   function findWorkspaceItem() {
-    var candidates = document.querySelectorAll(
-      "nav a, nav button, aside a, aside button, [data-sveltekit- prefetch] a"
-    );
+    var candidates = document.querySelectorAll("a, button");
     for (var i = 0; i < candidates.length; i++) {
       var el = candidates[i];
-      var text = (el.textContent || "").trim();
-      if (text === "Workspace" || text === "Knowledge" || text === "Skills") {
-        return el;
-      }
+      if ((el.textContent || "").trim() !== "Workspace") continue;
+      if (el.getAttribute("data-agent-designer-entry")) continue;
+      if (!isSidebarLike(el)) continue;
+      return el;
     }
     return null;
   }
 
-  function findSidebarContainer(item) {
-    var el = item;
-    while (el && el.parentElement) {
-      var parent = el.parentElement;
-      if (parent.tagName === "NAV" || parent.tagName === "ASIDE") return parent;
-      el = parent;
+  function isSidebarLike(el) {
+    var node = el;
+    for (var depth = 0; node && depth < 8; depth++) {
+      if (node.tagName === "NAV" || node.tagName === "ASIDE") return true;
+      node = node.parentElement;
+    }
+    // Open WebUI's sidebar is a narrow left column; accept an element
+    // whose rendered box is sidebar-ish.
+    var box = el.getBoundingClientRect();
+    return box.width > 0 && box.width <= 340 && box.left <= 60;
+  }
+
+  function findSidebarContainer() {
+    var workspace = findWorkspaceItem();
+    if (!workspace) return null;
+    var node = workspace;
+    for (var depth = 0; node && depth < 10; depth++) {
+      if (node.tagName === "NAV" || node.tagName === "ASIDE") return node;
+      node = node.parentElement;
     }
     return null;
   }
 
   function addSidebarItem() {
-    if (state.sidebarItem && document.contains(state.sidebarItem)) return;
+    if (state.item && document.contains(state.item)) return;
     var workspace = findWorkspaceItem();
-    if (!workspace) return; // retried by the observer
-    var sidebar = findSidebarContainer(workspace);
-    if (!sidebar) return;
+    if (!workspace) return; // retried by the watcher
 
     var item = document.createElement(workspace.tagName === "A" ? "a" : "button");
     item.type = "button";
@@ -91,13 +110,17 @@
     item.style.cursor = "pointer";
     item.style.width = "100%";
     item.style.textAlign = "inherit";
+    item.style.background = "transparent";
+    item.style.border = "0";
+    item.title = "Agent Designer";
     // Mirror the native item's inner structure (icon + label) with a
-    // neutral inline icon; text label always accompanies the icon.
-    var iconClass = "";
+    // neutral inline icon; the text label always accompanies the icon.
     var svg = workspace.querySelector("svg");
-    if (svg) iconClass = svg.getAttribute("class") || "";
+    var iconClass = svg ? svg.getAttribute("class") || "" : "";
+    var iconStyle = svg ? svg.getAttribute("style") || "" : "";
     item.innerHTML =
-      '<span class="' + iconClass + '" style="display:inline-flex;margin-right:0.5rem;">' +
+      '<span class="' + iconClass + '" style="display:inline-flex;margin-right:0.5rem;' +
+      iconStyle + '">' +
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ' +
       'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
       'stroke-linejoin="round" width="16" height="16" aria-hidden="true">' +
@@ -109,46 +132,23 @@
     item.addEventListener("click", function (event) {
       event.preventDefault();
       event.stopPropagation();
-      location.assign("/designer/");
+      try {
+        sessionStorage.removeItem(INTENT_KEY);
+      } catch (e) { /* ignore */ }
+      openDesigner();
     });
-    // Insert directly after the Workspace entry (preferred navigation
-    // position: ... Workspace, Agent Designer).
-    var anchor = workspace;
-    var list = workspace.parentElement;
-    while (anchor && list && anchor.nextElementSibling) {
-      var nextText = (anchor.nextElementSibling.textContent || "").trim();
-      if (nextText === "Knowledge" || nextText === "Prompts" || nextText === "Skills" ||
-          nextText === "Models" || nextText === "Notes") {
-        anchor = anchor.nextElementSibling;
-      } else break;
+    // Insert directly below the Workspace entry.
+    if (workspace.parentElement) {
+      workspace.parentElement.insertBefore(item, workspace.nextElementSibling);
     }
-    if (anchor && anchor.parentElement) {
-      anchor.parentElement.insertBefore(item, anchor.nextElementSibling);
-    } else if (sidebar) {
-      sidebar.appendChild(item);
-    }
-    state.sidebarItem = item;
-    log("sidebar entry added");
+    state.item = item;
+    log("sidebar entry added below Workspace");
   }
 
   /* ------------------------------------------------------------------ *
-   * In-shell mount: render the Designer React app inside the Open WebUI
-   * layout (sidebar + header visible; no iframe).
+   * In-place mount: replace the host page's main pane with the Designer
+   * React app. The sidebar column stays visible; URL becomes /designer/.
    * ------------------------------------------------------------------ */
-
-  function findMainContentSibling(sidebar) {
-    var layout = sidebar.parentElement;
-    while (layout && layout !== document.body) {
-      var children = [].slice.call(layout.children);
-      if (children.indexOf(sidebar) !== -1 && children.length > 1) {
-        for (var i = 0; i < children.length; i++) {
-          if (children[i] !== sidebar) return { layout: layout, main: children[i] };
-        }
-      }
-      layout = layout.parentElement;
-    }
-    return null;
-  }
 
   function loadScript(src) {
     return new Promise(function (resolve, reject) {
@@ -172,12 +172,66 @@
     });
   }
 
+  function hideMainPanes(sidebar) {
+    var parent = sidebar.parentElement;
+    if (!parent) return;
+    [].slice.call(parent.children).forEach(function (child) {
+      if (child === sidebar || child.id === MOUNT_ID) return;
+      if (child.getAttribute("data-designer-hidden") === "1") return;
+      child.setAttribute("data-designer-hidden", "1");
+      child.setAttribute("data-designer-prev-display", child.style.display || "");
+      child.style.display = "none";
+      state.hiddenMains.push(child);
+    });
+  }
+
+  function unhideMainPanes() {
+    state.hiddenMains.forEach(function (child) {
+      child.style.display = child.getAttribute("data-designer-prev-display") || "";
+      child.removeAttribute("data-designer-hidden");
+      child.removeAttribute("data-designer-prev-display");
+    });
+    state.hiddenMains = [];
+  }
+
   function mountDesigner() {
     if (state.mounted) return Promise.resolve();
+    var sidebar = findSidebarContainer();
+    if (!sidebar) return Promise.resolve(); // no shell to mount into
     state.mounted = true;
-    document.documentElement.setAttribute("data-designer-route", "1");
 
-    return fetch("/designer/", { credentials: "same-origin" })
+    // Theme: mirror Open WebUI's dark/light class onto the token root.
+    document.documentElement.setAttribute(
+      "data-theme",
+      document.documentElement.classList.contains("dark") ? "dark" : "light"
+    );
+
+    hideMainPanes(sidebar);
+    var parent = sidebar.parentElement || document.body;
+    var wrapper = document.createElement("div");
+    wrapper.id = MOUNT_ID;
+    wrapper.style.cssText =
+      "flex:1 1 auto;min-width:0;height:100vh;position:relative;" +
+      "display:flex;flex-direction:column;overflow:hidden;";
+    var root = document.createElement("div");
+    root.id = "root"; // the built Designer app mounts on #root
+    root.style.cssText = "flex:1 1 auto;display:flex;flex-direction:column;min-height:0;";
+    wrapper.appendChild(root);
+    parent.appendChild(wrapper);
+    state.wrapper = wrapper;
+    log("shell mount created; discovering designer assets");
+
+    return loadDesignerAssets().then(function () {
+      log("designer mounted inside the Open WebUI shell");
+    });
+  }
+
+  function loadDesignerAssets() {
+    if (state.assetsLoaded) return Promise.resolve();
+    state.assetsLoaded = true;
+    // Discover the hashed asset URLs from the designer's own index
+    // (served by the gateway at /designer/index.html), then load them.
+    return fetch("/designer/index.html", { credentials: "same-origin" })
       .then(function (res) { return res.text(); })
       .then(function (html) {
         var doc = new DOMParser().parseFromString(html, "text/html");
@@ -186,56 +240,66 @@
           .map(function (l) { return l.getAttribute("href"); })
           .filter(Boolean);
         var scripts = [].slice
-          .call(doc.querySelectorAll("script[type=module][src], script[src]"))
+          .call(doc.querySelectorAll("script[src]"))
           .map(function (s) { return s.getAttribute("src"); })
           .filter(Boolean);
-        var theme = document.documentElement.classList.contains("dark")
-          ? "dark"
-          : "light";
-        document.documentElement.setAttribute("data-theme", theme);
-
-        return Promise.all(styles.map(loadStylesheet)).then(function () {
-          // Hide Open WebUI's main content, keep sidebar + header.
-          var nav =
-            document.querySelector("nav") ||
-            document.querySelector("aside");
-          var target = null;
-          if (nav) {
-            var found = findMainContentSibling(nav);
-            if (found && found.main) {
-              found.main.setAttribute(HIDDEN_ATTR, "1");
-              found.main.style.display = "none";
-              target = found.layout;
-            }
-          }
-          var wrapper = document.createElement("div");
-          wrapper.id = MOUNT_ID;
-          wrapper.style.cssText =
-            "flex:1 1 auto;min-width:0;min-height:100vh;position:relative;" +
-            "display:flex;flex-direction:column;background:var(--bg,#09090B);";
-          var root = document.createElement("div");
-          root.id = "root"; // the built Designer app mounts on #root
-          root.style.cssText = "flex:1 1 auto;display:flex;flex-direction:column;min-height:0;";
-          wrapper.appendChild(root);
-          if (target) {
-            target.appendChild(wrapper);
-          } else {
-            // Fallback: full-viewport mount (same origin, still no iframe).
-            document.body.appendChild(wrapper);
-          }
-          log("designer shell mounted; loading", scripts.length, "asset(s)");
-          // Asset URLs in the built index are absolute /designer/... paths
-          // (vite base), so they resolve on this origin via the proxy.
-          return scripts
-            .reduce(function (chain, src) {
+        return styles
+          .reduce(function (chain, href) {
+            return chain.then(function () { return loadStylesheet(href); });
+          }, Promise.resolve())
+          .then(function () {
+            return scripts.reduce(function (chain, src) {
               return chain.then(function () { return loadScript(src); });
-            }, Promise.resolve())
-            .catch(function (err) { log("asset load error", err && err.message); });
-        });
+            }, Promise.resolve());
+          });
       });
   }
 
-  /* ------------------------------------------------------------------ */
+  function unmountDesigner() {
+    if (!state.mounted) return;
+    state.mounted = false;
+    if (state.wrapper) {
+      state.wrapper.remove();
+      state.wrapper = null;
+    }
+    unhideMainPanes();
+    log("designer unmounted (left the designer route)");
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Entry points
+   * ------------------------------------------------------------------ */
+
+  function openDesigner() {
+    // In-place: pushState the designer URL and mount over the current
+    // valid Open WebUI page. SvelteKit never routes /designer/.
+    if (!isDesignerRoute()) {
+      try {
+        history.pushState(null, "", "/designer/");
+      } catch (e) { /* URL cosmetics only */ }
+    }
+    mountDesigner();
+  }
+
+  function onDesigner404() {
+    // The bare Open WebUI 404 for the unknown /designer/ route (direct
+    // refresh or shared link): bounce through '/' once and re-mount.
+    try {
+      sessionStorage.setItem(INTENT_KEY, "1");
+    } catch (e) { /* ignore */ }
+    location.replace("/");
+  }
+
+  function watchRoute() {
+    setInterval(function () {
+      if (!state.available) return;
+      if (!isDesignerRoute()) {
+        if (state.mounted) unmountDesigner();
+      }
+      // Keep the sidebar entry alive across Open WebUI re-renders.
+      if (!state.item || !document.contains(state.item)) addSidebarItem();
+    }, 500);
+  }
 
   function main() {
     probeDesigner().then(function (available) {
@@ -243,19 +307,53 @@
         log("designer disabled (flag-off rollback boundary); staying native");
         return;
       }
+
+      var hadIntent = false;
+      try {
+        hadIntent = sessionStorage.getItem(INTENT_KEY) === "1";
+      } catch (e) { /* ignore */ }
+
       if (isDesignerRoute()) {
-        mountDesigner();
-      } else {
-        addSidebarItem();
-        // Open WebUI re-renders its sidebar (SPA navigation): re-add
-        // whenever the workspace item appears without ours.
-        var observer = new MutationObserver(function () {
-          if (!state.sidebarItem || !document.contains(state.sidebarItem)) {
-            addSidebarItem();
-          }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
+        // Direct hit on /designer/: Open WebUI renders its bare 404 for
+        // the unknown route (no sidebar here), so bounce through '/' and
+        // re-mount there.
+        onDesigner404();
+        return;
       }
+
+      addSidebarItem();
+      // Open WebUI renders its sidebar asynchronously and re-renders on
+      // SPA navigation: retry until present, then keep it alive.
+      var tries = 0;
+      var iv = setInterval(function () {
+        tries += 1;
+        if (state.item && document.contains(state.item)) {
+          clearInterval(iv);
+          return;
+        }
+        addSidebarItem();
+        if (tries > 60) clearInterval(iv);
+      }, 250);
+      new MutationObserver(function () {
+        if (!state.item || !document.contains(state.item)) addSidebarItem();
+      }).observe(document.body, { childList: true, subtree: true });
+
+      if (hadIntent) {
+        // Returning from the /designer/ 404 bounce: mount immediately and
+        // restore the designer URL.
+        try {
+          sessionStorage.removeItem(INTENT_KEY);
+        } catch (e) { /* ignore */ }
+        var mountWhenReady = setInterval(function () {
+          if (findSidebarContainer()) {
+            clearInterval(mountWhenReady);
+            openDesigner();
+          }
+        }, 250);
+        setTimeout(function () { clearInterval(mountWhenReady); }, 15000);
+      }
+
+      watchRoute();
     });
   }
 

@@ -12,6 +12,19 @@
 - Live C5 cross-user denial check: seeded an agent owned by `someone-else` with no access rows, chatted as `random-user` -> **404 with ZERO run_registry rows** (denied before claim, before any provider call; no API spend).
 - Evidence: pytest 516 passed / 4 skipped; ruff clean; mypy clean (147 files).
 
+**2026-09-20 integration fix — sidebar entry + /designer/ routing (browser-verified):**
+Two real bugs found by live browser verification of the first integration:
+1. `shell.js` contained an invalid CSS attribute selector (`[data-sveltekit- prefetch]`) that threw inside `querySelectorAll` and silently killed the sidebar injection on every page.
+2. `/designer/` served the Designer's own document, so the shell script (injected only into Open WebUI pages) never loaded there — and Open WebUI's SvelteKit renders a bare **404: Not Found page with no sidebar layout** for the unknown `/designer/` route (verified in-browser; the earlier assumption that the layout wraps error pages was wrong).
+
+New architecture (browser-verified up to the login wall):
+- `/designer/` at :3000 now serves the **Open WebUI shell page** (with shell.js injected); the Designer's own document moved to `/designer/index.html` (asset manifest), with `/designer/assets/*`, `/designer/api/*` (SSE-safe) and `shell.js` proxied to the gateway.
+- Sidebar click mounts the Designer **in place** on the current valid Open WebUI page: main pane replaced, sidebar stays, URL becomes `/designer/` via pushState — SvelteKit never routes the unknown path, so its 404 never appears in normal use.
+- Direct refresh / shared link at `/designer/`: the script detects the bare 404, bounces through `/` once with a session intent flag, and re-mounts automatically at the `/designer/` URL.
+- Leaving the route (user clicks New Chat etc.) unmounts cleanly and restores the host pane.
+- Verified live in the embedded browser: `/designer/` no longer 404s (serves the shell page, title "Open WebUI"), shell.js injected and served as text/javascript, asset manifest + bundle reachable, recovery bounce works, logged-out users land on the sign-in page as expected. Final in-shell confirmation needs a logged-in Open WebUI session (smoke signup is admin-disabled on this instance).
+- Evidence: designer suite 150 passed; ruff clean; mypy clean (148 files).
+
 **2026-09-19 Open WebUI native integration (owner-requested optional integration):**
 Agent Designer is now reachable INSIDE the Open WebUI application at `http://127.0.0.1:3000/designer/` — no separate port hop, no iframe, no second login.
 - **Same-origin proxy** (`designer-proxy` nginx service on :3000): `/designer/*` -> gateway (SPA + API + SSE, buffering off), everything else -> Open WebUI. Open WebUI direct access moved to :3001 (debug only). Fixes the `:3000/designer/` 404 and makes refresh work.
