@@ -262,7 +262,8 @@ async def chat_completions(
     # and verify this actor may use it BEFORE any external side effect —
     # before the claim, recipes, planner, runtime acquisition or any
     # provider request. Flag-off: chat_context stays None and legacy
-    # behavior is untouched.
+    # behavior is untouched. Fail closed: flag-on with an unknown model
+    # and no Designer state (unbootstrapped) is still rejected.
     chat_context = None
     if settings.designer_enabled and not identity.is_utility:
         from assistant.designer.chat_authorization import resolve_chat_agent
@@ -274,6 +275,8 @@ async def chat_completions(
             user_id=identity.user_id,
             model_alias=settings.assistant_model_id,
         )
+        if chat_context is None and body.model != settings.assistant_model_id:
+            raise GatewayError("unsupported_model", f"Unknown model {body.model!r}")
 
     # WP4: claim this turn durably BEFORE any external work. Same
     # user-message id + same content = duplicate delivery -> observe the

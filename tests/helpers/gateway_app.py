@@ -64,5 +64,6 @@ def build_test_app(
         model_provider="openrouter",
         openrouter_api_key="dummy",
         cua_enabled=False,
+        designer_enabled=False,  # hermetic legacy path
     )
     return create_app(settings, lifespan=lifespan)

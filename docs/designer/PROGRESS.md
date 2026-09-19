@@ -4,6 +4,13 @@
 **Current package:** All packages complete (P0–P11)
 **Next action for a new session:** Implementation complete. Maintain test suites (`uv run pytest`, `npm test`), respect `DESIGNER_ENABLED=false` rollback path, and reference `docs/designer/acceptance.md` for A1–A14 verification ledger.
 
+**2026-09-19 late-session hardening (late commit):**
+- Wired the committed-but-unused `list_models_for_actor` into `GET /v1/models` (C5 per-actor listing; flag-off legacy single-model untouched).
+- Chat model gate now fails closed: flag-on + unknown model + missing Designer state -> 404 (no silent legacy fall-through for foreign model ids).
+- Made 13 legacy integration/e2e test files hermetic by pinning `designer_enabled=False` - the shared `.env`'s `DESIGNER_ENABLED=true` no longer leaks into legacy-path tests.
+- Bootstrap tests now preserve the machine's actual CUA posture (R21); repaired the shared test DB's CUA-less `vion` row by re-bootstrapping from the actual configuration.
+- `scripts/bootstrap_designer.py`: added repo root to `sys.path` so it runs standalone.
+
 **Document-set confirmation (Safety note 3):** all four required documents confirmed present and readable on 2026-09-18 before code changes:
 1. `01_AGENT_DESIGNER_REQUIREMENTS.md` (~/Downloads, read in full)
 2. `02_AGENT_DESIGNER_IMPLEMENTATION_PLAN.md` (~/Downloads, read in full)

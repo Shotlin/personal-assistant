@@ -81,6 +81,7 @@ async def negative_gateway(
             model_provider="openrouter",
             openrouter_api_key="dummy",
             cua_enabled=True,
+        designer_enabled=False,  # hermetic legacy path
             active_cursor_persistence_enabled=True,
             compact_planner_enabled=False,
         )

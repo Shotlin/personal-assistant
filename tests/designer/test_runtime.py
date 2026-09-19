@@ -299,7 +299,7 @@ async def test_bootstrap_creates_vion_agent_active_revision_and_access(
 
     result = await bootstrap(
         "postgresql://assistant:assistant@127.0.0.1:5433/assistant",
-        cua_enabled=False,
+        cua_enabled=True,  # the machine's actual Phase-1 posture (R21)
         model_provider="openrouter",
         model_name="z-ai/glm-5.3-flash",
     )
@@ -317,9 +317,9 @@ async def test_bootstrap_is_idempotent(designer_db: Any) -> None:
     from scripts.bootstrap_designer import bootstrap
 
     url = "postgresql://assistant:assistant@127.0.0.1:5433/assistant"
-    first = await bootstrap(url, cua_enabled=False,
+    first = await bootstrap(url, cua_enabled=True,
                             model_provider="openrouter", model_name="m1")
-    second = await bootstrap(url, cua_enabled=False,
+    second = await bootstrap(url, cua_enabled=True,
                              model_provider="openrouter", model_name="m1")
     assert first["agent_id"] == second["agent_id"]
     assert first["revision_id"] == second["revision_id"]

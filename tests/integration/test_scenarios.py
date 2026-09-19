@@ -59,6 +59,7 @@ def make_settings() -> Settings:
         model_provider="openrouter",
         openrouter_api_key="dummy",
         cua_enabled=False,
+        designer_enabled=False,  # hermetic legacy path
         # These scenarios script the GENERAL AGENT; the compact planner
         # (default on) would consume their responses as plan attempts.
         compact_planner_enabled=False,

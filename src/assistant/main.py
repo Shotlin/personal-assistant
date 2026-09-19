@@ -107,6 +107,7 @@ def create_app(
     # Flag-off: no designer routes, no designer state, legacy behavior.
     if settings.designer_enabled:
         from fastapi.responses import RedirectResponse
+
         from assistant.designer.routes import router as designer_router
 
         app.include_router(designer_router)

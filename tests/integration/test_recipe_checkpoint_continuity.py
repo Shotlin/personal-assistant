@@ -87,6 +87,7 @@ async def memory_gateway(
             cua_enabled=True,
             active_cursor_persistence_enabled=True,
             compact_planner_enabled=False,
+            designer_enabled=False,  # hermetic legacy path
         )
     )
     async with app.router.lifespan_context(app):
