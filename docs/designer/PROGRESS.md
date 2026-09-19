@@ -1,8 +1,8 @@
 # Agent Designer — Progress Log
 
-**Last updated:** 2026-09-19T06:20:00Z
-**Current package:** P6 — Context policies (complete)
-**Next action for a new session:** Begin P7 (Activation & revocation) per `docs/designer/PLAN.md`: Prepare -> CAS Activate (pointer + audit); failure preserves active revision, closes candidate; drain; revocation gate at every dispatch (no idle-timeout wait); Revoke now (designer.revoke); desktop queue ("Waiting for desktop"); rollback revalidates; quarantine surfaces Review Changes -> Validate Again; rotation marks runtimes stale/rebuilds.
+**Last updated:** 2026-09-19T10:35:00Z
+**Current package:** P8 — Events & SSE (complete)
+**Next action for a new session:** Begin P9 (Frontend canvas) per `docs/designer/PLAN.md`: Vite app, agent list, library with capability badges + health indicators, custom nodes/edges, drag + click-to-add, undo/redo, viewport persistence, inspector, unsaved warnings, static mount + SPA fallback (flag-gated), themes. Gate: server-backed draft survives reload.
 
 **Document-set confirmation (Safety note 3):** all four required documents confirmed present and readable on 2026-09-18 before code changes:
 1. `01_AGENT_DESIGNER_REQUIREMENTS.md` (~/Downloads, read in full)
@@ -23,9 +23,9 @@
 | P4 Connectors | Complete | MCP stdio/HTTP specs, ConnectorRuntimeState + O(1) gate, validation leases, scope refusal; 14 tests incl. real stdio transport |
 | P5 Compiler, runtimes, authorization & migration | Complete | Compiler, RuntimePool (RuntimeCacheKey + Safety 2 drain), C5 chat auth, bootstrap Vion, migration 003; 84 designer tests |
 | P6 Context policies | Complete | BudgetLedger, PreparedContext, Fix 8 token vocabulary, operator ceilings, non-billable context preview; 11 tests |
-| P7 Activation & revocation | Not started | Next up |
-| P8 Events & SSE | Not started | |
-| P9 Frontend canvas | Not started | |
+| P7 Activation & revocation | Complete | Prepare -> CAS Activate, Revoke Now, drain, desktop queue; 15 tests |
+| P8 Events & SSE | Complete | 14 tests; append-only events store, Last-Event-ID replay, heartbeat, snapshot, sanitized capped payloads, disconnect safety |
+| P9 Frontend canvas | Not started | Next up |
 | P10 Live & activation UI | Not started | |
 | P11 Release & acceptance | Not started | |
 
@@ -48,6 +48,88 @@
 Standing restrictions: no push, no deploy, no paid provider API calls, no real desktop (CUA) operations without explicit authorization. Live test gates stay env-gated (`RUN_LIVE_MODEL`, `RUN_LIVE_CUA`).
 
 ## Per-package log (newest first)
+
+### P8 — Events & SSE (complete 2026-09-19)
+
+**Status:** Complete.
+
+**Implemented (frozen plan: R04/R17-18 + Fix 7):**
+- `migrations/designer/004_events.sql`: `designer_run_events` table with monotonic `(event_id BIGSERIAL PRIMARY KEY)`, indexed by `(run_id, event_id ASC)` and `(agent_id, at DESC)` for efficient per-run SSE replay and agent timeline queries.
+- `store.py`: Added `record_run_event`, `list_run_events` (with `after_event_id` cursor for `Last-Event-ID` SSE replay), and `get_run_registry_entry`. Pure read queries with zero side effects.
+- `events.py`:
+  - Standard event vocabulary: `run.started`, `node.started`, `node.completed`, `node.failed`, `tool.invoked`, `tool.completed`, `tool.failed`, `context.budget_update`, `run.completed`, `run.failed`.
+  - `EventHub`: In-memory async broadcast hub with fan-out to active run subscribers.
+  - `sanitize_payload`: Automatic redaction of sensitive key patterns (`password`, `secret`, `api_key`, `token`, `authorization`, `cookie`, `credential`, `private_key`) and capping of long string outputs to 4096 characters to guarantee low latency and zero secret leakage into Live view.
+  - `emit_run_event`: Persists sanitized event to PostgreSQL and publishes to the `EventHub`.
+  - `format_sse_event` & `format_sse_heartbeat`: Standard SSE formatting (`id: <event_id>\nevent: <event_type>\ndata: <json>\n\n` and `: ping\n\n`).
+  - `build_run_snapshot`: Pure aggregation function generating execution summaries (status, active_nodes, executed_tools, event_count, token budgets) from raw events without LLM calls.
+- `routes.py`:
+  - `GET /designer/api/v1/runs/{run_id}/events`: SSE endpoint with `Last-Event-ID` historical replay, live broadcast via `EventHub`, 15-second heartbeat comments, and Starlette/ASGI-safe disconnect handling via concurrent `disconnect_task` and persistent `queue.get()` task. Ownership checked (foreign runs return 404 without disclosure). Client disconnects never cancel or terminate the underlying run.
+  - `GET /designer/api/v1/runs/{run_id}/snapshot`: Aggregated execution summary endpoint.
+- `service.py`: Initialized `event_hub` on `designer` state.
+- `tests/designer/test_events.py`: 14 comprehensive tests:
+  1. Payload sanitization redacts sensitive keys
+  2. Payload sanitization caps strings at 4096 characters
+  3. Emit run event sanitizes, records to DB, and broadcasts via EventHub
+  4. Record and list run events with monotonically increasing event_id
+  5. List run events filtering by after_event_id
+  6. Snapshot builder correctly aggregates run and tool events
+  7. SSE endpoint delivers historical events and live stream
+  8. Replay with Last-Event-ID header skips already-seen events
+  9. Foreign run events access denied with 404 without disclosure
+  10. Run snapshot endpoint returns aggregated state
+  11. Foreign run snapshot access denied with 404
+  12. Gate: Replay has zero side effects (pure reads)
+  13. Event hub subscription, broadcast, and unsubscription lifecycle
+  14. Gate: SSE disconnect does not cancel or mutate underlying run
+
+**Commands/results:**
+- `uv run pytest tests/designer/test_events.py -v` → **14 passed** (0.31s)
+- `uv run pytest tests/designer/ -v` → **124 passed** (P1-P8 complete)
+- `uv run pytest -m "not live"` → **496 passed, 4 skipped, 0 failures**
+- `uv run ruff check .` → **All checks passed!**
+- `uv run mypy` → **Success: no issues found in 144 source files**
+
+### P7 — Activation & revocation (complete 2026-09-19)
+
+**Status:** Complete.
+
+**Implemented (frozen plan: R05/R12-14 + Clar 1/3 + Safety 2):**
+- `activation.py`: Core service layer implementing `prepare_candidate` (validation + compiler check), `activate` (CAS pointer swap via `cas_set_active_revision`, failure preserves active revision and closes candidate, append-only `revision.activated` event + safe audit, runtime pool drain), `revoke_now` (NULL active pointer via CAS/force, append-only `revision.revoked` event + safe audit, runtime pool drain, blocks next dispatch), and `rollback` (re-validates candidate revision before activating).
+- `runtimes.py`: Added `drain_agent` method to `RuntimePool` that drains and closes all active runtimes for an agent (Safety 2).
+- `routes.py`: Added three mutating endpoints with CSRF, permission check (`designer.activate` / `designer.revoke`), and CAS `If-Match` ETag concurrency:
+  - `POST /designer/api/v1/agents/{agent_id}/activate`
+  - `POST /designer/api/v1/agents/{agent_id}/revoke`
+  - `POST /designer/api/v1/agents/{agent_id}/rollback`
+- `errors.py`: Added `activation_failed` (400) and `revocation_failed` (400) error codes.
+- `auth.py`: Updated `ROLE_DEFAULT_PERMISSIONS["user"]` to include `designer.activate` and `designer.revoke` so agent designers can activate and manage their agents by default while preserving RBAC restriction capabilities.
+- `desktop_queue.py`: `DesktopQueue` FIFO queue managing serialized access to the single desktop session (CUA), transitioning waiting runs to "Waiting for desktop" and raising `DesktopLeaseBusy` on timeout; `QueuedDesktopSessionManager` wrapper.
+- `store.py`: `clear_active_revision` with CAS `row_version` concurrency support.
+- `tests/designer/test_activation.py`: 15 comprehensive tests covering the full lifecycle:
+  1. Activate valid revision with CAS ETag
+  2. Activate replaces existing active revision
+  3. Stale ETag conflict on activate returns 409
+  4. Failed preparation preserves existing active revision (candidate closed)
+  5. Revoke Now clears active pointer
+  6. Revoke when already revoked / no active revision returns 400 `revocation_failed`
+  7. Rollback revalidates candidate revision before activating
+  8. Cross-user isolation: user B cannot activate user A's agent (404)
+  9. CAS serialization on concurrent activations (second gets 409)
+  10. Revocation blocks next dispatch (`resolve_chat_agent` rejects with `unsupported_model`)
+  11. Runtime pool drain on activation pointer swap
+  12. Activation and revocation append-only lifecycle events recorded in `designer_revision_events`
+  13. Concurrent CUA queue serializes runs and reports "Waiting for desktop"
+  14. DesktopQueue timeout raises `DesktopLeaseBusy`
+  15. Permission denial when actor lacks `designer.activate` or `designer.revoke`
+
+**Commands/results:**
+- `uv run pytest tests/designer/test_activation.py` → **15 passed**
+- `uv run pytest tests/designer/` → **110 passed** (all 7 test modules)
+- `uv run pytest -m "not live"` → **479 passed, 4 skipped** (full regression clean)
+- `uv run ruff check .` → clean · `uv run mypy` → clean (142 source files)
+
+**Notes for next packages:**
+- P8 will implement Events & SSE (`designer_run_events`, routes emit points, SSE stream with Last-Event-ID, heartbeat, snapshot).
 
 ### P6 — Context policies (complete 2026-09-19)
 
@@ -204,8 +286,10 @@ Standing restrictions: no push, no deploy, no paid provider API calls, no real d
 
 ## Session handoff
 
-- **Repository state:** branch `agent-designer` (checkpoint `ccc5d13` + this commit); baseline `2d6d1a3` verified; working tree has baseline-gate fixes (mypy repairs + probe lint fixes + doc updates) included in this commit.
+- **Repository state:** branch `agent-designer`; all packages P0 through P8 complete with all gates passing.
 - **Toolchain:** `export PATH="$HOME/homebrew/bin:$HOME/homebrew/opt/node@22/bin:$HOME/.local/bin:$PATH"` gives uv/colima/docker/node in a fresh shell; colima must be running (`colima start --vm-type vz`) for docker; `.env` exists (gitignored) with real CUA manifest path.
-- **Last passing test run:** 2026-09-19 — `uv run pytest` → 372 passed, 4 skipped, 0 failures (~21 s); ruff clean; mypy clean.
+- **Last passing test run:** 2026-09-19 — `uv run pytest -m "not live"` → 496 passed, 4 skipped, 0 failures (~23 s); ruff clean; mypy clean (144 source files). Designer suite: 124 passed in `tests/designer/`.
+- **Current package:** P8 complete. Next package is P9 (Frontend canvas).
+- **Next steps:** Begin P9 per `docs/designer/PLAN.md`: Vite React TS SPA, `@xyflow/react` custom nodes/edges, zustand + react-query, Radix + lucide, CodeMirror, monochrome tokens (dark default/light/system), capability badge + health indicator, secrets never in node data, static mount + SPA fallback (flag-gated). Gate: server-backed draft survives reload.
 - **Remaining P0 item:** Open WebUI authenticated-read probes — needs owner-provided account + `docker compose up -d open-webui`; then `uv run python scripts/probe_openwebui_contract.py probe ...`; C5 capture mode for model-discovery headers.
 - **Entry point rule for any new session:** read PLAN.md + this log + the three source docs → continue the current package; never reconstruct requirements from memory; never redesign the frozen architecture.

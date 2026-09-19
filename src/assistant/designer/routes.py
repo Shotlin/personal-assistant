@@ -8,10 +8,11 @@ services (Safety note 1).
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from assistant.designer import audit
@@ -506,6 +507,314 @@ async def context_preview(
             "run_wall_clock_seconds": config.context.run_wall_clock_seconds,
         },
     }
+
+# ---------------------------------------------------------------------------
+# Activation, revocation & rollback (P7): Prepare → CAS Activate mandatory.
+# ---------------------------------------------------------------------------
+
+
+class ActivateRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    revision_id: str
+
+
+class RollbackRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    revision_id: str
+
+
+@router.post("/agents/{agent_id}/activate")
+async def activate_revision(request: Request, agent_id: str, body: ActivateRequest) -> Any:
+    """Prepare + CAS-activate a revision (P7, R05, R12).
+
+    Validates the candidate graph, compiles ExecutionConfig, and
+    atomically swaps active_revision_id. Failed preparation preserves
+    the currently active revision.
+    """
+    designer = _designer_state(request)
+    actor = await require_actor_and_csrf(request)
+    agent = await _agent_for_actor(designer, actor, agent_id)
+    require_permission(actor, "designer.activate", {"agent_id": agent_id})
+
+    if_match = request.headers.get("if-match", "")
+    expected_version = _version_from_etag(if_match)
+    if expected_version is None or expected_version != int(agent["row_version"]):
+        raise DesignerError("conflict", "stale write: agent was modified concurrently")
+
+    from assistant.designer.activation import activate
+
+    runtime_pool = designer.get("runtime_pool")
+    result = await activate(
+        designer["store"],
+        agent_id=agent_id,
+        revision_id=body.revision_id,
+        expected_version=expected_version,
+        actor_user_id=actor.user_id,
+        runtime_pool=runtime_pool,
+    )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "activated": True,
+            "agent_id": result.agent_id,
+            "revision_id": result.revision_id,
+            "previous_revision_id": result.previous_revision_id,
+            "row_version": result.new_row_version,
+            "runtimes_drained": result.runtimes_drained,
+            "etag": f'W/"{result.new_row_version}"',
+        },
+    )
+
+
+@router.post("/agents/{agent_id}/revoke")
+async def revoke_revision(request: Request, agent_id: str) -> Any:
+    """Immediate revocation (P7, R14): NULL the active pointer, drain
+    runtimes, block next dispatch. Permission: designer.revoke."""
+    designer = _designer_state(request)
+    actor = await require_actor_and_csrf(request)
+    agent = await _agent_for_actor(designer, actor, agent_id)
+    require_permission(actor, "designer.revoke", {"agent_id": agent_id})
+
+    if_match = request.headers.get("if-match", "")
+    expected_version = _version_from_etag(if_match)
+    if expected_version is None or expected_version != int(agent["row_version"]):
+        raise DesignerError("conflict", "stale write: agent was modified concurrently")
+
+    from assistant.designer.activation import revoke_now
+
+    runtime_pool = designer.get("runtime_pool")
+    result = await revoke_now(
+        designer["store"],
+        agent_id=agent_id,
+        expected_version=expected_version,
+        actor_user_id=actor.user_id,
+        runtime_pool=runtime_pool,
+    )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "revoked": True,
+            "agent_id": result.agent_id,
+            "revoked_revision_id": result.revoked_revision_id,
+            "row_version": result.new_row_version,
+            "runtimes_drained": result.runtimes_drained,
+            "etag": f'W/"{result.new_row_version}"',
+        },
+    )
+
+
+@router.post("/agents/{agent_id}/rollback")
+async def rollback_revision(
+    request: Request, agent_id: str, body: RollbackRequest
+) -> Any:
+    """Rollback to an earlier revision (P7): re-validates the target
+    revision before activating it. Permission: designer.activate."""
+    designer = _designer_state(request)
+    actor = await require_actor_and_csrf(request)
+    agent = await _agent_for_actor(designer, actor, agent_id)
+    require_permission(actor, "designer.activate", {"agent_id": agent_id})
+
+    if_match = request.headers.get("if-match", "")
+    expected_version = _version_from_etag(if_match)
+    if expected_version is None or expected_version != int(agent["row_version"]):
+        raise DesignerError("conflict", "stale write: agent was modified concurrently")
+
+    from assistant.designer.activation import rollback
+
+    runtime_pool = designer.get("runtime_pool")
+    result = await rollback(
+        designer["store"],
+        agent_id=agent_id,
+        target_revision_id=body.revision_id,
+        expected_version=expected_version,
+        actor_user_id=actor.user_id,
+        runtime_pool=runtime_pool,
+    )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "rolled_back": True,
+            "agent_id": result.agent_id,
+            "revision_id": result.revision_id,
+            "previous_revision_id": result.previous_revision_id,
+            "row_version": result.new_row_version,
+            "runtimes_drained": result.runtimes_drained,
+            "etag": f'W/"{result.new_row_version}"',
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Events & SSE (P8, R04, R17, R18): Live view streaming & historical replay.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/runs/{run_id}/events")
+async def stream_run_events(request: Request, run_id: str) -> Any:
+    """Stream monotonic run events via SSE with Last-Event-ID replay (P8).
+
+    Enforces session authentication and run ownership (foreign runs return 404
+    without disclosure). Client disconnects never cancel the underlying run.
+    """
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    require_permission(actor, "designer.view", {"run_id": run_id})
+
+    run = await designer["store"].get_run_registry_entry(run_id)
+    if run is None or (run["user_id"] != actor.user_id and not actor.has("designer.admin")):
+        raise DesignerError("missing", "run not found")
+
+    header_val = request.headers.get("last-event-id") or request.query_params.get("last_event_id")
+    after_event_id: int | None = None
+    if header_val:
+        try:
+            after_event_id = int(header_val)
+        except ValueError:
+            after_event_id = None
+
+    from collections.abc import AsyncIterator
+
+    from assistant.designer.events import (
+        TERMINAL_EVENTS,
+        RunEvent,
+        format_sse_event,
+        format_sse_heartbeat,
+        get_event_hub,
+    )
+
+    hub = designer.get("event_hub") or get_event_hub()
+    queue = await hub.subscribe(run_id)
+
+    async def event_generator() -> AsyncIterator[str]:
+        seen_event_ids: set[int] = set()
+        disconnect_task = asyncio.create_task(request.is_disconnected())
+        get_task: asyncio.Task[RunEvent] | None = None
+        try:
+            # 1. Historical replay from database (pure read - zero side effects)
+            historical = await designer["store"].list_run_events(
+                run_id, after_event_id=after_event_id
+            )
+            for ev_dict in historical:
+                ev = RunEvent(
+                    event_id=ev_dict["event_id"],
+                    run_id=ev_dict["run_id"],
+                    agent_id=ev_dict["agent_id"],
+                    revision_id=ev_dict["revision_id"],
+                    sequence_number=ev_dict["sequence_number"],
+                    event_type=ev_dict["event_type"],
+                    payload=ev_dict["payload"],
+                    at=ev_dict["at"],
+                )
+                seen_event_ids.add(ev.event_id)
+                yield format_sse_event(ev)
+                if ev.event_type in TERMINAL_EVENTS:
+                    return
+
+            # Check if run is already in terminal state from registry
+            current_run = await designer["store"].get_run_registry_entry(run_id)
+            if current_run and current_run.get("status") in ("completed", "failed", "cancelled"):
+                return
+
+            # 2. Live stream from in-memory hub with heartbeats
+            heartbeat_interval = 15.0
+            last_heartbeat = asyncio.get_running_loop().time()
+            while True:
+                if disconnect_task.done():
+                    if get_task and not get_task.done():
+                        get_task.cancel()
+                    break
+
+                if get_task is None or get_task.done():
+                    get_task = asyncio.create_task(queue.get())
+
+                done, _ = await asyncio.wait(
+                    [get_task, disconnect_task],
+                    timeout=1.0,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if disconnect_task in done:
+                    if not get_task.done():
+                        get_task.cancel()
+                    break
+
+                if get_task in done:
+                    ev = get_task.result()
+                    get_task = None
+                    if ev.event_id in seen_event_ids:
+                        continue
+                    seen_event_ids.add(ev.event_id)
+                    yield format_sse_event(ev)
+                    if ev.event_type in TERMINAL_EVENTS:
+                        break
+                else:
+                    now = asyncio.get_running_loop().time()
+                    if now - last_heartbeat >= heartbeat_interval:
+                        last_heartbeat = now
+                        yield format_sse_heartbeat()
+        except (asyncio.CancelledError, GeneratorExit):
+            # Client disconnected; stream cleanly terminated
+            return
+        finally:
+            if get_task and not get_task.done():
+                get_task.cancel()
+            if not disconnect_task.done():
+                disconnect_task.cancel()
+            await hub.unsubscribe(run_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/runs/{run_id}/snapshot")
+async def get_run_snapshot(request: Request, run_id: str) -> Any:
+    """Return aggregated run execution state (P8)."""
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    require_permission(actor, "designer.view", {"run_id": run_id})
+
+    run = await designer["store"].get_run_registry_entry(run_id)
+    if run is None or (run["user_id"] != actor.user_id and not actor.has("designer.admin")):
+        raise DesignerError("missing", "run not found")
+
+    from assistant.designer.events import RunEvent, build_run_snapshot
+
+    raw_events = await designer["store"].list_run_events(run_id)
+    events = [
+        RunEvent(
+            event_id=ev["event_id"],
+            run_id=ev["run_id"],
+            agent_id=ev["agent_id"],
+            revision_id=ev["revision_id"],
+            sequence_number=ev["sequence_number"],
+            event_type=ev["event_type"],
+            payload=ev["payload"],
+            at=ev["at"],
+        )
+        for ev in raw_events
+    ]
+    snapshot = build_run_snapshot(events)
+    if snapshot["status"] == "unknown":
+        snapshot["status"] = run.get("status", "unknown")
+        snapshot["run_id"] = run["run_id"]
+        snapshot["agent_id"] = run.get("agent_id", "")
+        snapshot["revision_id"] = run.get("revision_id", "")
+        if run.get("failure_reason"):
+            snapshot["error"] = run["failure_reason"]
+
+    return JSONResponse(status_code=200, content=snapshot)
 
 
 # ---------------------------------------------------------------------------

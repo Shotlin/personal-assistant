@@ -56,7 +56,14 @@ SESSION_TTL_SECONDS = 12 * 60 * 60  # matches store.SESSION_TTL_MINUTES
 # Designer grant lives in the gateway DB -- C1).
 ROLE_DEFAULT_PERMISSIONS: dict[str, frozenset[str]] = {
     "admin": frozenset(DESIGNER_PERMISSIONS),
-    "user": frozenset({"designer.view", "designer.edit"}),
+    "user": frozenset(
+        {
+            "designer.view",
+            "designer.edit",
+            "designer.activate",
+            "designer.revoke",
+        }
+    ),
     "pending": frozenset(),
 }
 

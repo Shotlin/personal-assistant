@@ -24,6 +24,8 @@ STATUS_BY_CODE: dict[str, int] = {
     "credential_error": 400,      # credential lifecycle failure
     "rate_limited": 429,
     "upstream_unavailable": 502,  # Open WebUI unreachable/invalid response
+    "activation_failed": 400,     # preparation/validation failure during activation
+    "revocation_failed": 400,     # agent has no active revision to revoke
 }
 
 

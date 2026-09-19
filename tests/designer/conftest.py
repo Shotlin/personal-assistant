@@ -124,6 +124,8 @@ def build_designer_app(
     install_error_handler(app)
     # Designer state assembled directly (equivalent to the flag-on lifespan).
     app.state.settings = designer_settings()
+    from assistant.designer.events import EventHub
+
     app.state.designer = {
         "store": designer_db,
         "credentials": CredentialStore(designer_db, base64.b64decode(TEST_KEY), "test-key-1"),
@@ -131,6 +133,7 @@ def build_designer_app(
         "upstream": upstream,
         "limiter": LoginRateLimiter(),
         "cookie_secure": False,
+        "event_hub": EventHub(),
     }
     return app
 

@@ -92,6 +92,8 @@ async def build_designer_state(settings: Settings, app: Any) -> dict[str, Any]:
         return OpenWebUIClient(settings.designer_openwebui_base_url, plaintext)
 
     sources = SourceService(client_for_actor, UnverifiedKnowledgeSource())
+    from assistant.designer.events import EventHub
+
     return {
         "store": store,
         "credentials": credential_store,
@@ -100,4 +102,5 @@ async def build_designer_state(settings: Settings, app: Any) -> dict[str, Any]:
         "limiter": limiter,
         "sources": sources,
         "migrations_applied": applied,
+        "event_hub": EventHub(),
     }

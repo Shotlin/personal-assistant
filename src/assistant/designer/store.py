@@ -326,6 +326,59 @@ class DesignerStore:
                 (revision_id, uuid.UUID(agent_id)),
             )
 
+    async def cas_set_active_revision(
+        self, agent_id: str, revision_id: str, expected_version: int
+    ) -> int | None:
+        """Atomic Compare-And-Swap activation (P7, Clar 3).
+
+        Updates active_revision_id and increments row_version only if
+        row_version matches expected_version. Returns the new row_version,
+        or None if stale / conflict.
+        """
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "UPDATE designer_agents "
+                "SET active_revision_id = %s, row_version = row_version + 1, updated_at = now() "
+                "WHERE agent_id = %s AND row_version = %s "
+                "RETURNING row_version",
+                (revision_id, uuid.UUID(agent_id), expected_version),
+            )
+            row = await cursor.fetchone()
+        return int(row[0]) if row else None
+
+    async def clear_active_revision(
+        self, agent_id: str, expected_version: int | None = None
+    ) -> int | None:
+        """Atomic revocation (P7, R14).
+
+        Sets active_revision_id to NULL and increments row_version. If
+        expected_version is specified, enforces CAS. Returns the new
+        row_version or None on conflict.
+        """
+        async with self.connection() as conn:
+            if expected_version is not None:
+                cursor = await conn.execute(
+                    "UPDATE designer_agents "
+                    "SET active_revision_id = NULL, "
+                    "    row_version = row_version + 1, "
+                    "    updated_at = now() "
+                    "WHERE agent_id = %s AND row_version = %s "
+                    "RETURNING row_version",
+                    (uuid.UUID(agent_id), expected_version),
+                )
+            else:
+                cursor = await conn.execute(
+                    "UPDATE designer_agents "
+                    "SET active_revision_id = NULL, "
+                    "    row_version = row_version + 1, "
+                    "    updated_at = now() "
+                    "WHERE agent_id = %s "
+                    "RETURNING row_version",
+                    (uuid.UUID(agent_id),),
+                )
+            row = await cursor.fetchone()
+        return int(row[0]) if row else None
+
     async def upsert_agent_access(
         self,
         *,
@@ -506,3 +559,132 @@ class DesignerStore:
                 "VALUES (%s, %s, %s, %s, %s)",
                 (revision_id, agent_id, event, actor_user_id, Jsonb(data or {})),
             )
+
+    # --- run events (P8, R04, R17-18) ---
+
+    async def record_run_event(
+        self,
+        *,
+        run_id: str,
+        agent_id: str,
+        revision_id: str,
+        sequence_number: int,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Insert a monotonic run event into designer_run_events. Returns the stored event."""
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "INSERT INTO designer_run_events "
+                "(run_id, agent_id, revision_id, sequence_number, event_type, payload) "
+                "VALUES (%s, %s, %s, %s, %s, %s) "
+                "RETURNING event_id, at",
+                (run_id, agent_id, revision_id, sequence_number, event_type, Jsonb(payload)),
+            )
+            row = await cursor.fetchone()
+        assert row is not None
+        return {
+            "event_id": int(row[0]),
+            "run_id": run_id,
+            "agent_id": agent_id,
+            "revision_id": revision_id,
+            "sequence_number": sequence_number,
+            "event_type": event_type,
+            "payload": payload,
+            "at": row[1],
+        }
+
+    async def list_run_events(
+        self,
+        run_id: str,
+        *,
+        after_event_id: int | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Fetch monotonic run events for run_id, ordered by event_id ascending.
+
+        If after_event_id is specified (e.g. from SSE Last-Event-ID), returns
+        only events with event_id > after_event_id.
+        """
+        async with self.connection() as conn:
+            if after_event_id is not None and after_event_id > 0:
+                cursor = await conn.execute(
+                    "SELECT event_id, run_id, agent_id, revision_id, "
+                    "sequence_number, event_type, payload, at "
+                    "FROM designer_run_events "
+                    "WHERE run_id = %s AND event_id > %s "
+                    "ORDER BY event_id ASC LIMIT %s",
+                    (run_id, after_event_id, limit),
+                )
+            else:
+                cursor = await conn.execute(
+                    "SELECT event_id, run_id, agent_id, revision_id, "
+                    "sequence_number, event_type, payload, at "
+                    "FROM designer_run_events "
+                    "WHERE run_id = %s "
+                    "ORDER BY event_id ASC LIMIT %s",
+                    (run_id, limit),
+                )
+            rows = await cursor.fetchall()
+        return [
+            dict(
+                zip(
+                    (
+                        "event_id",
+                        "run_id",
+                        "agent_id",
+                        "revision_id",
+                        "sequence_number",
+                        "event_type",
+                        "payload",
+                        "at",
+                    ),
+                    (
+                        int(row[0]),
+                        str(row[1]),
+                        str(row[2]),
+                        str(row[3]),
+                        int(row[4]),
+                        str(row[5]),
+                        dict(row[6]),
+                        row[7],
+                    ),
+                    strict=True,
+                )
+            )
+            for row in rows
+        ]
+
+    async def get_run_registry_entry(self, run_id: str) -> dict[str, Any] | None:
+        """Lookup a run in run_registry by run_id for authorization / ownership checks."""
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT run_id, user_id, chat_id, user_message_id, "
+                "status, agent_id, revision_id, attempt, failure_reason, "
+                "created_at, updated_at "
+                "FROM run_registry WHERE run_id = %s",
+                (run_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return dict(
+            zip(
+                (
+                    "run_id",
+                    "user_id",
+                    "chat_id",
+                    "user_message_id",
+                    "status",
+                    "agent_id",
+                    "revision_id",
+                    "attempt",
+                    "failure_reason",
+                    "created_at",
+                    "updated_at",
+                ),
+                row,
+                strict=True,
+            )
+        )
+

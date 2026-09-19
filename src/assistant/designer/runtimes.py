@@ -220,6 +220,21 @@ class RuntimePool:
                 closed += 1
         return closed
 
+    async def drain_agent(self, agent_id: str) -> int:
+        """Drain all runtimes for an agent (P7: activation pointer swap or
+        revocation). Next acquisition rebuilds from the new pointer."""
+        drained = 0
+        for key, entry in list(self._entries.items()):
+            if key.agent_id != agent_id:
+                continue
+            if entry.refcount == 0:
+                await self._drain_entry(entry)
+                self._entries.pop(key, None)
+            else:
+                entry.draining = True  # closed on release
+            drained += 1
+        return drained
+
     async def aclose(self) -> None:
         for key, entry in list(self._entries.items()):
             await self._drain_entry(entry)
