@@ -15,11 +15,12 @@ Hard rules (C5):
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from typing import Any
 
-from assistant.designer.compiler import CAP_CUA, ExecutionConfig
+from assistant.designer.compiler import ExecutionConfig
 from assistant.settings import Settings
 
 logger = logging.getLogger("assistant.designer.chat_auth")
@@ -78,12 +79,13 @@ async def resolve_chat_agent(
         wildcard = await store.get_agent_access(agent["agent_id"], "*")
         granted = (access and access["can_use"]) or (wildcard and wildcard["can_use"])
         if not granted:
+            user_hash = hashlib.sha256(actor_user_id.encode()).hexdigest()[:12]
             logger.info(
                 "designer_chat_use_denied",
                 extra={
                     "event": "designer_chat_use_denied",
                     "agent_id": agent["agent_id"],
-                    "user_hash": f"sha256:{__import__('hashlib').sha256(actor_user_id.encode()).hexdigest()[:12]}",
+                    "user_hash": f"sha256:{user_hash}",
                 },
             )
             from assistant.api.schemas import GatewayError as _GE

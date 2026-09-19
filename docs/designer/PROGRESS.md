@@ -1,8 +1,8 @@
 # Agent Designer — Progress Log
 
-**Last updated:** 2026-09-19T07:10:00Z
-**Current package:** P4 — Connectors (complete; committed)
-**Next action for a new session:** Begin P5 (Compiler, runtimes, authorization & migration) per `docs/designer/PLAN.md`: full compiler (ExecutionConfig), runtime pool with RuntimeCacheKey + credential generations, agent-scoped memory namespaces + epochs, run-registry extension + dedup index backfill, bootstrap_designer.py (Vion → registry), /v1/models per-actor listing + recursion rejection, chat authorization before claim/recipe/planner/runtime/provider (C5 + five integration tests), disabled-CUA blocks every route.
+**Last updated:** 2026-09-19T06:20:00Z
+**Current package:** P6 — Context policies (complete)
+**Next action for a new session:** Begin P7 (Activation & revocation) per `docs/designer/PLAN.md`: Prepare -> CAS Activate (pointer + audit); failure preserves active revision, closes candidate; drain; revocation gate at every dispatch (no idle-timeout wait); Revoke now (designer.revoke); desktop queue ("Waiting for desktop"); rollback revalidates; quarantine surfaces Review Changes -> Validate Again; rotation marks runtimes stale/rebuilds.
 
 **Document-set confirmation (Safety note 3):** all four required documents confirmed present and readable on 2026-09-18 before code changes:
 1. `01_AGENT_DESIGNER_REQUIREMENTS.md` (~/Downloads, read in full)
@@ -21,9 +21,9 @@
 | P2 Registry & validation | Complete | schemas + migration 002 + R06 validation + ETag CAS; 24 designer tests |
 | P3 Open WebUI adapters | Complete | contract-first catalog + skill CRUD + BLOCKED Knowledge adapter (Fix 2); 11 tests |
 | P4 Connectors | Complete | MCP stdio/HTTP specs, ConnectorRuntimeState + O(1) gate, validation leases, scope refusal; 14 tests incl. real stdio transport |
-| P5 Compiler, runtimes, authorization & migration | Not started | Next up |
-| P6 Context policies | Not started | |
-| P7 Activation & revocation | Not started | |
+| P5 Compiler, runtimes, authorization & migration | Complete | Compiler, RuntimePool (RuntimeCacheKey + Safety 2 drain), C5 chat auth, bootstrap Vion, migration 003; 84 designer tests |
+| P6 Context policies | Complete | BudgetLedger, PreparedContext, Fix 8 token vocabulary, operator ceilings, non-billable context preview; 11 tests |
+| P7 Activation & revocation | Not started | Next up |
 | P8 Events & SSE | Not started | |
 | P9 Frontend canvas | Not started | |
 | P10 Live & activation UI | Not started | |
@@ -48,6 +48,49 @@
 Standing restrictions: no push, no deploy, no paid provider API calls, no real desktop (CUA) operations without explicit authorization. Live test gates stay env-gated (`RUN_LIVE_MODEL`, `RUN_LIVE_CUA`).
 
 ## Per-package log (newest first)
+
+### P6 — Context policies (complete 2026-09-19)
+
+**Status:** Complete.
+
+**Implemented (frozen plan: R08/R15-16 + Fix 8):**
+- `context.py`: `BudgetExceeded` error; `OperatorCeilings` dataclass and `apply_operator_ceilings` clamping requested policies to operator limits (defaults: 12 turns, 32k est input, 2048 output, 16 attempts, 60 tool calls, 15-min limit); `estimate_tokens` deterministic local token approximation (zero billable/external calls); `BudgetLedger` tracking model attempts, tool calls, wall-clock time, and token accounting.
+- **Fix 8 Token Vocabulary:** `BudgetLedger` strictly separates `estimated_context_tokens` from `provider_reported_input_tokens`, and unknown provider input/output tokens are represented as `None` (never conflated with `0`).
+- `PreparedContext`: builds bounded context payloads combining immutable safety prefix, custom prompt, skill instructions, and `recent_turns` message history truncation with a detailed `ContextTokenBreakdown`.
+- `routes.py`: added `POST /designer/api/v1/agents/{agent_id}/context-preview` allowing non-billable preview of context budget and token allocation from graph or revision.
+- `tests/designer/test_context.py`: 11 tests covering operator ceilings, token estimation, attempt/tool/wall-clock/token ceilings in BudgetLedger, Fix 8 token vocabulary separation, history truncation in PreparedContext, and the context preview endpoint.
+
+**Commands/results:**
+- `uv run pytest tests/designer/test_context.py` → **11 passed**
+- `uv run pytest tests/designer/` → **95 passed** (auth, graph, sources, connectors, runtime, context)
+- `uv run pytest` → **467 passed, 4 skipped** (full regression suite clean)
+- `uv run ruff check .` → clean · `uv run mypy` → clean (139 source files)
+
+**Notes for next packages:**
+- P7 will implement Activation & Revocation (Prepare -> CAS Activate, immediate Revoke Now, desktop lease queue, rollback).
+
+### P5 — Compiler, runtimes, authorization & migration (complete 2026-09-19)
+
+**Status:** Complete.
+
+**Implemented (frozen plan: R01/R06/R15/R19-22 + C5 + Safety 2 + Fix 1/3):**
+- `compiler.py`: Pure graph -> `ExecutionConfig` with canonical capability IDs (`CAP_CUA`, `CAP_TERMINAL`, `mcp:<conn>:<tool>`); `config_hash` deterministic sha256; `RuntimeScopeRequest` and `refuse_mismatched_scope` (refuses user-scoped connector joined to shared runtime with `permission_denied`).
+- `runtimes.py`: `RuntimePool` keyed by `RuntimeCacheKey(agent_id, active_revision_id, execution_epoch, credential_scope_key)` (Fix 3); Safety 2 credential staleness tracking with `mark_credential_stale` and `drain_stale` (immediate drain of idle runtimes, in-flight runtimes drained upon release); TTL-based idle reclamation (`close_idle`).
+- `chat_authorization.py`: C5 chat-path authorization — `resolve_chat_agent` resolves slug/alias and validates use permission before claiming run, recipe, planner, or model provider calls; `list_models_for_actor` per-actor `/v1/models` catalog filtering (presentation only, never trusted); `native_dispatch_allowed` & `denied_apps_for` router integration (A2).
+- `migrations/designer/003_run_scope.sql` & `runs.py`: `agent_id`, `revision_id`, `attempt` added to `run_registry`; unique index `run_registry_turn_agent_idx` on `(user_id, agent_id, user_message_id)` replacing legacy index with zero collision check.
+- `namespaces.py`: Agent-scoped memory namespace helpers (`agent_namespace(agent_id, epoch, ...)`) while preserving legacy namespaces for bootstrapped Vion.
+- `scripts/bootstrap_designer.py`: Vion agent bootstrap from actual configuration when enabled (`slug='vion'`, alias preserved).
+- `chat_route.py`: Wired `chat_context` resolution into chat completion, recipe route, and compact planner; disabled-CUA blocks native dispatch across all routes.
+- `tests/designer/test_runtime.py`: 19 tests covering compiler config extraction, scope refusal, runtime pool lease acquisition/caching/idle cleanup, Safety 2 credential rotation staleness and drain, C5 authorization gates (wildcard/specific grants, denial before dispatch), disabled-CUA blocking fast-paths, and migration 003 agent-scoped dedup.
+
+**Commands/results:**
+- `uv run pytest tests/designer/` → **84 passed** (16 auth + 24 graph + 11 sources + 14 connectors + 19 runtime/auth)
+- `uv run pytest` → **456 passed, 4 skipped** (full regression suite clean)
+- `uv run ruff check .` → clean · `uv run mypy` → clean (137 source files)
+
+**Notes for next packages:**
+- P6 will implement `BudgetLedger` and `PreparedContext` adhering to R08/R15-16 and Fix 8.
+- Context defaults: 12 turns, 32k estimated input, 2048 output, 16 attempts, 60 tool calls, 15-min timeout within operator ceilings.
 
 ### P4 — Connectors (complete 2026-09-19)
 

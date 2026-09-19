@@ -10,28 +10,27 @@ gateway chat route in test_runtime_gateway.py's harness).
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 import pytest
+from scripts.bootstrap_designer import VION_SLUG, build_vion_graph
+from tests.designer.test_graph import edge, make_graph, node
 
 from assistant.designer.compiler import (
     CAP_CUA,
     CONTEXT_DEFAULTS,
     ExecutionConfig,
-    ModelConfig,
+    RuntimeScopeRequest,
     compile_execution_config,
     config_hash,
     refuse_mismatched_scope,
-    RuntimeScopeRequest,
 )
 from assistant.designer.connectors import ScopeKind
 from assistant.designer.errors import DesignerError
 from assistant.designer.runtimes import RuntimeCacheKey, RuntimePool
 from assistant.designer.schemas import parse_graph_document
 from assistant.designer.validation import validate_graph
-from tests.designer.test_graph import edge, make_graph, node
-from scripts.bootstrap_designer import build_vion_graph, VION_SLUG
-
 
 # ---------------------------------------------------------------------------
 # Compiler (pure graph -> ExecutionConfig)
@@ -283,7 +282,7 @@ async def test_pool_idle_close() -> None:
         scope=ScopeKind.SHARED, actor_id=None, run_id=None, config=config,
     )
     await lease.release()
-    closed = await pool.close_idle(now=10_000.0)
+    closed = await pool.close_idle(now=time.monotonic() + 10_000.0)
     assert closed == 1
     await pool.aclose()
 
@@ -349,7 +348,6 @@ async def test_migration_003_agent_scoped_dedup(require_postgres: None) -> None:
     """Legacy rows keep dedup semantics; same user+message under a
     DIFFERENT agent is now a distinct run (designer agents)."""
     import psycopg
-
     from scripts.migrate_designer import apply_migrations
 
     url = "postgresql://assistant:assistant@127.0.0.1:5433/assistant"

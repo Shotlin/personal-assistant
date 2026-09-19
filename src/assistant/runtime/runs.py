@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS run_registry (
     request_digest  TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'accepted',
     owner           TEXT,
+    agent_id        TEXT NOT NULL DEFAULT '',
+    revision_id     TEXT NOT NULL DEFAULT '',
+    attempt         INTEGER NOT NULL DEFAULT 1,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -52,11 +55,22 @@ CREATE TABLE IF NOT EXISTS run_registry (
     """
 ALTER TABLE run_registry ADD COLUMN IF NOT EXISTS failure_reason TEXT NOT NULL DEFAULT '';
 """,
-    # Legacy duplicate identities must fail setup, never erase history.
-    # An operator must reconcile them in a separate, explicit migration.
     """
-CREATE UNIQUE INDEX IF NOT EXISTS run_registry_turn_idx
-    ON run_registry (user_id, user_message_id);
+ALTER TABLE run_registry ADD COLUMN IF NOT EXISTS agent_id TEXT NOT NULL DEFAULT '';
+""",
+    """
+ALTER TABLE run_registry ADD COLUMN IF NOT EXISTS revision_id TEXT NOT NULL DEFAULT '';
+""",
+    """
+ALTER TABLE run_registry ADD COLUMN IF NOT EXISTS attempt INTEGER NOT NULL DEFAULT 1;
+""",
+    # Agent-aware uniqueness: (user_id, agent_id, user_message_id)
+    """
+CREATE UNIQUE INDEX IF NOT EXISTS run_registry_turn_agent_idx
+    ON run_registry (user_id, agent_id, user_message_id);
+""",
+    """
+DROP INDEX IF EXISTS run_registry_turn_idx;
 """,
     """
 CREATE TABLE IF NOT EXISTS action_ledger (

@@ -191,6 +191,8 @@ async def bootstrap(
         if not agent.get("active_revision_id"):
             await store.set_active_revision(agent["agent_id"], revision_id)
         refreshed = await store.get_agent(agent["agent_id"])
+        if refreshed is None:
+            raise RuntimeError("Failed to reload bootstrapped agent")
         return {
             "agent_id": refreshed["agent_id"],
             "revision_id": refreshed["active_revision_id"],
