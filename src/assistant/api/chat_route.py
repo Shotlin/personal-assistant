@@ -234,7 +234,10 @@ async def chat_completions(
     request: Request,
     settings: SettingsDep,
 ) -> Any:
-    if body.model != settings.assistant_model_id:
+    # Flag-on: alias resolution and authorization happen in
+    # resolve_chat_agent below (C5); unknown ids fail there. Flag-off:
+    # the legacy single-model contract is untouched.
+    if body.model != settings.assistant_model_id and not settings.designer_enabled:
         raise GatewayError("unsupported_model", f"Unknown model {body.model!r}")
 
     # Header-name receipt diagnostics (names only -- values are never logged).
@@ -255,6 +258,23 @@ async def chat_completions(
     request.app.state.last_run_timeline = timeline
     request.app.state.last_run_ledger = ledger
 
+    # C5 (flag-on only): resolve the requested model to an active agent
+    # and verify this actor may use it BEFORE any external side effect —
+    # before the claim, recipes, planner, runtime acquisition or any
+    # provider request. Flag-off: chat_context stays None and legacy
+    # behavior is untouched.
+    chat_context = None
+    if settings.designer_enabled and not identity.is_utility:
+        from assistant.designer.chat_authorization import resolve_chat_agent
+
+        chat_context = await resolve_chat_agent(
+            request.app,
+            settings,
+            model_id=body.model,
+            user_id=identity.user_id,
+            model_alias=settings.assistant_model_id,
+        )
+
     # WP4: claim this turn durably BEFORE any external work. Same
     # user-message id + same content = duplicate delivery -> observe the
     # existing run; same id + different content = identity conflict.
@@ -270,6 +290,8 @@ async def chat_completions(
             user_message_id=identity.user_message_id,
             request_digest=request_digest,
             run_id=run_id,
+            agent_id=chat_context.agent_id if chat_context else "",
+            revision_id=chat_context.revision_id if chat_context else "",
         )
         if not claim.owned:
             logger.info(
@@ -333,7 +355,8 @@ async def chat_completions(
                 else None
             )
             recipe_result = await _try_recipe_route(
-                body, request, settings, identity, run_id, action_ledger
+                body, request, settings, identity, run_id, action_ledger,
+                chat_context=chat_context,
             )
             if recipe_result is None and settings.compact_planner_enabled:
                 # WP6: natural phrasing of a supported task gets ONE compact
@@ -341,7 +364,8 @@ async def chat_completions(
                 # execute locally; no obligatory second model call. Flag
                 # gives staged rollout and rollback (WP8).
                 recipe_result = await _try_planner_route(
-                    body, request, settings, identity, run_id, action_ledger, ledger
+                    body, request, settings, identity, run_id, action_ledger, ledger,
+                    chat_context=chat_context,
                 )
             if recipe_result is not None:
                 # Fast paths report their own terminal truth (P2-5b): a
@@ -474,6 +498,7 @@ async def _try_recipe_route(
     identity: RequestIdentity,
     run_id: str,
     action_ledger: RunActionLedger | None,
+    chat_context: Any = None,
 ) -> Any:
     """Exact local command -> recipe execution with ZERO model calls.
 
@@ -483,6 +508,10 @@ async def _try_recipe_route(
     non-matches silently fall back. Every native mutation counts against
     the same per-run budget and writes the same action-ledger rows as an
     agent-driven action.
+
+    A2 (flag-on): when the active revision disconnected CUA, the recipe
+    route is skipped entirely and the router sees every app denied — an
+    'open chrome' recipe cannot dispatch natively by any path.
     """
     from assistant.runtime.recipe_errors import RecipeFailure
     from assistant.runtime.recipe_executor import RecipeExecutor
@@ -490,13 +519,22 @@ async def _try_recipe_route(
     from assistant.runtime.recipes import execute_recipe
     from assistant.runtime.router import match_local_command
 
+    if chat_context is not None and not chat_context.execution_config.allows_native_dispatch():
+        return None
+
     # The router consumes the normalized user text (same normalization the
     # agent path uses); raw pydantic ChatMessages yield no user content.
     incoming = normalize_history(body.messages)
     last = last_user_content(incoming)
     if not last:
         return None
-    request_obj = match_local_command(str(last), approved_context={})
+    if chat_context is not None:
+        from assistant.designer.chat_authorization import denied_apps_for
+
+        approved_context = {"denied_apps": sorted(denied_apps_for(chat_context))}
+    else:
+        approved_context = {}
+    request_obj = match_local_command(str(last), approved_context=approved_context)
     if request_obj is None:
         return None
 

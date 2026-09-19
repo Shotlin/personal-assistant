@@ -36,7 +36,6 @@ from assistant.tools.registry import assemble_tool_inventory
 
 logger = logging.getLogger("assistant.main")
 
-
 def _null_cua_connection() -> AbstractAsyncContextManager[dict[str, Any]]:
     @asynccontextmanager
     async def cm() -> AsyncIterator[dict[str, Any]]:
@@ -103,6 +102,16 @@ def create_app(
 
     app.include_router(models_route.router)
     app.include_router(chat_route.router)
+
+    # Designer mounts ONLY when explicitly enabled (C2 + Safety note 1).
+    # Flag-off: no designer routes, no designer state, legacy behavior.
+    if settings.designer_enabled:
+        from assistant.designer.routes import router as designer_router
+
+        app.include_router(designer_router)
+        from assistant.designer.routes import install_error_handler
+
+        install_error_handler(app)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -185,6 +194,19 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
                 extra_tools=extra_tools,
             )
             app.state.agent = bundle.agent
+
+            # Designer services initialize ONLY when enabled (Safety note 1).
+            # Runs after the legacy app is fully up so Designer startup
+            # problems never prevent the Phase-1 gateway from serving.
+            if settings.designer_enabled:
+                from assistant.designer.service import build_designer_state
+
+                app.state.designer = await build_designer_state(settings, app)
+                stack.push_async_callback(app.state.designer["store"].close)
+                logger.info(
+                    "designer_services_initialized",
+                    extra={"event": "designer_services_initialized"},
+                )
             yield
 
     return lifespan

@@ -14,7 +14,7 @@ Two ways to talk to the driver:
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -166,7 +166,7 @@ async def _assert_bounded_daemon(settings: Settings) -> None:
     )
 
 
-def _filtered_connection(discovered: list[BaseTool]) -> CuaConnection:
+def _filtered_connection(discovered: Sequence[BaseTool]) -> CuaConnection:
     result = filter_cua_tools(discovered)
     logger.info(
         "cua_tools_filtered",

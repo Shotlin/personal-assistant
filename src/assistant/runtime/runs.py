@@ -135,14 +135,17 @@ class RunStore:
         user_message_id: str,
         request_digest: str,
         run_id: str,
+        agent_id: str = "",
+        revision_id: str = "",
     ) -> ClaimResult:
         """Atomically claim execution for one user turn (master plan 11.1).
 
         The INSERT itself is the claim: the unique index on
-        ``(user_id, user_message_id)`` makes concurrent duplicate
-        deliveries resolve to exactly one execution. Same text with a new
-        id is a new intentional command; same id with a conflicting digest
-        is an identity collision and is rejected.
+        ``(user_id, agent_id, user_message_id)`` makes concurrent duplicate
+        deliveries resolve to exactly one execution (legacy rows carry
+        ``agent_id = ''``, preserving pre-Designer semantics). Same text
+        with a new id is a new intentional command; same id with a
+        conflicting digest is an identity collision and is rejected.
         """
         # One statement, not overlapping transaction/savepoint contexts when
         # requests share a connection. Catch every unique conflict, including
@@ -150,12 +153,14 @@ class RunStore:
         cur = await self._conn.execute(
             """
             INSERT INTO run_registry
-                (run_id, user_id, chat_id, user_message_id, request_digest, status)
-            VALUES (%s, %s, %s, %s, %s, 'running')
+                (run_id, user_id, chat_id, user_message_id, request_digest,
+                 status, agent_id, revision_id)
+            VALUES (%s, %s, %s, %s, %s, 'running', %s, %s)
             ON CONFLICT DO NOTHING
             RETURNING run_id, status
             """,
-            (run_id, user_id, chat_id, user_message_id, request_digest),
+            (run_id, user_id, chat_id, user_message_id, request_digest,
+             agent_id, revision_id),
         )
         inserted = await cur.fetchone()
         if inserted is not None:
@@ -166,9 +171,9 @@ class RunStore:
         cur = await self._conn.execute(
             """
             SELECT run_id, status, request_digest FROM run_registry
-            WHERE user_id = %s AND user_message_id = %s
+            WHERE user_id = %s AND agent_id = %s AND user_message_id = %s
             """,
-            (user_id, user_message_id),
+            (user_id, agent_id, user_message_id),
         )
         row = await cur.fetchone()
         if row is None:  # e.g. run_id collision with an unrelated turn: fail closed

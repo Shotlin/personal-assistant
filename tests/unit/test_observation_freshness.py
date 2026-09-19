@@ -10,6 +10,7 @@ from before a navigation change proves nothing about the current state.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from assistant.runtime.recipe_executor import RecipeExecutor
 from assistant.runtime.scene import SceneEntry
@@ -35,8 +36,9 @@ class _FakeTool:
 
 
 def _executor_with(outcome: ToolOutcome) -> RecipeExecutor:
+    fake_tool: Any = _FakeTool("get_desktop_state", outcome)
     return RecipeExecutor(
-        cua_tools_by_name={"get_desktop_state": _FakeTool("get_desktop_state", outcome)},
+        cua_tools_by_name={"get_desktop_state": fake_tool},
         action_ledger=None,
         run_id=None,
         budget=None,

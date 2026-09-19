@@ -43,3 +43,36 @@ def user_id_from_namespace(namespace: tuple[str, ...]) -> str | None:
     if len(namespace) >= 2 and namespace[0] == "users" and namespace[1]:
         return namespace[1]
     return None
+
+
+# --- Designer agent scoping (R15/R21, plan P5) ---
+# Only the BOOTSTRAPPED Vion resolves legacy namespaces; every Designer
+# agent gets an agent-scoped thread that carries the execution epoch, so a
+# behavior-changing activation starts a fresh context lineage (R15).
+
+
+def thread_id_for_agent(
+    agent_id: str, execution_epoch: int, user_id: str, chat_id: str
+) -> str:
+    """Agent-scoped thread id: one lineage per (agent, epoch, chat).
+
+    Old epochs keep their history as history; new epochs never see stale
+    hidden prompts, skill bodies or revoked knowledge from before.
+    """
+    return (
+        f"agent:{_require_non_empty(agent_id, 'agent_id')}"
+        f":e{_require_non_empty(str(execution_epoch), 'execution_epoch')}"
+        f":owui:{_require_non_empty(user_id, 'user_id')}:{_require_non_empty(chat_id, 'chat_id')}"
+    )
+
+
+def is_legacy_thread(thread_id: str) -> bool:
+    """True for pre-Designer threads (bootstrapped Vion only)."""
+    return thread_id.startswith("owui:")
+
+
+def agent_memory_namespace(agent_id: str, user_id: str) -> tuple[str, ...]:
+    """Server-derived (owner, agent) memory scope — R15: no anonymous
+    fallback, no client-path strings."""
+    return ("agents", _require_non_empty(agent_id, "agent_id"), "users",
+            _require_non_empty(user_id, "user_id"))
