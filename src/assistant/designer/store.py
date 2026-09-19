@@ -294,6 +294,118 @@ class DesignerStore:
                 (uuid.UUID(agent_id),),
             )
 
+    async def set_agent_config(self, agent_id: str, config: dict[str, Any]) -> None:
+        """Merge bootstrap/runtime metadata (never graph content)."""
+        async with self.connection() as conn:
+            await conn.execute(
+                "UPDATE designer_agents SET config = config || %s, updated_at = now() "
+                "WHERE agent_id = %s",
+                (Jsonb(config), uuid.UUID(agent_id)),
+            )
+
+    async def get_agent_config(self, agent_id: str) -> dict[str, Any]:
+        agent = await self.get_agent(agent_id)
+        if agent is None:
+            return {}
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT config FROM designer_agents WHERE agent_id = %s",
+                (uuid.UUID(agent_id),),
+            )
+            row = await cursor.fetchone()
+        return dict(row[0]) if row and row[0] else {}
+
+    async def set_active_revision(self, agent_id: str, revision_id: str) -> None:
+        """The mutable active pointer (Clar 3). Activation CAS lives in the
+        service layer (P7); this is the unconditional setter used by
+        bootstrap."""
+        async with self.connection() as conn:
+            await conn.execute(
+                "UPDATE designer_agents SET active_revision_id = %s, updated_at = now() "
+                "WHERE agent_id = %s",
+                (revision_id, uuid.UUID(agent_id)),
+            )
+
+    async def upsert_agent_access(
+        self,
+        *,
+        agent_id: str,
+        user_id: str,
+        can_use: bool,
+        can_edit: bool,
+        can_activate: bool,
+        granted_by: str,
+    ) -> None:
+        """Per-agent access policy row (C1). user_id '*' = any
+        authenticated actor (used only by the Vion bootstrap to preserve
+        Phase-1 open access)."""
+        async with self.connection() as conn:
+            await conn.execute(
+                "INSERT INTO designer_agent_access "
+                "(agent_id, user_id, can_use, can_edit, can_activate, granted_by) "
+                "VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (agent_id, user_id) DO UPDATE SET "
+                "can_use = EXCLUDED.can_use, can_edit = EXCLUDED.can_edit, "
+                "can_activate = EXCLUDED.can_activate",
+                (uuid.UUID(agent_id), user_id, can_use, can_edit, can_activate,
+                 granted_by),
+            )
+
+    async def get_agent_access(
+        self, agent_id: str, user_id: str
+    ) -> dict[str, Any] | None:
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT can_use, can_edit, can_activate FROM designer_agent_access "
+                "WHERE agent_id = %s AND user_id = %s",
+                (uuid.UUID(agent_id), user_id),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {"can_use": bool(row[0]), "can_edit": bool(row[1]),
+                "can_activate": bool(row[2])}
+
+    async def find_agent_by_slug(self, slug: str) -> dict[str, Any] | None:
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT agent_id, owner_user_id, slug, display_name, description, "
+                "enabled, archived, active_revision_id, row_version "
+                "FROM designer_agents WHERE slug = %s",
+                (slug,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        keys = (
+            "agent_id", "owner_user_id", "slug", "display_name", "description",
+            "enabled", "archived", "active_revision_id", "row_version",
+        )
+        agent = dict(zip(keys, row, strict=True))
+        agent["agent_id"] = str(agent["agent_id"])
+        return agent
+
+    async def list_all_agents(self) -> list[dict[str, Any]]:
+        """Every agent row (catalog/cross-owner views; authorization is
+        the caller's job — this is store-level, not policy)."""
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT agent_id, owner_user_id, slug, display_name, description, "
+                "enabled, archived, active_revision_id, row_version "
+                "FROM designer_agents ORDER BY created_at",
+            )
+            rows = await cursor.fetchall()
+        agents = []
+        for row in rows:
+            agent = dict(zip(
+                ("agent_id", "owner_user_id", "slug", "display_name", "description",
+                 "enabled", "archived", "active_revision_id", "row_version"),
+                row, strict=True,
+            ))
+            agent["agent_id"] = str(agent["agent_id"])
+            agents.append(agent)
+        return agents
+
     async def insert_revision(
         self,
         *,
