@@ -431,6 +431,83 @@ async def archive_agent(request: Request, agent_id: str) -> dict[str, Any]:
     return {"archived": True}
 
 
+class ContextPreviewRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    graph: dict[str, Any] | None = None
+    revision_id: str | None = None
+    sample_messages: list[dict[str, Any]] = []
+
+
+@router.post("/agents/{agent_id}/context-preview")
+async def context_preview(
+    request: Request, agent_id: str, body: ContextPreviewRequest
+) -> dict[str, Any]:
+    """Non-billable context allocation & budget preview (P6, R08, R16, Fix 8).
+
+    Calculates context token breakdown and budget constraints with ZERO
+    external provider calls.
+    """
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    agent = await _agent_for_actor(designer, actor, agent_id)
+    require_permission(actor, "designer.view", {"agent_id": agent_id})
+
+    from assistant.designer.compiler import compile_execution_config
+    from assistant.designer.context import prepare_context
+    from assistant.designer.schemas import parse_graph_document
+
+    if body.graph is not None:
+        graph = parse_graph_document(body.graph)
+        revision_id = body.revision_id or "draft"
+    elif body.revision_id:
+        revision = await designer["store"].get_revision(body.revision_id)
+        if revision is None:
+            raise DesignerError("missing", "revision not found")
+        graph = parse_graph_document(dict(revision["graph_json"]))
+        revision_id = body.revision_id
+    elif agent.get("active_revision_id"):
+        revision = await designer["store"].get_revision(str(agent["active_revision_id"]))
+        if revision is None:
+            raise DesignerError("missing", "active revision not found")
+        graph = parse_graph_document(dict(revision["graph_json"]))
+        revision_id = str(agent["active_revision_id"])
+    else:
+        raise DesignerError(
+            "invalid_request",
+            "must provide graph, revision_id, or agent must have an active revision",
+        )
+
+    config = compile_execution_config(
+        agent_id=agent_id, revision_id=revision_id, graph=graph
+    )
+    prepared = prepare_context(config, body.sample_messages)
+    return {
+        "agent_id": agent_id,
+        "revision_id": revision_id,
+        "system_prompt": prepared.system_prompt,
+        "skills_instructions": prepared.skills_instructions,
+        "retained_messages": prepared.retained_messages,
+        "token_breakdown": {
+            "system_tokens": prepared.token_breakdown.system_tokens,
+            "skills_tokens": prepared.token_breakdown.skills_tokens,
+            "history_tokens": prepared.token_breakdown.history_tokens,
+            "total_estimated_tokens": prepared.token_breakdown.total_estimated_tokens,
+        },
+        "total_turns_provided": prepared.total_turns_provided,
+        "turns_retained": prepared.turns_retained,
+        "truncated": prepared.truncated,
+        "budget": {
+            "recent_turns_limit": config.context.recent_turns,
+            "estimated_input_tokens_limit": config.context.estimated_input_tokens,
+            "output_token_cap": config.context.output_token_cap,
+            "max_model_attempts": config.context.max_model_attempts,
+            "max_tool_calls": config.context.max_tool_calls,
+            "run_wall_clock_seconds": config.context.run_wall_clock_seconds,
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Sources & catalog (P3): Open WebUI stays the authoring owner (R07).
 # ---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
 # Agent Designer — Progress Log
 
-**Last updated:** 2026-09-19T06:15:00Z
-**Current package:** P5 — Compiler, runtimes, authorization & migration (complete)
-**Next action for a new session:** Begin P6 (Context policies) per `docs/designer/PLAN.md`: BudgetLedger + PreparedContext; defaults 12 turns/32k est input/2048 output/16 attempts/60 tool calls/15-min within ceilings; estimated_context_tokens vs provider_reported_input_tokens separate, unknown != 0; epochs on activation; non-billable context preview.
+**Last updated:** 2026-09-19T06:20:00Z
+**Current package:** P6 — Context policies (complete)
+**Next action for a new session:** Begin P7 (Activation & revocation) per `docs/designer/PLAN.md`: Prepare -> CAS Activate (pointer + audit); failure preserves active revision, closes candidate; drain; revocation gate at every dispatch (no idle-timeout wait); Revoke now (designer.revoke); desktop queue ("Waiting for desktop"); rollback revalidates; quarantine surfaces Review Changes -> Validate Again; rotation marks runtimes stale/rebuilds.
 
 **Document-set confirmation (Safety note 3):** all four required documents confirmed present and readable on 2026-09-18 before code changes:
 1. `01_AGENT_DESIGNER_REQUIREMENTS.md` (~/Downloads, read in full)
@@ -22,8 +22,8 @@
 | P3 Open WebUI adapters | Complete | contract-first catalog + skill CRUD + BLOCKED Knowledge adapter (Fix 2); 11 tests |
 | P4 Connectors | Complete | MCP stdio/HTTP specs, ConnectorRuntimeState + O(1) gate, validation leases, scope refusal; 14 tests incl. real stdio transport |
 | P5 Compiler, runtimes, authorization & migration | Complete | Compiler, RuntimePool (RuntimeCacheKey + Safety 2 drain), C5 chat auth, bootstrap Vion, migration 003; 84 designer tests |
-| P6 Context policies | Not started | Next up |
-| P7 Activation & revocation | Not started | |
+| P6 Context policies | Complete | BudgetLedger, PreparedContext, Fix 8 token vocabulary, operator ceilings, non-billable context preview; 11 tests |
+| P7 Activation & revocation | Not started | Next up |
 | P8 Events & SSE | Not started | |
 | P9 Frontend canvas | Not started | |
 | P10 Live & activation UI | Not started | |
@@ -48,6 +48,26 @@
 Standing restrictions: no push, no deploy, no paid provider API calls, no real desktop (CUA) operations without explicit authorization. Live test gates stay env-gated (`RUN_LIVE_MODEL`, `RUN_LIVE_CUA`).
 
 ## Per-package log (newest first)
+
+### P6 — Context policies (complete 2026-09-19)
+
+**Status:** Complete.
+
+**Implemented (frozen plan: R08/R15-16 + Fix 8):**
+- `context.py`: `BudgetExceeded` error; `OperatorCeilings` dataclass and `apply_operator_ceilings` clamping requested policies to operator limits (defaults: 12 turns, 32k est input, 2048 output, 16 attempts, 60 tool calls, 15-min limit); `estimate_tokens` deterministic local token approximation (zero billable/external calls); `BudgetLedger` tracking model attempts, tool calls, wall-clock time, and token accounting.
+- **Fix 8 Token Vocabulary:** `BudgetLedger` strictly separates `estimated_context_tokens` from `provider_reported_input_tokens`, and unknown provider input/output tokens are represented as `None` (never conflated with `0`).
+- `PreparedContext`: builds bounded context payloads combining immutable safety prefix, custom prompt, skill instructions, and `recent_turns` message history truncation with a detailed `ContextTokenBreakdown`.
+- `routes.py`: added `POST /designer/api/v1/agents/{agent_id}/context-preview` allowing non-billable preview of context budget and token allocation from graph or revision.
+- `tests/designer/test_context.py`: 11 tests covering operator ceilings, token estimation, attempt/tool/wall-clock/token ceilings in BudgetLedger, Fix 8 token vocabulary separation, history truncation in PreparedContext, and the context preview endpoint.
+
+**Commands/results:**
+- `uv run pytest tests/designer/test_context.py` → **11 passed**
+- `uv run pytest tests/designer/` → **95 passed** (auth, graph, sources, connectors, runtime, context)
+- `uv run pytest` → **467 passed, 4 skipped** (full regression suite clean)
+- `uv run ruff check .` → clean · `uv run mypy` → clean (139 source files)
+
+**Notes for next packages:**
+- P7 will implement Activation & Revocation (Prepare -> CAS Activate, immediate Revoke Now, desktop lease queue, rollback).
 
 ### P5 — Compiler, runtimes, authorization & migration (complete 2026-09-19)
 

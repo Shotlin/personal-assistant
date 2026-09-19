@@ -10,6 +10,7 @@ gateway chat route in test_runtime_gateway.py's harness).
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 import pytest
@@ -281,7 +282,7 @@ async def test_pool_idle_close() -> None:
         scope=ScopeKind.SHARED, actor_id=None, run_id=None, config=config,
     )
     await lease.release()
-    closed = await pool.close_idle(now=10_000.0)
+    closed = await pool.close_idle(now=time.monotonic() + 10_000.0)
     assert closed == 1
     await pool.aclose()
 
