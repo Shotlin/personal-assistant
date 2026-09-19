@@ -88,14 +88,59 @@
   }
 
   function findSidebarContainer() {
+    // Geometry-based: the outermost narrow, tall ancestor of the
+    // Workspace item is the sidebar column -- regardless of tag names.
     var workspace = findWorkspaceItem();
     if (!workspace) return null;
+    var best = null;
     var node = workspace;
-    for (var depth = 0; node && depth < 10; depth++) {
-      if (node.tagName === "NAV" || node.tagName === "ASIDE") return node;
+    for (var depth = 0; node && depth < 12; depth++) {
+      var box = node.getBoundingClientRect();
+      if (
+        box.width > 40 &&
+        box.width <= 420 &&
+        box.height >= window.innerHeight * 0.55
+      ) {
+        best = node;
+      }
       node = node.parentElement;
     }
-    return null;
+    return best || workspace.parentElement;
+  }
+
+  function relabelClone(clone) {
+    // Replace the exact 'Workspace' text node with the Designer label;
+    // every class stays native so the item renders identically.
+    var walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT, null);
+    var node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeValue && node.nodeValue.trim() === "Workspace") {
+        node.nodeValue = node.nodeValue.replace("Workspace", "Agent Designer");
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function insertionPoint(workspace) {
+    // Insert below the Workspace entry in the nearest VERTICAL container;
+    // if the matched element sits in a horizontal row, climb until the
+    // wrapping column is found so the entry stacks underneath.
+    var parent = workspace.parentElement;
+    if (!parent) return { container: workspace, ref: null };
+    var box = parent.getBoundingClientRect();
+    if (box.height >= box.width) {
+      return { container: parent, ref: workspace.nextElementSibling };
+    }
+    var node = parent;
+    for (var depth = 0; node && depth < 6; depth++) {
+      var b = node.getBoundingClientRect();
+      if (b.height > b.width) {
+        return { container: node.parentElement, ref: node.nextElementSibling };
+      }
+      node = node.parentElement;
+    }
+    return { container: parent, ref: workspace.nextElementSibling };
   }
 
   function addSidebarItem() {
@@ -103,46 +148,40 @@
     var workspace = findWorkspaceItem();
     if (!workspace) return; // retried by the watcher
 
-    var item = document.createElement(workspace.tagName === "A" ? "a" : "button");
-    item.type = "button";
-    item.setAttribute("data-agent-designer-entry", "1");
-    item.className = workspace.className; // native styling
-    item.style.cursor = "pointer";
-    item.style.width = "100%";
-    item.style.textAlign = "inherit";
-    item.style.background = "transparent";
-    item.style.border = "0";
-    item.title = "Agent Designer";
-    // Mirror the native item's inner structure (icon + label) with a
-    // neutral inline icon; the text label always accompanies the icon.
-    var svg = workspace.querySelector("svg");
-    var iconClass = svg ? svg.getAttribute("class") || "" : "";
-    var iconStyle = svg ? svg.getAttribute("style") || "" : "";
-    item.innerHTML =
-      '<span class="' + iconClass + '" style="display:inline-flex;margin-right:0.5rem;' +
-      iconStyle + '">' +
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ' +
-      'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
-      'stroke-linejoin="round" width="16" height="16" aria-hidden="true">' +
-      '<rect x="3" y="3" width="7" height="7" rx="1"></rect>' +
-      '<rect x="14" y="3" width="7" height="7" rx="1"></rect>' +
-      '<rect x="3" y="14" width="7" height="7" rx="1"></rect>' +
-      '<path d="M17.5 14v7M14 17.5h7"></path></svg></span>' +
-      '<span>Agent Designer</span>';
-    item.addEventListener("click", function (event) {
-      event.preventDefault();
-      event.stopPropagation();
-      try {
-        sessionStorage.removeItem(INTENT_KEY);
-      } catch (e) { /* ignore */ }
-      openDesigner();
+    // Clone the native item: identical classes and inner structure, so
+    // it renders exactly like a first-class sidebar entry and cannot
+    // disturb the original item's layout.
+    var clone = workspace.cloneNode(true);
+    clone.setAttribute("data-agent-designer-entry", "1");
+    clone.removeAttribute("id");
+    [].slice.call(clone.querySelectorAll("[id]")).forEach(function (n) {
+      n.removeAttribute("id");
     });
-    // Insert directly below the Workspace entry.
-    if (workspace.parentElement) {
-      workspace.parentElement.insertBefore(item, workspace.nextElementSibling);
+    if (!relabelClone(clone)) {
+      log("clone relabel failed; skipping to avoid a duplicate Workspace");
+      return;
     }
-    state.item = item;
-    log("sidebar entry added below Workspace");
+    // Capture-phase click: beat any framework navigation the clone
+    // inherited from the original item.
+    clone.addEventListener(
+      "click",
+      function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          sessionStorage.removeItem(INTENT_KEY);
+        } catch (e) { /* ignore */ }
+        openDesigner();
+      },
+      true
+    );
+
+    var point = insertionPoint(workspace);
+    if (point.container) {
+      point.container.insertBefore(clone, point.ref);
+      state.item = clone;
+      log("sidebar entry cloned below Workspace");
+    }
   }
 
   /* ------------------------------------------------------------------ *
@@ -178,6 +217,8 @@
     [].slice.call(parent.children).forEach(function (child) {
       if (child === sidebar || child.id === MOUNT_ID) return;
       if (child.getAttribute("data-designer-hidden") === "1") return;
+      var position = getComputedStyle(child).position;
+      if (position === "fixed" || position === "absolute") return; // overlays
       child.setAttribute("data-designer-hidden", "1");
       child.setAttribute("data-designer-prev-display", child.style.display || "");
       child.style.display = "none";
@@ -293,8 +334,10 @@
   function watchRoute() {
     setInterval(function () {
       if (!state.available) return;
-      if (!isDesignerRoute()) {
-        if (state.mounted) unmountDesigner();
+      if (isDesignerRoute()) {
+        if (!state.mounted) mountDesigner(); // retry until the shell exists
+      } else if (state.mounted) {
+        unmountDesigner();
       }
       // Keep the sidebar entry alive across Open WebUI re-renders.
       if (!state.item || !document.contains(state.item)) addSidebarItem();
