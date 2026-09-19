@@ -12,6 +12,15 @@
 - Live C5 cross-user denial check: seeded an agent owned by `someone-else` with no access rows, chatted as `random-user` -> **404 with ZERO run_registry rows** (denied before claim, before any provider call; no API spend).
 - Evidence: pytest 516 passed / 4 skipped; ruff clean; mypy clean (147 files).
 
+**2026-09-19 Open WebUI native integration (owner-requested optional integration):**
+Agent Designer is now reachable INSIDE the Open WebUI application at `http://127.0.0.1:3000/designer/` — no separate port hop, no iframe, no second login.
+- **Same-origin proxy** (`designer-proxy` nginx service on :3000): `/designer/*` -> gateway (SPA + API + SSE, buffering off), everything else -> Open WebUI. Open WebUI direct access moved to :3001 (debug only). Fixes the `:3000/designer/` 404 and makes refresh work.
+- **SSO Mode C** (`designer/auth.py` + routes): requests arriving through the proxy (shared-secret `X-Designer-Proxy-Key` header) resolve the actor from the Open WebUI session cookie, verified SERVER-SIDE against the upstream current-user endpoint (R09: verified identity on the configured connection only). Direct gateway access keeps the standalone login flow. SSO actors are exempt from the designer CSRF token (Open WebUI cookie is SameSite=Lax); standalone flow keeps CSRF. `designer_proxy_key=""` disables SSO entirely (rollback).
+- **Shell integration** (`frontend/agent-designer/public/shell.js`, injected into Open WebUI HTML via nginx `sub_filter`): adds an "Agent Designer" sidebar entry after Workspace (native styling, hidden when the Designer API is absent — flag-off rollback boundary stays clean), and on `/designer/` routes mounts the existing full React app into the Open WebUI layout (sidebar + header preserved, no iframe).
+- **CSS scoping**: the Designer bundle's global `body`/`*` rules are now scoped under `#root` so embedding cannot restyle Open WebUI. Frontend rebuilt.
+- **Live verification**: OWUI page at :3000 serves with shell.js injected; `/designer/` and sub-route refresh -> 200; anonymous API -> 401; `api/config` (OWUI realtime/config) -> 200 through the proxy.
+- **Tests**: 6 new SSO tests (`tests/designer/test_sso.py`) — proxy-secret gating, forged secret, invalid token, SSO mutation without designer CSRF, disabled-without-key. Backend untouched except the auth-adapter/routes integration points. Evidence: pytest 522 passed / 4 skipped; ruff clean; mypy clean (148 files).
+
 **2026-09-19 late-session hardening (late commit):**
 - Wired the committed-but-unused `list_models_for_actor` into `GET /v1/models` (C5 per-actor listing; flag-off legacy single-model untouched).
 - Chat model gate now fails closed: flag-on + unknown model + missing Designer state -> 404 (no silent legacy fall-through for foreign model ids).

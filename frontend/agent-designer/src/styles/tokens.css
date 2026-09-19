@@ -60,13 +60,19 @@
   --radius-lg: 12px;
 }
 
-* {
+/* Scoped to the Designer mount root so the bundle can be embedded in
+   the Open WebUI application shell without leaking resets onto the host
+   page (the standalone /designer/ page mounts on #root as well). */
+#root,
+#root *,
+#root *::before,
+#root *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-body {
+#root {
   font-family: var(--font-sans);
   background-color: var(--bg);
   color: var(--text);
@@ -77,12 +83,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button {
+/* In-shell mode: fill the host layout area instead of the viewport. */
+#agent-designer-shell-root #root {
+  height: 100%;
+  width: 100%;
+}
+
+#root button {
   font-family: inherit;
   cursor: pointer;
 }
 
-input, textarea, select {
+#root input, #root textarea, #root select {
   font-family: inherit;
 }
 

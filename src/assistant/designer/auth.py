@@ -83,6 +83,7 @@ class Actor:
     role: str
     permissions: frozenset[str] = field(default_factory=frozenset)
     session_id_hash: str = ""
+    via_sso: bool = False  # resolved from the verified Open WebUI session
 
     def has(self, permission: str) -> bool:
         return permission in self.permissions
@@ -196,6 +197,36 @@ class UpstreamAuthAdapter:
         finally:
             if self._client is None:
                 await transport.aclose()
+
+    async def verify_session_token(self, upstream_token: str) -> dict[str, Any] | None:
+        """Mode C: verify an Open WebUI SESSION token server-side against
+        the upstream current-user endpoint (SSO via the trusted proxy).
+
+        Returns the verified identity dict or None when the upstream
+        rejects it. The token is forwarded only to its own upstream.
+        """
+        transport = self._transport()
+        try:
+            me = await transport.get(
+                f"{self._base_url}/api/v1/auths/",
+                headers={"Authorization": f"Bearer {upstream_token}"},
+            )
+        except Exception:  # noqa: BLE001 -- upstream unreachable: fail closed
+            return None
+        finally:
+            if self._client is None:
+                await transport.aclose()
+        if me.status_code != 200:
+            return None
+        body = me.json()
+        user_id = str(body.get("id") or "")
+        if not user_id:
+            return None
+        return {
+            "user_id": user_id,
+            "role": str(body.get("role") or "user"),
+            "credential_kind": "session_token",
+        }
 
     async def signout_session_token(self, upstream_token: str) -> bool:
         """Best-effort upstream invalidation for SESSION tokens only

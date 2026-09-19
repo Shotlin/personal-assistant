@@ -31,6 +31,7 @@ from assistant.designer.auth import (
 from assistant.designer.credentials import CredentialRef, CredentialStore
 from assistant.designer.errors import DesignerError
 from assistant.designer.validation import layout_hash, semantic_hash
+from assistant.settings import Settings
 
 router = APIRouter(prefix="/designer/api/v1")
 
@@ -65,16 +66,68 @@ def _designer_state(request: Request) -> dict[str, Any]:
     return designer
 
 
+OPENWEBUI_SESSION_COOKIE = "token"
+PROXY_KEY_HEADER = "x-designer-proxy-key"
+
+
+async def _resolve_actor_sso(request: Request) -> Actor | None:
+    """SSO (Mode C): resolve the actor from the Open WebUI session cookie.
+
+    Only honored when the request arrives through the trusted proxy
+    (shared-secret header — a browser cannot forge it because it cannot
+    reach the gateway directly... it can, but the secret value is
+    operator-owned and never exposed to any browser surface). The Open
+    WebUI token is then verified SERVER-SIDE against the upstream
+    current-user endpoint before any identity is constructed (R09: trust
+    verified identity on the configured connection only).
+    """
+    settings: Settings = request.app.state.settings
+    proxy_key = getattr(settings, "designer_proxy_key", "")
+    if not proxy_key or request.headers.get(PROXY_KEY_HEADER, "") != proxy_key:
+        return None
+    owui_token = request.cookies.get(OPENWEBUI_SESSION_COOKIE, "")
+    if not owui_token:
+        return None
+    designer = _designer_state(request)
+    adapter: UpstreamAuthAdapter = designer["upstream"]
+    verified = await adapter.verify_session_token(owui_token)
+    if verified is None:
+        return None
+    explicit = await designer["store"].list_grants(verified["user_id"])
+    permissions = permissions_for_role(verified["role"], explicit)
+    return Actor(
+        user_id=str(verified["user_id"]),
+        role=str(verified["role"]),
+        permissions=permissions,
+        via_sso=True,
+    )
+
+
 async def resolve_actor(request: Request) -> Actor:
-    """Resolve the Designer Actor from the session cookie (server-verified)."""
+    """Resolve the Designer Actor: designer session first; SSO from the
+    verified Open WebUI session as fallback (no second login, R09)."""
     designer = _designer_state(request)
     raw_cookie = request.cookies.get(SESSION_COOKIE_NAME, "")
-    return await designer["sessions"].resolve(raw_cookie)
+    try:
+        return await designer["sessions"].resolve(raw_cookie)
+    except DesignerError:
+        actor = await _resolve_actor_sso(request)
+        if actor is not None:
+            return actor
+        raise
 
 
 async def require_actor_and_csrf(request: Request) -> Actor:
-    """Dependency for every mutating route: valid session + CSRF match."""
+    """Dependency for every mutating route: valid session + CSRF match.
+
+    SSO actors are exempt from the designer CSRF token: their requests
+    carry the Open WebUI session cookie, which Open WebUI issues with
+    SameSite=Lax, so cross-site mutations cannot present it. The
+    standalone-cookie flow keeps its CSRF requirement unchanged.
+    """
     actor = await resolve_actor(request)
+    if actor.via_sso:
+        return actor
     designer = _designer_state(request)
     raw_cookie = request.cookies.get(SESSION_COOKIE_NAME, "")
     await designer["sessions"].check_csrf(
@@ -180,12 +233,18 @@ async def disconnect(request: Request) -> Any:
     """
     designer = _designer_state(request)
     actor = await resolve_actor(request)
-    # Logout is a mutation: CSRF applies here too.
-    raw_cookie = request.cookies.get(SESSION_COOKIE_NAME, "")
-    await designer["sessions"].check_csrf(
-        actor, raw_cookie, request.headers.get(CSRF_HEADER_NAME, "")
+    # Logout is a mutation: CSRF applies here too — except for SSO actors,
+    # whose requests carry the SameSite=Lax Open WebUI session cookie.
+    if not actor.via_sso:
+        raw_cookie = request.cookies.get(SESSION_COOKIE_NAME, "")
+        await designer["sessions"].check_csrf(
+            actor, raw_cookie, request.headers.get(CSRF_HEADER_NAME, "")
+        )
+    session = (
+        await designer["store"].load_session(actor.session_id_hash)
+        if actor.session_id_hash
+        else None
     )
-    session = await designer["store"].load_session(actor.session_id_hash)
 
     upstream_revoked = False
     credential_kind = "none"
@@ -1029,6 +1088,14 @@ def mount_designer_spa(app: FastAPI, dist_dir: Path | None = None) -> None:
         # Never intercept API routes
         if full_path.startswith("api/") or full_path == "api":
             return JSONResponse(status_code=404, content={"detail": "Not Found"})
+        # Serve real static files from the build (shell.js, favicon, ...)
+        # before falling back to the SPA entry for client-side routes.
+        candidate = (dist_dir / full_path).resolve()
+        if (
+            candidate.is_file()
+            and str(candidate).startswith(str(dist_dir.resolve()))
+        ):
+            return FileResponse(candidate)
         index_file = dist_dir / "index.html"
         if index_file.is_file():
             return FileResponse(index_file)

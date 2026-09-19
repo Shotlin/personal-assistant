@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     designer_session_ttl_minutes: int = 720
     designer_login_max_attempts: int = 10
     designer_cookie_secure: bool = False
+    # Shared secret between the same-origin reverse proxy and the gateway
+    # (SSO Mode C). Empty disables SSO entirely — the standalone Designer
+    # login flow is then the only path.
+    designer_proxy_key: str = ""
+
 
     @property
     def is_production(self) -> bool:

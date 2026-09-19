@@ -25,8 +25,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Direct access moved to :3001 (debug/emergency only). Users reach
+    # Open WebUI — and, same-origin, the Agent Designer — through the
+    # designer-proxy on :3000.
     ports:
-      - "127.0.0.1:3000:8080"
+      - "127.0.0.1:3001:8080"
     volumes:
       - open-webui:/app/backend/data
     extra_hosts:
@@ -49,6 +52,25 @@ services:
       # v0.11.3. Apply them with:
       #   uv run python scripts/configure_openwebui_connection.py \
       #     --email <admin> --password <pass>
+
+  # Same-origin reverse proxy: users live on http://127.0.0.1:3000 for
+  # BOTH Open WebUI and the Agent Designer (/designer/* -> gateway). The
+  # proxy injects the shell integration script into Open WebUI pages and
+  # forwards the Open WebUI session so the gateway's SSO (Mode C) can
+  # verify it server-side — no second login, no iframe, no port hop.
+  designer-proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - open-webui
+    ports:
+      - "127.0.0.1:3000:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DESIGNER_PROXY_KEY: ${DESIGNER_PROXY_KEY:-}
+    volumes:
+      - ./deploy/designer-proxy.nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
 
 volumes:
   assistant-postgres:
