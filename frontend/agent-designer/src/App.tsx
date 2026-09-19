@@ -8,7 +8,13 @@ import { PropertiesPanel } from './components/inspector/PropertiesPanel'
 import { DiagnosticsStrip } from './components/layout/DiagnosticsStrip'
 import { CreateAgentDialog } from './components/dialogs/CreateAgentDialog'
 import { ActivationDialog } from './components/dialogs/ActivationDialog'
+import { RevocationDialog } from './components/dialogs/RevocationDialog'
+import { LiveCanvas } from './components/live/LiveCanvas'
+import { EventTimeline } from './components/live/EventTimeline'
+import { LiveMetricsStrip } from './components/live/LiveMetricsStrip'
 import { useCanvasStore } from './state/canvasStore'
+import { useLiveStore } from './state/liveStore'
+import { useEventStream } from './hooks/useEventStream'
 import { api } from './api/client'
 import type { AgentSummary } from './types/designer'
 import './styles/tokens.css'
@@ -19,7 +25,9 @@ export const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [activateDialogOpen, setActivateDialogOpen] = useState(false)
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false)
 
+  const mode = useCanvasStore((s) => s.mode)
   const agent = useCanvasStore((s) => s.agent)
   const setAgent = useCanvasStore((s) => s.setAgent)
   const isDirty = useCanvasStore((s) => s.isDirty)
@@ -31,6 +39,36 @@ export const App: React.FC = () => {
   const undo = useCanvasStore((s) => s.undo)
   const redo = useCanvasStore((s) => s.redo)
   const theme = useCanvasStore((s) => s.theme)
+
+  // Live mode state & streaming
+  const runId = useLiveStore((s) => s.runId)
+  const processEvent = useLiveStore((s) => s.processEvent)
+  const setSseState = useLiveStore((s) => s.setSseState)
+  const loadSnapshot = useLiveStore((s) => s.loadSnapshot)
+
+  const { connectionState, lastEventAt } = useEventStream({
+    runId,
+    onEvent: processEvent,
+    enabled: mode === 'live',
+  })
+
+  useEffect(() => {
+    setSseState(connectionState, lastEventAt)
+  }, [connectionState, lastEventAt, setSseState])
+
+  // Bootstrap live state snapshot when run selected in Live mode
+  useEffect(() => {
+    if (mode === 'live' && runId) {
+      api
+        .getRunSnapshot(runId)
+        .then((snapshot) => {
+          loadSnapshot(snapshot)
+        })
+        .catch((err) => {
+          console.warn('Failed to load initial snapshot for run', err)
+        })
+    }
+  }, [mode, runId, loadSnapshot])
 
   // Initialize theme
   useEffect(() => {
@@ -153,6 +191,15 @@ export const App: React.FC = () => {
     alert(`Revision v${updated.active_revision_number} is now active and serving!`)
   }
 
+  // Revoke revision
+  const handleRevokeConfirm = async () => {
+    if (!agent) return
+    await api.revokeAgent(agent.agent_id, agent.row_version)
+    const updated = await api.getAgent(agent.agent_id)
+    setAgent(updated)
+    alert('Active revision has been revoked. The serving pointer is now cleared.')
+  }
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -254,21 +301,52 @@ export const App: React.FC = () => {
         onSave={handleSave}
         onValidate={handleValidate}
         onActivate={() => setActivateDialogOpen(true)}
+        onRevoke={() => setRevokeDialogOpen(true)}
       />
 
       <div style={{ display: 'flex', flex: 1, position: 'relative', overflow: 'hidden' }}>
-        <ComponentLibrary />
-
-        <div style={{ flex: 1, position: 'relative', height: '100%' }}>
-          <ReactFlowProvider>
-            <CanvasContent />
-          </ReactFlowProvider>
-        </div>
-
-        <PropertiesPanel />
+        {mode === 'live' ? (
+          <>
+            <EventTimeline />
+            <div style={{ flex: 1, position: 'relative', height: '100%' }}>
+              <ReactFlowProvider>
+                <LiveCanvas />
+              </ReactFlowProvider>
+            </div>
+          </>
+        ) : mode === 'design' ? (
+          <>
+            <ComponentLibrary />
+            <div style={{ flex: 1, position: 'relative', height: '100%' }}>
+              <ReactFlowProvider>
+                <CanvasContent />
+              </ReactFlowProvider>
+            </div>
+            <PropertiesPanel />
+          </>
+        ) : (
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--muted)',
+              gap: 8,
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>
+              Revision History
+            </div>
+            <div style={{ fontSize: 13 }}>
+              Full audit trail, semantic diffing, and rollback workflow coming in P11.
+            </div>
+          </div>
+        )}
       </div>
 
-      <DiagnosticsStrip />
+      {mode === 'live' ? <LiveMetricsStrip /> : <DiagnosticsStrip />}
 
       <CreateAgentDialog
         open={createDialogOpen}
@@ -280,6 +358,12 @@ export const App: React.FC = () => {
         open={activateDialogOpen}
         onClose={() => setActivateDialogOpen(false)}
         onConfirm={handleActivateConfirm}
+      />
+
+      <RevocationDialog
+        open={revokeDialogOpen}
+        onClose={() => setRevokeDialogOpen(false)}
+        onConfirm={handleRevokeConfirm}
       />
     </div>
   )

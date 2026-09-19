@@ -126,3 +126,77 @@ export interface ActorSession {
   permissions: string[]
   csrf_token: string
 }
+
+export interface RunSummary {
+  run_id: string
+  agent_id: string
+  revision_id?: string | null
+  status: 'running' | 'completed' | 'failed' | 'unknown'
+  created_at: string
+  updated_at: string
+}
+
+export interface RunEvent {
+  event_id: number
+  run_id: string
+  agent_id: string
+  revision_id?: string
+  sequence_number: number
+  event_type: string
+  payload: Record<string, any>
+  at: string
+}
+
+export interface ToolEntry {
+  tool_name: string
+  status: 'running' | 'completed' | 'failed'
+  sequence_number: number
+  error?: string
+  started_at?: string
+  completed_at?: string
+  duration_ms?: number
+}
+
+export interface BudgetSnapshot {
+  estimated_context_tokens?: number
+  provider_reported_input_tokens?: number
+  provider_reported_output_tokens?: number
+  cumulative_cost_cents?: number
+  latency_ms?: number
+}
+
+export interface RunSnapshot {
+  run_id: string
+  agent_id: string
+  revision_id?: string
+  status: 'running' | 'completed' | 'failed' | 'unknown'
+  active_nodes: string[]
+  executed_tools: ToolEntry[]
+  budget: BudgetSnapshot
+  error?: string | null
+  event_count: number
+  latest_event_id?: number | null
+}
+
+export interface RevisionDetail extends RevisionSummary {
+  graph_json: GraphDocument
+  draft_comment?: string
+  is_active?: boolean
+}
+
+export interface RevocationResult {
+  revoked: boolean
+  agent_id: string
+  revoked_revision_id: string
+  row_version: number
+  runtimes_drained: number
+  etag: string
+}
+
+export interface ActivationResult {
+  activated: boolean
+  agent_id: string
+  active_revision_id: string
+  row_version: number
+  etag: string
+}

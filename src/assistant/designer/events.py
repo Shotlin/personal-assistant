@@ -81,7 +81,13 @@ def sanitize_payload(obj: Any, *, max_str_len: int = MAX_STRING_LENGTH) -> Any:
         cleaned: dict[str, Any] = {}
         for k, v in obj.items():
             key_lower = str(k).lower()
-            if any(sub in key_lower for sub in SENSITIVE_KEY_SUBSTRINGS):
+            # Do not redact LLM token count metrics (e.g. estimated_context_tokens, input_tokens)
+            is_token_count = (
+                key_lower == "tokens"
+                or key_lower.endswith("_tokens")
+                or key_lower.endswith("_tokens_count")
+            )
+            if not is_token_count and any(sub in key_lower for sub in SENSITIVE_KEY_SUBSTRINGS):
                 cleaned[str(k)] = "[REDACTED]"
             else:
                 cleaned[str(k)] = sanitize_payload(v, max_str_len=max_str_len)

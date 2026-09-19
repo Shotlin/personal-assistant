@@ -4,7 +4,10 @@ import type {
   AgentSummary,
   CatalogResponse,
   GraphDocument,
+  RevisionDetail,
   RevisionSummary,
+  RunSnapshot,
+  RunSummary,
   ValidationReport,
 } from '../types/designer'
 
@@ -168,5 +171,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ graph }),
     })
+  },
+
+  async listAgentRuns(agentId: string, limit: number = 20): Promise<RunSummary[]> {
+    const data = await apiRequest<{ runs: RunSummary[] }>(`/agents/${agentId}/runs?limit=${limit}`)
+    return data.runs || []
+  },
+
+  async getRunSnapshot(runId: string): Promise<RunSnapshot> {
+    return apiRequest<RunSnapshot>(`/runs/${runId}/snapshot`)
+  },
+
+  async getRevision(agentId: string, revisionId: string): Promise<RevisionDetail> {
+    return apiRequest<RevisionDetail>(`/agents/${agentId}/revisions/${revisionId}`)
   },
 }

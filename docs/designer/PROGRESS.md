@@ -1,8 +1,8 @@
 # Agent Designer — Progress Log
 
-**Last updated:** 2026-09-19T12:35:00Z
-**Current package:** P9 — Frontend canvas (complete)
-**Next action for a new session:** Begin P10 (Live & activation UI) per `docs/designer/PLAN.md`: Live view with real-time SSE stream, step-by-step token and tool timeline, live metrics strip (tokens, cost, latency, zero-LLM snapshot), activation dialog with dry-run validation gate, rollback trigger, and revocation modal.
+**Last updated:** 2026-09-19T14:30:00Z
+**Current package:** All packages complete (P0–P11)
+**Next action for a new session:** Implementation complete. Maintain test suites (`uv run pytest`, `npm test`), respect `DESIGNER_ENABLED=false` rollback path, and reference `docs/designer/acceptance.md` for A1–A14 verification ledger.
 
 **Document-set confirmation (Safety note 3):** all four required documents confirmed present and readable on 2026-09-18 before code changes:
 1. `01_AGENT_DESIGNER_REQUIREMENTS.md` (~/Downloads, read in full)
@@ -26,8 +26,8 @@
 | P7 Activation & revocation | Complete | Prepare -> CAS Activate, Revoke Now, drain, desktop queue; 15 tests |
 | P8 Events & SSE | Complete | 14 tests; append-only events store, Last-Event-ID replay, heartbeat, snapshot, sanitized capped payloads, disconnect safety |
 | P9 Frontend canvas | Complete | Vite + React 18 + TS SPA in `frontend/agent-designer/`, custom nodes/edges, Zustand store w/ 50-state undo/redo, validation & gates, static mount & SPA fallback in FastAPI; 6 backend tests, 7 frontend tests |
-| P10 Live & activation UI | Not started | Next up |
-| P11 Release & acceptance | Not started | |
+| P10 Live & activation UI | Complete | LiveCanvas w/ revision pinning & active node pulse, EventTimeline w/ auto-scroll & payload inspection, LiveMetricsStrip w/ SSE state & token counter, RunSelector, ActivationDialog w/ diff, RevocationDialog, GET /agents/{id}/runs; 7 backend tests, 10 frontend tests |
+| P11 Release & acceptance | Complete | 7 acceptance tests, 144 designer tests pass, 516 regression tests pass; rollback, isolation, migration rehearsal verified; THIRD_PARTY_NOTICES.md, acceptance.md, and CLAUDE.md complete |
 
 ## Open blockers
 
@@ -48,6 +48,69 @@
 Standing restrictions: no push, no deploy, no paid provider API calls, no real desktop (CUA) operations without explicit authorization. Live test gates stay env-gated (`RUN_LIVE_MODEL`, `RUN_LIVE_CUA`).
 
 ## Per-package log (newest first)
+
+### P11 — Release & acceptance (complete 2026-09-19)
+
+**Status:** Complete.
+
+**Implemented (frozen plan: A1-A14, Fix 10, C2, Safety 1):**
+- **Release Acceptance Test Suite (`tests/designer/test_release_acceptance.py`):**
+  - Implemented 7 end-to-end integration and security acceptance tests:
+    1. `test_flag_false_rollback_routes_404`: Rehearses complete feature flag rollback with `DESIGNER_ENABLED=false`. Proves `/designer/api/*` routes return 404, Designer stores remain uninitialized, and legacy `/v1/models` route responds with baseline Vion model.
+    2. `test_custom_model_gate_graph_contains_no_secrets`: Proves graph JSON exports contain strictly `credential_ref` identifiers and zero plaintext API keys or secrets (R09).
+    3. `test_draft_change_isolation_and_activate_cutover`: Verifies editing and saving draft v2 does not alter the active serving revision (v1) until an explicit CAS `/activate` call cutover occurs.
+    4. `test_credential_rotation_invalidates_runtime_pool`: Proves modifying credentials immediately drains the `RuntimePool` cache and forces recompilation on subsequent turns.
+    5. `test_cross_user_and_cross_agent_isolation`: Verifies that unauthorized users attempting to inspect, modify, activate, revoke, or list runs of another user's agent receive uniform 404 responses with zero disclosure.
+    6. `test_migration_rehearsal_idempotency`: Validates sequential, repeated execution of migrations `002_agent_designer.sql` and `003_agent_designer_runtimes.sql` for idempotency and data integrity.
+    7. `test_runtime_binding_without_cua_omits_desktop_tools`: Proves that removing CUA nodes compiles an `ExecutionConfig` where `allows_native_dispatch() is False` and CUA capabilities (`agent.cua`) are entirely omitted.
+- **Third-Party Notices & Licenses (`THIRD_PARTY_NOTICES.md`):**
+  - Created comprehensive third-party software notices covering all frontend packages (`@xyflow/react`, `zustand`, `@radix-ui/*`, `lucide-react`, `codemirror`, `react`, `vite`) and backend libraries (`fastapi`, `pydantic`, `psycopg`, `httpx`, `orjson`, `deepagents`).
+  - Recorded attribution documentation and MIT/ISC/BSD/LGPL license texts.
+- **Acceptance & Evidence Ledger (`docs/designer/acceptance.md`):**
+  - Completed verification ledger documenting criteria A1 through A14 with primary test evidence, scope, and status.
+  - Documented performance benchmarks (<100ms UI feedback, 10 events/sec SSE stream, zero extra LLM invocations) and safe staged rollout guidelines.
+- **Architecture & System Documentation (`CLAUDE.md`):**
+  - Updated repository guidance to clarify multi-runtime architecture: system supports defining, activating, and monitoring multiple independent agent runtimes while strictly preserving single-agent turn dispatch invariants (no `task` tool, no host-shell `execute`).
+  - Documented `DESIGNER_ENABLED=false` rollback behavior and added dated change log entry.
+
+**Commands/results:**
+- `uv run pytest tests/designer/test_release_acceptance.py -v` → **7 passed (2.34s)**
+- `uv run pytest tests/designer/ -v` → **144 passed (3.44s)**
+- `uv run pytest -m "not live"` → **516 passed, 4 skipped, 0 failures (23.34s)**
+- `uv run ruff check .` → **All checks passed!**
+- `uv run mypy` → **Success: no issues found in 147 source files**
+- `npm --prefix frontend/agent-designer run typecheck` → **Passed with 0 errors**
+- `npm --prefix frontend/agent-designer run test -- --run` → **17 passed (869ms)**
+- `npm --prefix frontend/agent-designer run build` → **Built dist in 280ms**
+
+### P10 — Live & activation UI (complete 2026-09-19)
+
+**Status:** Complete.
+
+**Implemented (frozen plan: R04-R05, R12-R18, 03_AGENT_DESIGNER_VISUAL_DESIGN.md §8-9):**
+- **Backend Store & Routes (`src/assistant/designer/store.py`, `src/assistant/designer/routes.py`):**
+  - Added `list_agent_runs` to `DesignerStore` querying `run_registry` newest-first by `agent_id` and `user_id`.
+  - Added `GET /designer/api/v1/agents/{agent_id}/runs` endpoint with limit query param, strict agent ownership check (foreign agents 404 without disclosure), and actor isolation.
+  - Updated `sanitize_payload` in `src/assistant/designer/events.py` to preserve LLM token usage count metrics (`estimated_context_tokens`, `input_tokens`, `tokens`) while continuing to redact auth secrets (`token`, `api_key`, `password`, etc.).
+- **Live SSE Client & State Management (`src/hooks/useEventStream.ts`, `src/state/liveStore.ts`):**
+  - `useEventStream` hook encapsulating SSE lifecycle: connects to `/designer/api/v1/runs/{runId}/events`, auto-reconnects with exponential backoff (1s -> 2s -> 4s up to 30s), tracks `lastEventId` for query-param/header resumption without restarting or mutating runs, and detects terminal run events (`run.completed`, `run.failed`).
+  - `useLiveStore` Zustand store: manages separate live state from the draft canvas, including active run selection, event queue (capped at 500), active/completed/failed node sets, executed tools with duration calculation, token budgets, and pinned revision graph.
+- **Visual Design & Live Components (`src/components/live/`, `src/styles/tokens.css`):**
+  - `tokens.css`: Added `--live-pulse` blue glow, `@keyframes nodePulse` animation (respecting `prefers-reduced-motion`), and status border styles.
+  - `LiveCanvas`: Read-only React Flow canvas pinned to the selected run's revision graph. Highlights active nodes with blue pulsing border, completed nodes with green, and failed nodes with red. Shows version banner indicating run revision vs currently active revision.
+  - `EventTimeline`: Left-sidebar replacement in live mode displaying chronological run events with type badges, node/tool targets, formatted timestamps (HH:MM:SS.ms), expandable JSON payloads, auto-scroll, and pause/resume scroll-lock.
+  - `LiveMetricsStrip`: Diagnostics strip replacement showing live status badge, ticking elapsed time counter, model attempts, token usage (`estimated_context_tokens`, in/out tokens), tool counts, and SSE connection status indicator with "last event at..." info on reconnect.
+  - `RunSelector`: Dropdown in ModeBar for choosing runs with auto-selection of active/recent runs and reload action.
+- **Enhanced Activation & Revocation Dialogs (`src/components/dialogs/`):**
+  - `ActivationDialog`: Enhanced with client-side diff comparison between current draft graph and active revision (added/removed/modified nodes and edges), credential reference detection (never displaying secrets), context token estimate preview via `/context-preview`, and clear version progression.
+  - `RevocationDialog`: Emergency revocation modal with warning, showing active revision number and calling `POST /designer/api/v1/agents/{agent_id}/revoke` with ETag CAS.
+- **Testing & Verification:**
+  - Backend tests: 7 tests passed in `tests/designer/test_live_ui.py`.
+  - Frontend tests: 10 tests passed in `frontend/agent-designer/src/tests/live.test.tsx` (total 17 frontend tests).
+  - All 137 designer backend tests passed.
+  - Regression suite: 509 passed, 4 skipped, 0 failures.
+  - Full TypeScript typecheck and production build succeeded.
+
 
 ### P9 — Frontend canvas (complete 2026-09-19)
 
@@ -325,10 +388,14 @@ Standing restrictions: no push, no deploy, no paid provider API calls, no real d
 
 ## Session handoff
 
-- **Repository state:** branch `agent-designer`; all packages P0 through P8 complete with all gates passing.
-- **Toolchain:** `export PATH="$HOME/homebrew/bin:$HOME/homebrew/opt/node@22/bin:$HOME/.local/bin:$PATH"` gives uv/colima/docker/node in a fresh shell; colima must be running (`colima start --vm-type vz`) for docker; `.env` exists (gitignored) with real CUA manifest path.
-- **Last passing test run:** 2026-09-19 — `uv run pytest -m "not live"` → 496 passed, 4 skipped, 0 failures (~23 s); ruff clean; mypy clean (144 source files). Designer suite: 124 passed in `tests/designer/`.
-- **Current package:** P8 complete. Next package is P9 (Frontend canvas).
-- **Next steps:** Begin P9 per `docs/designer/PLAN.md`: Vite React TS SPA, `@xyflow/react` custom nodes/edges, zustand + react-query, Radix + lucide, CodeMirror, monochrome tokens (dark default/light/system), capability badge + health indicator, secrets never in node data, static mount + SPA fallback (flag-gated). Gate: server-backed draft survives reload.
-- **Remaining P0 item:** Open WebUI authenticated-read probes — needs owner-provided account + `docker compose up -d open-webui`; then `uv run python scripts/probe_openwebui_contract.py probe ...`; C5 capture mode for model-discovery headers.
-- **Entry point rule for any new session:** read PLAN.md + this log + the three source docs → continue the current package; never reconstruct requirements from memory; never redesign the frozen architecture.
+- **Repository state:** branch `agent-designer`; all packages P0 through P11 complete with all quality, correctness, and security gates passing.
+- **Toolchain:** `export PATH="$HOME/homebrew/bin:$HOME/homebrew/opt/node@22/bin:$HOME/.local/bin:$PATH"` gives uv/colima/docker/node in a fresh shell; colima running (`colima start --vm-type vz`) for postgres container; `.env` exists (gitignored) with real CUA manifest path.
+- **Last passing test run:** 2026-09-19 — `uv run pytest -m "not live"` → 516 passed, 4 skipped, 0 failures (~23.3 s); ruff clean; mypy clean (147 source files). Designer suite: 144 passed in `tests/designer/` (3.44s). Frontend suite: 17 passed in Vitest; production Vite build clean (280ms).
+- **Current package:** P11 complete. All packages P0–P11 of `docs/designer/PLAN.md` (v5.1 FINAL FREEZE) delivered.
+- **Documentation artifacts:**
+  - `docs/designer/acceptance.md`: A1–A14 acceptance criteria verification ledger, performance benchmarks, staged rollout plan.
+  - `THIRD_PARTY_NOTICES.md`: Third-party open source licenses and notices for frontend and backend dependencies.
+  - `CLAUDE.md`: System guidance updated with multi-runtime architecture, single-agent turn invariants, rollback path, and dated change-log entry.
+- **Rollback assurance:** `DESIGNER_ENABLED=false` tested and proven to safely revert all gateway routes to legacy Vion baseline with zero side-effects.
+- **Deferred / external item:** Open WebUI live authenticated-read probe remains deferred awaiting owner-provided test account credentials for the external service; adapters and catalog operate contract-first with tested schema fixtures.
+- **Entry point rule for any new session:** read PLAN.md + this log + acceptance.md. Never bypass safety invariants (no subagents, bounded CUA, no plaintext credentials in graphs).

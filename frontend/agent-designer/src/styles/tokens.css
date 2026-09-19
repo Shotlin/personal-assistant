@@ -85,3 +85,48 @@ button {
 input, textarea, select {
   font-family: inherit;
 }
+
+/* ==========================================================================
+   Live Mode Tokens & Node Animations
+   ========================================================================== */
+
+:root {
+  --live-pulse: #3B82F6;
+  --live-pulse-glow: rgba(59, 130, 246, 0.4);
+}
+
+@keyframes nodePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.6);
+    border-color: #3B82F6;
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(59, 130, 246, 0);
+    border-color: #60A5FA;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    border-color: #3B82F6;
+  }
+}
+
+.live-node-active {
+  animation: nodePulse 2s infinite ease-in-out !important;
+  border-color: #3B82F6 !important;
+}
+
+.live-node-completed {
+  border-color: var(--green) !important;
+}
+
+.live-node-failed {
+  border-color: var(--red) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-node-active {
+    animation: none !important;
+    border: 2px solid #3B82F6 !important;
+    box-shadow: 0 0 6px #3B82F6 !important;
+  }
+}

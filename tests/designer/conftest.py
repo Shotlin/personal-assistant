@@ -44,13 +44,17 @@ USER_A = "user-a-designer"
 USER_B = "user-b-designer"
 
 
-def designer_settings(**overrides: Any) -> Settings:
+def designer_settings(
+    *,
+    designer_enabled: bool = True,
+    **overrides: Any,
+) -> Settings:
     return Settings(
         agent_gateway_api_key="test-gateway-key",
         model_provider="openrouter",
         openrouter_api_key="dummy",
         cua_enabled=False,
-        designer_enabled=True,
+        designer_enabled=designer_enabled,
         designer_credentials_key=TEST_KEY,
         **overrides,
     )

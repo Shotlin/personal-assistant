@@ -688,3 +688,45 @@ class DesignerStore:
             )
         )
 
+    async def list_agent_runs(
+        self,
+        agent_id: str,
+        *,
+        user_id: str,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """List recent runs for an agent, newest-first."""
+        async with self.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT run_id, user_id, chat_id, user_message_id, "
+                "status, agent_id, revision_id, attempt, failure_reason, "
+                "created_at, updated_at "
+                "FROM run_registry "
+                "WHERE agent_id = %s AND user_id = %s "
+                "ORDER BY created_at DESC LIMIT %s",
+                (agent_id, user_id, limit),
+            )
+            rows = await cursor.fetchall()
+        return [
+            dict(
+                zip(
+                    (
+                        "run_id",
+                        "user_id",
+                        "chat_id",
+                        "user_message_id",
+                        "status",
+                        "agent_id",
+                        "revision_id",
+                        "attempt",
+                        "failure_reason",
+                        "created_at",
+                        "updated_at",
+                    ),
+                    row,
+                    strict=True,
+                )
+            )
+            for row in rows
+        ]
+

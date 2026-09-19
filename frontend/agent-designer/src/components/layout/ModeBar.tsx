@@ -1,20 +1,24 @@
 import React from 'react'
-import { CheckCircle, Play, Redo2, Save, Undo2 } from 'lucide-react'
+import { AlertOctagon, CheckCircle, Play, Redo2, Save, Undo2 } from 'lucide-react'
 import { useCanvasStore } from '../../state/canvasStore'
+import { RunSelector } from '../live/RunSelector'
 
 interface ModeBarProps {
   onSave: () => void
   onValidate: () => void
   onActivate: () => void
+  onRevoke?: () => void
 }
 
 export const ModeBar: React.FC<ModeBarProps> = ({
   onSave,
   onValidate,
   onActivate,
+  onRevoke,
 }) => {
   const mode = useCanvasStore((s) => s.mode)
   const setMode = useCanvasStore((s) => s.setMode)
+  const agent = useCanvasStore((s) => s.agent)
   const isDirty = useCanvasStore((s) => s.isDirty)
   const isSaving = useCanvasStore((s) => s.isSaving)
   const isValidating = useCanvasStore((s) => s.isValidating)
@@ -61,111 +65,144 @@ export const ModeBar: React.FC<ModeBarProps> = ({
         })}
       </div>
 
-      {/* Primary actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {/* Undo / Redo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginRight: 8 }}>
+      {/* Middle/Action Area depending on mode */}
+      {mode === 'live' ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <RunSelector />
+
+          {agent?.active_revision_id && onRevoke && (
+            <button
+              onClick={onRevoke}
+              title="Immediate emergency revocation of serving revision"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'rgba(248, 113, 113, 0.12)',
+                color: 'var(--red)',
+                border: '1px solid var(--red)',
+                borderRadius: 'var(--radius-md)',
+                padding: '5px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <AlertOctagon size={14} />
+              <span>Revoke Now</span>
+            </button>
+          )}
+        </div>
+      ) : mode === 'design' ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Undo / Redo */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginRight: 8 }}>
+            <button
+              onClick={undo}
+              disabled={!undoAvailable}
+              title="Undo (Ctrl+Z)"
+              style={{
+                background: 'transparent',
+                color: undoAvailable ? 'var(--text)' : 'var(--muted)',
+                border: 'none',
+                padding: '6px',
+                borderRadius: 'var(--radius-sm)',
+                opacity: undoAvailable ? 1 : 0.4,
+                display: 'flex',
+              }}
+            >
+              <Undo2 size={16} />
+            </button>
+            <button
+              onClick={redo}
+              disabled={!redoAvailable}
+              title="Redo (Ctrl+Y)"
+              style={{
+                background: 'transparent',
+                color: redoAvailable ? 'var(--text)' : 'var(--muted)',
+                border: 'none',
+                padding: '6px',
+                borderRadius: 'var(--radius-sm)',
+                opacity: redoAvailable ? 1 : 0.4,
+                display: 'flex',
+              }}
+            >
+              <Redo2 size={16} />
+            </button>
+          </div>
+
+          {/* Save draft */}
           <button
-            onClick={undo}
-            disabled={!undoAvailable}
-            title="Undo (Ctrl+Z)"
+            onClick={onSave}
+            disabled={!isDirty || isSaving}
+            title="Save immutable draft revision"
             style={{
-              background: 'transparent',
-              color: undoAvailable ? 'var(--text)' : 'var(--muted)',
-              border: 'none',
-              padding: '6px',
-              borderRadius: 'var(--radius-sm)',
-              opacity: undoAvailable ? 1 : 0.4,
               display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: isDirty ? 'var(--panel)' : 'var(--surface)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '6px 14px',
+              fontSize: 13,
+              fontWeight: 600,
+              opacity: isDirty ? 1 : 0.6,
+              cursor: isDirty && !isSaving ? 'pointer' : 'default',
             }}
           >
-            <Undo2 size={16} />
+            <Save size={14} />
+            <span>{isSaving ? 'Saving...' : 'Save draft'}</span>
           </button>
+
+          {/* Validate */}
           <button
-            onClick={redo}
-            disabled={!redoAvailable}
-            title="Redo (Ctrl+Y)"
+            onClick={onValidate}
+            disabled={isValidating}
+            title="Run non-destructive graph validation"
             style={{
-              background: 'transparent',
-              color: redoAvailable ? 'var(--text)' : 'var(--muted)',
-              border: 'none',
-              padding: '6px',
-              borderRadius: 'var(--radius-sm)',
-              opacity: redoAvailable ? 1 : 0.4,
               display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'var(--panel)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '6px 14px',
+              fontSize: 13,
+              fontWeight: 600,
             }}
           >
-            <Redo2 size={16} />
+            <CheckCircle size={14} style={{ color: 'var(--blue)' }} />
+            <span>{isValidating ? 'Validating...' : 'Validate'}</span>
+          </button>
+
+          {/* Activate */}
+          <button
+            onClick={onActivate}
+            title="Prepare candidate and CAS activate"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'var(--text)',
+              color: 'var(--bg)',
+              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              padding: '6px 16px',
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            <Play size={13} fill="currentColor" />
+            <span>Activate</span>
           </button>
         </div>
-
-        {/* Save draft */}
-        <button
-          onClick={onSave}
-          disabled={!isDirty || isSaving}
-          title="Save immutable draft revision"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: isDirty ? 'var(--panel)' : 'var(--surface)',
-            color: 'var(--text)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            padding: '6px 14px',
-            fontSize: 13,
-            fontWeight: 600,
-            opacity: isDirty ? 1 : 0.6,
-            cursor: isDirty && !isSaving ? 'pointer' : 'default',
-          }}
-        >
-          <Save size={14} />
-          <span>{isSaving ? 'Saving...' : 'Save draft'}</span>
-        </button>
-
-        {/* Validate */}
-        <button
-          onClick={onValidate}
-          disabled={isValidating}
-          title="Run non-destructive graph validation"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'var(--panel)',
-            color: 'var(--text)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            padding: '6px 14px',
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
-          <CheckCircle size={14} style={{ color: 'var(--blue)' }} />
-          <span>{isValidating ? 'Validating...' : 'Validate'}</span>
-        </button>
-
-        {/* Activate */}
-        <button
-          onClick={onActivate}
-          title="Prepare candidate and CAS activate"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'var(--text)',
-            color: 'var(--bg)',
-            border: 'none',
-            borderRadius: 'var(--radius-md)',
-            padding: '6px 16px',
-            fontSize: 13,
-            fontWeight: 700,
-          }}
-        >
-          <Play size={13} fill="currentColor" />
-          <span>Activate</span>
-        </button>
-      </div>
+      ) : (
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+          Revision history viewer coming in P11
+        </div>
+      )}
     </div>
   )
 }

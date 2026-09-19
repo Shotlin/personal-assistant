@@ -722,6 +722,49 @@ async def rollback_revision(
 # ---------------------------------------------------------------------------
 
 
+@router.get("/agents/{agent_id}/runs")
+async def list_agent_runs(request: Request, agent_id: str) -> dict[str, Any]:
+    """List recent runs for an agent (P10).
+
+    Enforces agent ownership (foreign agents return 404 without disclosure).
+    """
+    designer = _designer_state(request)
+    actor = await resolve_actor(request)
+    require_permission(actor, "designer.view", {"agent_id": agent_id})
+    await _agent_for_actor(designer, actor, agent_id)
+
+    limit_param = request.query_params.get("limit", "20")
+    try:
+        limit = max(1, min(100, int(limit_param)))
+    except ValueError:
+        limit = 20
+
+    runs = await designer["store"].list_agent_runs(
+        agent_id, user_id=actor.user_id, limit=limit
+    )
+    items = []
+    for r in runs:
+        items.append(
+            {
+                "run_id": r["run_id"],
+                "agent_id": r["agent_id"],
+                "revision_id": r.get("revision_id"),
+                "status": r["status"],
+                "created_at": (
+                    r["created_at"].isoformat()
+                    if hasattr(r["created_at"], "isoformat")
+                    else str(r["created_at"])
+                ),
+                "updated_at": (
+                    r["updated_at"].isoformat()
+                    if hasattr(r["updated_at"], "isoformat")
+                    else str(r["updated_at"])
+                ),
+            }
+        )
+    return {"runs": items}
+
+
 @router.get("/runs/{run_id}/events")
 async def stream_run_events(request: Request, run_id: str) -> Any:
     """Stream monotonic run events via SSE with Last-Event-ID replay (P8).
