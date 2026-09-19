@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 
 export UV_CACHE_DIR="${UV_CACHE_DIR:-$PWD/.uv-cache}"
 export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$PWD/.uv-python}"
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="/Applications/Docker.app/Contents/Resources/bin:$HOME/homebrew/bin:$HOME/.local/bin:$PATH"
 
 mkdir -p var
 GATEWAY_LOG="$PWD/var/gateway.log"

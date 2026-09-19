@@ -163,7 +163,7 @@ class UpstreamAuthAdapter:
                     )
                 body = signin.json()
                 token = body.get("token")
-                user = body.get("user") or {}
+                user = body.get("user") if isinstance(body.get("user"), dict) else body
                 if not isinstance(token, str) or not token:
                     raise DesignerError(
                         "upstream_unavailable", "Open WebUI sign-in response had no token"

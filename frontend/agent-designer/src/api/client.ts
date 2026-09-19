@@ -79,6 +79,32 @@ export const api = {
     return { ...data.actor, csrf_token: data.csrf_token }
   },
 
+  async connectSession(payload: {
+    mode: string
+    email?: string
+    password?: string
+    api_key?: string
+  }): Promise<ActorSession> {
+    const data = await apiRequest<{
+      user_id: string
+      role: string
+      csrf_token: string
+      permissions: string[]
+    }>('/session', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+    if (data.csrf_token) {
+      setCsrfToken(data.csrf_token)
+    }
+    return {
+      user_id: data.user_id,
+      role: data.role as any,
+      csrf_token: data.csrf_token,
+      permissions: data.permissions as any,
+    }
+  },
+
   async listAgents(): Promise<AgentSummary[]> {
     const data = await apiRequest<{ agents: AgentSummary[] }>('/agents')
     return data.agents || []

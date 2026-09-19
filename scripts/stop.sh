@@ -6,6 +6,8 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+export PATH="/Applications/Docker.app/Contents/Resources/bin:$HOME/homebrew/bin:$HOME/.local/bin:$PATH"
+
 env_get() { grep -E "^${1}=" .env 2>/dev/null | tail -1 | cut -d= -f2-; }
 APP_PORT="$(env_get APP_PORT)"; APP_PORT="${APP_PORT:-8787}"
 

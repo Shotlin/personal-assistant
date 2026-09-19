@@ -106,6 +106,7 @@ def create_app(
     # Designer mounts ONLY when explicitly enabled (C2 + Safety note 1).
     # Flag-off: no designer routes, no designer state, legacy behavior.
     if settings.designer_enabled:
+        from fastapi.responses import RedirectResponse
         from assistant.designer.routes import router as designer_router
 
         app.include_router(designer_router)
@@ -113,6 +114,10 @@ def create_app(
 
         install_error_handler(app)
         mount_designer_spa(app)
+
+        @app.get("/", include_in_schema=False)
+        def root_redirect() -> RedirectResponse:
+            return RedirectResponse(url="/designer/")
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

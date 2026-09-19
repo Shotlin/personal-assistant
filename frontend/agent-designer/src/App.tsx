@@ -12,6 +12,7 @@ import { RevocationDialog } from './components/dialogs/RevocationDialog'
 import { LiveCanvas } from './components/live/LiveCanvas'
 import { EventTimeline } from './components/live/EventTimeline'
 import { LiveMetricsStrip } from './components/live/LiveMetricsStrip'
+import { LoginDialog } from './components/dialogs/LoginDialog'
 import { useCanvasStore } from './state/canvasStore'
 import { useLiveStore } from './state/liveStore'
 import { useEventStream } from './hooks/useEventStream'
@@ -26,6 +27,7 @@ export const App: React.FC = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [activateDialogOpen, setActivateDialogOpen] = useState(false)
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false)
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false)
 
   const mode = useCanvasStore((s) => s.mode)
   const agent = useCanvasStore((s) => s.agent)
@@ -91,7 +93,14 @@ export const App: React.FC = () => {
   const loadAgents = useCallback(async () => {
     try {
       setLoading(true)
-      await api.getSession().catch(() => null)
+      setError(null)
+      const session = await api.getSession().catch(() => null)
+      if (!session) {
+        setLoginDialogOpen(true)
+        setLoading(false)
+        return
+      }
+      setLoginDialogOpen(false)
       const list = await api.listAgents()
       setAgents(list)
       if (list.length > 0) {
@@ -100,7 +109,11 @@ export const App: React.FC = () => {
         setAgent(detail)
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to initialize Agent Designer.')
+      if (err.status === 401 || err.message?.includes('401') || err.message?.includes('Unauthorized')) {
+        setLoginDialogOpen(true)
+      } else {
+        setError(err.message || 'Failed to initialize Agent Designer.')
+      }
     } finally {
       setLoading(false)
     }
@@ -245,7 +258,7 @@ export const App: React.FC = () => {
     )
   }
 
-  if (error && agents.length === 0) {
+  if (error && agents.length === 0 && !loginDialogOpen) {
     return (
       <div
         style={{
@@ -364,6 +377,14 @@ export const App: React.FC = () => {
         open={revokeDialogOpen}
         onClose={() => setRevokeDialogOpen(false)}
         onConfirm={handleRevokeConfirm}
+      />
+
+      <LoginDialog
+        open={loginDialogOpen}
+        onSuccess={() => {
+          setLoginDialogOpen(false)
+          loadAgents()
+        }}
       />
     </div>
   )
