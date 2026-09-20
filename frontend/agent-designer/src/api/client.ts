@@ -2,7 +2,7 @@ import type {
   ActorSession,
   AgentDetail,
   AgentSummary,
-  CatalogResponse,
+  CatalogEntry,
   GraphDocument,
   RevisionDetail,
   RevisionSummary,
@@ -185,8 +185,12 @@ export const api = {
     )
   },
 
-  async getCatalog(): Promise<CatalogResponse> {
-    return apiRequest<CatalogResponse>('/catalog')
+  async getCatalog(
+    kind: string
+  ): Promise<{ kind: string; entries: CatalogEntry[] }> {
+    return apiRequest<{ kind: string; entries: CatalogEntry[] }>(
+      `/catalog?kind=${encodeURIComponent(kind)}`
+    )
   },
 
   async previewContext(

@@ -130,20 +130,17 @@ class SourceService:
         if kind == "knowledge":
             return await self._knowledge_catalog(actor)
         if kind == "model":
-            # Model presets import as an explicit preview (R07); listing
-            # metadata is safe, execution requires a gateway credential
-            # reference. Contract pending probe -> CATALOG_ONLY.
-            return [
-                {
-                    "source": "openwebui", "kind": "model", "id": "openwebui-presets",
-                    "name": "Open WebUI model presets",
-                    "description": "Import preview; contract verification pending",
-                    "capability_status": "CATALOG_ONLY",
-                    "health_status": "UNKNOWN",
-                    "can_read": True, "can_write": False,
-                    "provenance": {},
-                }
-            ]
+            return self._model_catalog()
+        if kind == "memory":
+            return self._memory_catalog()
+        if kind == "context":
+            return self._context_catalog()
+        if kind == "cua":
+            return self._cua_catalog()
+        if kind == "mcp":
+            return await self._mcp_catalog(actor)
+        if kind == "tool":
+            return self._tool_catalog()
         raise DesignerError("invalid_request", f"unknown catalog kind {kind!r}")
 
     async def _skill_catalog(self, actor: Any) -> list[dict[str, Any]]:
@@ -290,3 +287,175 @@ class SourceService:
         return await self.create_skill(
             actor, name=name, description=f"Copied from {builtin_id}", content=content
         )
+
+    # --- real-runtime catalogs (Fix: never demo content) ---
+
+    def _model_catalog(self) -> list[dict[str, Any]]:
+        """The ACTUAL configured model from the operator settings -- the
+        only model that genuinely serves runtimes today. Custom
+        providers stay CATALOG_ONLY until the credential/connection flow
+        is verified (Fix 10)."""
+        from assistant.settings import Settings
+
+        settings = Settings()
+        entries = [
+            CatalogEntry(
+                source="gateway",
+                kind="model",
+                id=f"operator-model:{settings.model_provider}:{settings.model_name}",
+                name=f"{settings.model_name} (operator)",
+                description=(
+                    f"Actual configured model: {settings.model_name} via "
+                    f"{settings.model_provider}, credential operator-env"
+                ),
+                capability_status="EXECUTABLE",
+                health_status="ONLINE",
+                can_read=True,
+                can_write=False,
+                provenance={
+                    "provider": settings.model_provider,
+                    "model_id": settings.model_name,
+                    "credential_ref": "operator-env",
+                },
+            ).to_dict()
+        ]
+        entries.append(
+            CatalogEntry(
+                source="gateway",
+                kind="model",
+                id="custom-provider",
+                name="Custom Provider / API endpoint",
+                description=(
+                    "Bring-your-own OpenAI-compatible endpoint; requires the "
+                    "verified credential + connection flow (Fix 10)"
+                ),
+                capability_status="CATALOG_ONLY",
+                health_status="UNKNOWN",
+                can_read=True,
+                can_write=False,
+                provenance={"reason": "credential/connection flow unverified"},
+            ).to_dict()
+        )
+        return entries
+
+    def _memory_catalog(self) -> list[dict[str, Any]]:
+        """The actual memory kinds the runtime implements (R15)."""
+        return [
+            CatalogEntry(
+                source="gateway", kind="memory", id="memory-thread",
+                name="Thread Memory",
+                description="Per-chat conversation checkpoints (LangGraph thread)",
+                capability_status="EXECUTABLE", health_status="ONLINE",
+                provenance={"kind": "thread"},
+            ).to_dict(),
+            CatalogEntry(
+                source="gateway", kind="memory", id="memory-user",
+                name="User Memory",
+                description="Long-term per-user memory (secret-screened store)",
+                capability_status="EXECUTABLE", health_status="ONLINE",
+                provenance={"kind": "user"},
+            ).to_dict(),
+        ]
+
+    def _context_catalog(self) -> list[dict[str, Any]]:
+        """The actual context policy the compiler enforces (R16 defaults)."""
+        from assistant.designer.compiler import CONTEXT_DEFAULTS
+
+        d = CONTEXT_DEFAULTS
+        return [
+            CatalogEntry(
+                source="gateway", kind="context", id="context-default",
+                name="Default Policy",
+                description=(
+                    f"{d['recent_turns']} turns, {d['estimated_input_tokens']} est input, "
+                    f"{d['output_token_cap']} output cap, {d['max_tool_calls']} tool calls, "
+                    f"{d['run_wall_clock_seconds'] // 60} min run"
+                ),
+                capability_status="EXECUTABLE", health_status="ONLINE",
+                provenance={"policy": dict(d)},
+            ).to_dict(),
+        ]
+
+    def _cua_catalog(self) -> list[dict[str, Any]]:
+        """The real CUA Driver connector, reflecting the actual posture."""
+        from assistant.settings import Settings
+
+        settings = Settings()
+        enabled = settings.cua_enabled
+        return [
+            CatalogEntry(
+                source="gateway", kind="cua", id="cua-local",
+                name="CUA Desktop Driver",
+                description=(
+                    "Bounded desktop automation (manifest-gated, driver "
+                    f"v{settings.cua_command})"
+                    if enabled
+                    else "Bounded desktop automation; currently DISABLED in "
+                    "operator settings (CUA_ENABLED=false)"
+                ),
+                capability_status="EXECUTABLE" if enabled else "CATALOG_ONLY",
+                health_status="ONLINE" if enabled else "OFFLINE",
+                can_read=True,
+                can_write=False,
+                provenance={
+                    "connector_id": "cua-local",
+                    "permission_mode": settings.cua_permission_mode,
+                    "enabled": enabled,
+                },
+            ).to_dict()
+        ]
+
+    async def _mcp_catalog(self, actor: Any) -> list[dict[str, Any]]:
+        """Registered MCP connectors: the CUA driver's persistent stdio
+        connection plus any operator-registered connections. Empty when
+        none are registered -- never a fabricated list."""
+        entries: list[dict[str, Any]] = []
+        rows = []
+        getter = getattr(self, "_list_connections", None)
+        if getter is not None:
+            rows = await getter()
+        for row in rows:
+            entries.append(
+                CatalogEntry(
+                    source="gateway", kind="mcp",
+                    id=f"mcp:{row['connector_id']}",
+                    name=str(row.get("label") or row["connector_id"]),
+                    description=str(row.get("purpose") or "registered connector"),
+                    capability_status=(
+                        "EXECUTABLE" if row.get("status") == "active" else "BLOCKED"
+                    ),
+                    health_status="ONLINE" if row.get("status") == "active" else "OFFLINE",
+                    can_read=True, can_write=False,
+                    provenance={"connector_id": row["connector_id"]},
+                ).to_dict()
+            )
+        return entries
+
+    def _tool_catalog(self) -> list[dict[str, Any]]:
+        """The actual tool allowlist: the CUA tools the bounded policy
+        really exposes, plus the sandbox-gated Terminal (BLOCKED)."""
+        from assistant.tools.policy import CUA_ALLOWED_TOOL_NAMES
+
+        entries = [
+            CatalogEntry(
+                source="gateway", kind="tool", id=f"tool:{name}",
+                name=name,
+                description="CUA allowlist tool exposed to the bounded driver",
+                capability_status="EXECUTABLE", health_status="ONLINE",
+                provenance={"allowlist": "cua"},
+            ).to_dict()
+            for name in sorted(CUA_ALLOWED_TOOL_NAMES)
+        ]
+        entries.append(
+            CatalogEntry(
+                source="gateway", kind="tool", id="tool:terminal",
+                name="Terminal Command",
+                description=(
+                    "Shell execution; BLOCKED until an operator-provisioned "
+                    "sandbox is tested (A12)"
+                ),
+                capability_status="BLOCKED", health_status="UNKNOWN",
+                provenance={"reason": "sandbox adapter untested"},
+            ).to_dict()
+        )
+        return entries

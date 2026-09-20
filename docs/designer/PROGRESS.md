@@ -12,6 +12,14 @@
 - Live C5 cross-user denial check: seeded an agent owned by `someone-else` with no access rows, chatted as `random-user` -> **404 with ZERO run_registry rows** (denied before claim, before any provider call; no API spend).
 - Evidence: pytest 516 passed / 4 skipped; ruff clean; mypy clean (147 files).
 
+**2026-09-20 real component library (demo content removed):**
+- The library's hardcoded demo cards (Claude 3.5 Sonnet, GPT-4o, personas, Browser/GitHub MCP) are gone. It now fetches the backend catalog per kind (model, prompt, skill, memory, context, knowledge, cua, mcp, tool) and renders exactly what the runtime actually has, with honest degradation (unavailable source -> empty group with a note, never fabricated items).
+- New backend catalog kinds from the ACTUAL configuration: model (the operator-configured `z-ai/glm-5.3-flash` via OpenRouter as EXECUTABLE/ONLINE; custom providers CATALOG_ONLY per Fix 10), memory (thread/user — the real R15 kinds), context (the real R16 policy), cua (reflects the actual `CUA_ENABLED` posture: CATALOG_ONLY/OFFLINE while disabled), tool (the real bounded CUA allowlist: click/type_text/... + Terminal BLOCKED pending sandbox), mcp (registered connectors only — empty when none, never fabricated).
+- Library badges: `CONNECTED TO AGENT` (blue, matched against the loaded graph's node configs), `AVAILABLE`, `CATALOG_ONLY`, `BLOCKED`, `OFFLINE` + health chip — the required vocabulary.
+- Canvas labels real: ModelNode shows the configured model_id (no claude fallback), PromptNode shows the resource ref, SkillNode shows source:id.
+- Live verification (seeded session): model → z-ai/glm-5.3-flash EXECUTABLE/ONLINE + Custom CATALOG_ONLY; cua → CATALOG_ONLY/OFFLINE (CUA_ENABLED=false); tool → real allowlist; memory/context → real kinds/policy; mcp → empty. Gateway restarted with the new catalog.
+- Evidence: pytest 528 passed / 4 skipped; ruff clean; mypy clean (148 files); frontend typecheck + 17 tests + build clean.
+
 **2026-09-20 Designer opens on the real Vion design (not a demo draft):**
 - `GET /designer/api/v1/agents` now returns every agent the actor may USE (own agents + per-user/`*` access rows) with the SPA's AgentSummary contract (`name`, `active_revision_number`, `can_edit`, `etag`).
 - `GET /designer/api/v1/agents/{id}` now returns the full AgentDetail: summary + `revisions_count` + the **latest revision's graph as the working draft** — the canvas opens on the real design.

@@ -162,10 +162,45 @@ async def test_prompt_catalog_normalizes_upstream() -> None:
     assert entries[0]["name"] == "Summarize"
 
 
-async def test_model_presets_are_catalog_only() -> None:
+async def test_model_catalog_is_real_configuration() -> None:
+    """The model catalog reflects the ACTUAL configured model (operator
+    settings), with custom providers honestly CATALOG_ONLY (Fix 10)."""
     with upstream() as (service, _routes):
         entries = await service.catalog(FakeActor("u1"), kind="model")
-    assert entries[0]["capability_status"] == "CATALOG_ONLY"
+    assert entries, "the operator-configured model must always be listed"
+    operator = entries[0]
+    assert operator["capability_status"] == "EXECUTABLE"
+    assert operator["provenance"]["credential_ref"] == "operator-env"
+    assert operator["provenance"]["model_id"]
+    custom = [e for e in entries if e["id"] == "custom-provider"]
+    assert custom and custom[0]["capability_status"] == "CATALOG_ONLY"
+
+
+async def test_memory_and_context_catalogs_are_real_runtime() -> None:
+    with upstream() as (service, _routes):
+        memory = await service.catalog(FakeActor("u1"), kind="memory")
+        context = await service.catalog(FakeActor("u1"), kind="context")
+    kinds = {e["provenance"]["kind"] for e in memory}
+    assert {"thread", "user"} <= kinds
+    assert context and context[0]["capability_status"] == "EXECUTABLE"
+    assert context[0]["provenance"]["policy"]["recent_turns"] == 12
+
+
+async def test_tool_catalog_reflects_real_allowlist() -> None:
+
+    with upstream() as (service, _routes):
+        tools = await service.catalog(FakeActor("u1"), kind="tool")
+    names = {e["name"] for e in tools}
+    assert {"click", "type_text"} <= names  # real bounded-allowlist tools
+    terminal = next(e for e in tools if e["name"] == "Terminal Command")
+    assert terminal["capability_status"] == "BLOCKED"
+
+
+async def test_mcp_catalog_empty_when_nothing_registered() -> None:
+    """Never fabricate connectors: no registered MCP servers -> empty."""
+    with upstream() as (service, _routes):
+        mcp = await service.catalog(FakeActor("u1"), kind="mcp")
+    assert mcp == []
 
 
 # ---------------------------------------------------------------------------

@@ -5,9 +5,16 @@ import { NodeWrapper } from './NodeWrapper'
 
 export const PromptNode: React.FC<NodeProps> = ({ id, selected, data }) => {
   const config = (data.config as Record<string, any>) || {}
+  const ref = config.resource_ref
+    ? String(config.resource_ref)
+    : config.source
+      ? `${config.source}: inline`
+      : 'inline'
   const snippet = config.system_prompt
     ? `${String(config.system_prompt).slice(0, 40)}...`
-    : 'No instructions set'
+    : config.resource_ref
+      ? 'loaded from resource'
+      : 'No instructions set'
 
   return (
     <div style={{ position: 'relative' }}>
@@ -15,7 +22,7 @@ export const PromptNode: React.FC<NodeProps> = ({ id, selected, data }) => {
         id={id}
         selected={selected}
         title={(data.label as string) || 'System Prompt'}
-        subtitle="Prompt Template"
+        subtitle={ref}
         icon={<FileText size={16} />}
         badge="PROMPT"
       >

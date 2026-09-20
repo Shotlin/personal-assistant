@@ -99,24 +99,25 @@ export interface ValidationReport {
   issues: ValidationIssue[]
 }
 
-export interface CatalogItem {
-  id: string
-  name: string
-  kind: string
-  description?: string
-  capability: CapabilityStatus
-  health: HealthStatus
-  default_config?: Record<string, any>
-}
+/** Legacy alias: catalog entries now come from the backend contract. */
+export type CatalogItem = CatalogEntry
 
 export interface CatalogResponse {
-  models: CatalogItem[]
-  prompts: CatalogItem[]
-  skills: CatalogItem[]
-  memory_kinds: CatalogItem[]
-  tools: CatalogItem[]
-  mcp_servers: CatalogItem[]
-  context_defaults?: Record<string, any>
+  kind: string
+  entries: CatalogEntry[]
+}
+
+export interface CatalogEntry {
+  source: string
+  kind: string
+  id: string
+  name: string
+  description?: string
+  capability_status: string
+  health_status: string
+  can_read: boolean
+  can_write: boolean
+  provenance: Record<string, any>
 }
 
 export interface ActorSession {

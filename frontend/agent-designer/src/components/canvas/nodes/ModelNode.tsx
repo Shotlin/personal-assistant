@@ -5,7 +5,7 @@ import { NodeWrapper } from './NodeWrapper'
 
 export const ModelNode: React.FC<NodeProps> = ({ id, selected, data }) => {
   const config = (data.config as Record<string, any>) || {}
-  const modelId = config.model_id || 'claude-3-5-sonnet'
+  const modelId = config.model_id || (config.provider ? `${config.provider} (configured)` : 'unset')
 
   return (
     <div style={{ position: 'relative' }}>

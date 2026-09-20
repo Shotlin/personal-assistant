@@ -20,7 +20,7 @@ export const SkillNode: React.FC<NodeProps> = ({ id, selected, data }) => {
         id={id}
         selected={selected}
         title={skillName}
-        subtitle={config.description || 'Open WebUI Skill'}
+        subtitle={config.source ? `${config.source}: ${config.id || skillName}` : 'Skill'}
         icon={<Sparkles size={16} />}
         badge="SKILL"
         statusColor="var(--green)"

@@ -1,185 +1,204 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   Brain,
   Cpu,
+  Database,
   FileText,
   Globe,
+  Monitor,
   Plus,
   Search,
   Sliders,
   Sparkles,
 } from 'lucide-react'
 import { useCanvasStore } from '../../state/canvasStore'
-import type { NodeType } from '../../types/designer'
+import { api } from '../../api/client'
+import type { CatalogEntry, NodeType } from '../../types/designer'
 
 interface PaletteItem {
   id: string
   type: NodeType
   name: string
   description: string
-  badge?: string
-  health?: string
+  badge: 'CONNECTED' | 'EXECUTABLE' | 'AVAILABLE' | 'CATALOG_ONLY' | 'BLOCKED' | 'OFFLINE'
+  health: string
   config: Record<string, any>
 }
 
-const DEFAULT_ITEMS: { category: string; icon: React.ReactNode; items: PaletteItem[] }[] = [
+interface CategoryDef {
+  kind: string
+  category: string
+  icon: React.ReactNode
+  /** Map a catalog entry + connected-flag to a canvas node. */
+  toType: (entry: CatalogEntry) => NodeType
+  toConfig: (entry: CatalogEntry) => Record<string, any>
+}
+
+const CATEGORIES: CategoryDef[] = [
   {
+    kind: 'model',
     category: 'Models',
     icon: <Cpu size={15} />,
-    items: [
-      {
-        id: 'model-claude',
-        type: 'model',
-        name: 'Claude 3.5 Sonnet',
-        description: 'Anthropic flagship reasoning model',
-        badge: 'EXECUTABLE',
-        config: { model_id: 'claude-3-5-sonnet', provider: 'anthropic', temperature: 0.0, max_tokens: 4096 },
-      },
-      {
-        id: 'model-gpt4o',
-        type: 'model',
-        name: 'GPT-4o',
-        description: 'OpenAI multi-modal model',
-        badge: 'EXECUTABLE',
-        config: { model_id: 'gpt-4o', provider: 'openai', temperature: 0.0, max_tokens: 4096 },
-      },
-      {
-        id: 'model-custom',
-        type: 'model',
-        name: 'Custom Provider Model',
-        description: 'Provider-specific configuration',
-        badge: 'CATALOG_ONLY',
-        config: { model_id: 'custom-model', provider: 'custom' },
-      },
-    ],
+    toType: () => 'model',
+    toConfig: (e) => ({
+      provider: e.provenance?.provider || 'operator-env',
+      model_id: e.provenance?.model_id || e.id,
+      credential_ref: e.provenance?.credential_ref || 'operator-env',
+    }),
   },
   {
-    category: 'Prompts',
+    kind: 'prompt',
+    category: 'Prompts (Open WebUI)',
     icon: <FileText size={15} />,
-    items: [
-      {
-        id: 'prompt-system',
-        type: 'prompt',
-        name: 'System Prompt',
-        description: 'Persona, safety, and operational rules',
-        config: { system_prompt: 'You are an intelligent assistant dedicated to helping the user.' },
-      },
-      {
-        id: 'prompt-coder',
-        type: 'prompt',
-        name: 'Coding Persona',
-        description: 'Specialized for writing clean, tested code',
-        config: { system_prompt: 'You are an expert software engineer. Always verify with tests.' },
-      },
-    ],
+    toType: () => 'prompt',
+    toConfig: (e) => ({ resource_ref: e.id, source: e.source }),
   },
   {
-    category: 'Skills (Open WebUI)',
+    kind: 'skill',
+    category: 'Skills',
     icon: <Sparkles size={15} />,
-    items: [
-      {
-        id: 'skill-search',
-        type: 'skill',
-        name: 'Web Search',
-        description: 'Search the web using search API',
-        badge: 'EXECUTABLE',
-        config: { skill_id: 'web-search', name: 'Web Search' },
-      },
-      {
-        id: 'skill-artifacts',
-        type: 'skill',
-        name: 'Artifact Manager',
-        description: 'Manage interactive artifacts',
-        badge: 'EXECUTABLE',
-        config: { skill_id: 'artifacts', name: 'Artifact Manager' },
-      },
-      {
-        id: 'skill-knowledge',
-        type: 'knowledge',
-        name: 'Knowledge Base',
-        description: 'RAG search over document corpus',
-        badge: 'BLOCKED',
-        config: { knowledge_id: 'kb-default', name: 'Knowledge Base' },
-      },
-    ],
+    toType: () => 'skill',
+    toConfig: (e) => ({
+      source: e.source,
+      id: e.id,
+      name: e.name,
+      revision_or_hash: e.provenance?.content_hash || '',
+    }),
   },
   {
+    kind: 'memory',
     category: 'Memory',
     icon: <Brain size={15} />,
-    items: [
-      {
-        id: 'memory-thread',
-        type: 'memory',
-        name: 'Thread Memory',
-        description: 'Thread-scoped conversational context',
-        config: { kind: 'thread' },
-      },
-      {
-        id: 'memory-user',
-        type: 'memory',
-        name: 'User Memory',
-        description: 'Persistent user preferences and facts',
-        config: { kind: 'user' },
-      },
-    ],
+    toType: () => 'memory',
+    toConfig: (e) => ({ kind: e.provenance?.kind || 'user' }),
   },
   {
+    kind: 'context',
     category: 'Context Policy',
     icon: <Sliders size={15} />,
-    items: [
-      {
-        id: 'context-default',
-        type: 'context',
-        name: 'Default Policy',
-        description: '12 turns, 32k input tokens, 15m timeout',
-        config: { max_turns: 12, max_input_tokens: 32000, max_duration_seconds: 900 },
-      },
-      {
-        id: 'context-large',
-        type: 'context',
-        name: 'Deep Research Policy',
-        description: '24 turns, 64k input tokens',
-        config: { max_turns: 24, max_input_tokens: 64000, max_duration_seconds: 1800 },
-      },
-    ],
+    toType: () => 'context',
+    toConfig: (e) => ({ ...(e.provenance?.policy || {}) }),
   },
   {
-    category: 'Tools & Connectors',
+    kind: 'knowledge',
+    category: 'Knowledge',
+    icon: <Database size={15} />,
+    toType: () => 'knowledge',
+    toConfig: (e) => ({ knowledge_id: e.id }),
+  },
+  {
+    kind: 'cua',
+    category: 'Computer Use',
+    icon: <Monitor size={15} />,
+    toType: () => 'cua',
+    toConfig: (e) => ({
+      connector_id: e.provenance?.connector_id || 'cua-local',
+      host_profile: 'bounded',
+    }),
+  },
+  {
+    kind: 'mcp',
+    category: 'MCP Servers',
     icon: <Globe size={15} />,
-    items: [
-      {
-        id: 'connector-cua',
-        type: 'cua',
-        name: 'CUA Desktop Driver',
-        description: 'Full OS GUI & desktop automation',
-        badge: 'EXECUTABLE',
-        health: 'ONLINE',
-        config: { connector_type: 'cua', health: 'ONLINE' },
-      },
-      {
-        id: 'connector-mcp-fs',
-        type: 'mcp',
-        name: 'Filesystem MCP',
-        description: 'Local filesystem tools via stdio MCP',
-        badge: 'EXECUTABLE',
-        health: 'ONLINE',
-        config: { connector_type: 'mcp', mcp_id: 'filesystem', health: 'ONLINE' },
-      },
-      {
-        id: 'tool-bash',
-        type: 'tool',
-        name: 'Terminal Command',
-        description: 'Shell execution tool',
-        badge: 'BLOCKED',
-        config: { name: 'bash', mode: 'manual' },
-      },
-    ],
+    toType: () => 'mcp',
+    toConfig: (e) => ({
+      connector_id: e.provenance?.connector_id || e.id,
+      selected_tool_ids: [],
+    }),
+  },
+  {
+    kind: 'tool',
+    category: 'Tools',
+    icon: <Globe size={15} />,
+    toType: () => 'tool',
+    toConfig: (e) => ({ name: e.name }),
   },
 ]
 
+const BADGE_STYLES: Record<PaletteItem['badge'], { bg: string; fg: string; bd: string }> = {
+  CONNECTED: { bg: 'rgba(96, 165, 250, 0.12)', fg: 'var(--blue)', bd: 'var(--blue)' },
+  EXECUTABLE: { bg: 'rgba(74, 222, 128, 0.1)', fg: 'var(--green)', bd: 'var(--green)' },
+  AVAILABLE: { bg: 'rgba(161, 161, 170, 0.1)', fg: 'var(--muted)', bd: 'var(--border)' },
+  CATALOG_ONLY: { bg: 'rgba(251, 191, 36, 0.1)', fg: 'var(--amber)', bd: 'var(--amber)' },
+  BLOCKED: { bg: 'rgba(248, 113, 113, 0.1)', fg: 'var(--red)', bd: 'var(--red)' },
+  OFFLINE: { bg: 'rgba(161, 161, 170, 0.1)', fg: 'var(--muted)', bd: 'var(--border)' },
+}
+
+function classify(
+  entry: CatalogEntry,
+  connected: boolean
+): PaletteItem['badge'] {
+  if (connected) return 'CONNECTED'
+  if (entry.health_status === 'OFFLINE') return 'OFFLINE'
+  if (entry.capability_status === 'BLOCKED') return 'BLOCKED'
+  if (entry.capability_status === 'CATALOG_ONLY') return 'CATALOG_ONLY'
+  if (entry.capability_status === 'UNSUPPORTED') return 'BLOCKED'
+  return 'AVAILABLE'
+}
+
 export const ComponentLibrary: React.FC = () => {
   const [search, setSearch] = useState('')
+  const [catalog, setCatalog] = useState<Record<string, CatalogEntry[]>>({})
+  const [failed, setFailed] = useState<Record<string, boolean>>({})
   const addNode = useCanvasStore((s) => s.addNode)
+  const nodes = useCanvasStore((s) => s.nodes)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      const pairs: Array<[string, CatalogEntry[]]> = await Promise.all(
+        CATEGORIES.map(async (cat) => {
+          try {
+            const res = await api.getCatalog(cat.kind)
+            return [cat.kind, res.entries || []] as [string, CatalogEntry[]]
+          } catch {
+            // Honest degradation: an unavailable source shows as an empty
+            // group with a note -- never fabricated demo items.
+            return [cat.kind, [] as CatalogEntry[]]
+          }
+        })
+      )
+      if (cancelled) return
+      const map: Record<string, CatalogEntry[]> = {}
+      const fails: Record<string, boolean> = {}
+      for (const [kind, entries] of pairs) {
+        map[kind] = entries
+        fails[kind] = entries.length === 0
+      }
+      setCatalog(map)
+      setFailed(fails)
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Resource ids actually attached to the CURRENT agent's graph.
+  const connectedIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const node of nodes) {
+      const cfg = (node.data as any)?.config || {}
+      if (cfg.id) ids.add(String(cfg.id))
+      if (cfg.connector_id) ids.add(String(cfg.connector_id))
+      if (cfg.knowledge_id) ids.add(String(cfg.knowledge_id))
+      if (cfg.kind) ids.add(`memory-${cfg.kind}`)
+    }
+    return ids
+  }, [nodes])
+
+  const isConnected = (cat: CategoryDef, entry: CatalogEntry): boolean => {
+    if (cat.kind === 'model')
+      return connectedIds.has(`operator-model:${entry.provenance?.provider}:${entry.provenance?.model_id}`)
+        || [...connectedIds].some((id) => id === entry.provenance?.model_id)
+    if (cat.kind === 'skill') return connectedIds.has(entry.id)
+    if (cat.kind === 'prompt') return connectedIds.has(entry.id)
+    if (cat.kind === 'memory') return connectedIds.has(`memory-${entry.provenance?.kind}`)
+    if (cat.kind === 'context') return connectedIds.size >= 0 && nodes.some((n) => n.type === 'context')
+    if (cat.kind === 'cua') return connectedIds.has(entry.provenance?.connector_id || 'cua-local')
+    if (cat.kind === 'mcp') return connectedIds.has(entry.provenance?.connector_id || entry.id)
+    return false
+  }
 
   const onDragStart = (e: React.DragEvent, item: PaletteItem) => {
     e.dataTransfer.setData('application/reactflow-type', item.type)
@@ -192,20 +211,34 @@ export const ComponentLibrary: React.FC = () => {
     addNode(item.type, item.name, item.config)
   }
 
-  const filteredCategories = DEFAULT_ITEMS.map((cat) => ({
+  const filteredCategories = CATEGORIES.map((cat) => ({
     ...cat,
-    items: cat.items.filter(
-      (item) =>
-        item.name.toLowerCase().includes(search.toLowerCase()) ||
-        item.description.toLowerCase().includes(search.toLowerCase())
-    ),
-  })).filter((cat) => cat.items.length > 0)
+    items: (catalog[cat.kind] || [])
+      .map((entry) => ({
+        entry,
+        item: {
+          id: entry.id,
+          type: cat.toType(entry),
+          name: entry.name,
+          description: entry.description || '',
+          badge: classify(entry, isConnected(cat, entry)),
+          health: entry.health_status,
+          config: cat.toConfig(entry),
+        } as PaletteItem,
+      }))
+      .filter(
+        ({ item }) =>
+          item.name.toLowerCase().includes(search.toLowerCase()) ||
+          item.description.toLowerCase().includes(search.toLowerCase())
+      ),
+  })).filter((cat) => cat.items.length > 0 || !failed[cat.kind])
 
   return (
     <aside
       style={{
         width: 'var(--library-width)',
-        height: 'calc(100vh - var(--header-height) - var(--modebar-height) - var(--diagnostics-height))',
+        height:
+          'calc(100vh - var(--header-height) - var(--modebar-height) - var(--diagnostics-height))',
         background: 'var(--panel)',
         borderRight: '1px solid var(--border)',
         display: 'flex',
@@ -275,51 +308,76 @@ export const ComponentLibrary: React.FC = () => {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-              {cat.items.map((item) => (
+              {cat.items.length === 0 && (
                 <div
-                  key={item.id}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, item)}
                   style={{
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '8px 10px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 4,
-                    cursor: 'grab',
-                    transition: 'all 0.15s ease',
+                    fontSize: 11,
+                    color: 'var(--muted)',
+                    padding: '6px 8px',
+                    fontStyle: 'italic',
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--text)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-                      {item.name}
-                    </span>
-                    <button
-                      onClick={() => handleAddClick(item)}
-                      title="Add to canvas"
+                  No {cat.category.toLowerCase()} discovered (source unavailable
+                  or none configured).
+                </div>
+              )}
+              {cat.items.map(({ item }) => {
+                const badgeStyle = BADGE_STYLES[item.badge]
+                return (
+                  <div
+                    key={item.id}
+                    draggable
+                    onDragStart={(e) => onDragStart(e, item)}
+                    style={{
+                      background: 'var(--surface)',
+                      border: `1px solid ${
+                        item.badge === 'CONNECTED' ? 'var(--blue)' : 'var(--border)'
+                      }`,
+                      borderRadius: 'var(--radius-md)',
+                      padding: '8px 10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                      cursor: 'grab',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--text)')}
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.borderColor =
+                        item.badge === 'CONNECTED' ? 'var(--blue)' : 'var(--border)')
+                    }
+                  >
+                    <div
                       style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--muted)',
-                        padding: '2px',
                         display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--muted)')}
                     >
-                      <Plus size={14} />
-                    </button>
-                  </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                        {item.name}
+                      </span>
+                      <button
+                        onClick={() => handleAddClick(item)}
+                        title="Add to canvas"
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--muted)',
+                          padding: '2px',
+                          display: 'flex',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--muted)')}
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
 
-                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>
-                    {item.description}
-                  </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>
+                      {item.description}
+                    </div>
 
-                  {item.badge && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
                       <span
                         style={{
@@ -327,33 +385,30 @@ export const ComponentLibrary: React.FC = () => {
                           fontWeight: 700,
                           padding: '1px 5px',
                           borderRadius: 'var(--radius-sm)',
-                          background:
-                            item.badge === 'EXECUTABLE'
-                              ? 'rgba(74, 222, 128, 0.1)'
-                              : item.badge === 'BLOCKED'
-                              ? 'rgba(248, 113, 113, 0.1)'
-                              : 'rgba(161, 161, 170, 0.1)',
-                          color:
-                            item.badge === 'EXECUTABLE'
-                              ? 'var(--green)'
-                              : item.badge === 'BLOCKED'
-                              ? 'var(--red)'
-                              : 'var(--muted)',
-                          border: `1px solid ${
-                            item.badge === 'EXECUTABLE'
-                              ? 'var(--green)'
-                              : item.badge === 'BLOCKED'
-                              ? 'var(--red)'
-                              : 'var(--border)'
-                          }`,
+                          background: badgeStyle.bg,
+                          color: badgeStyle.fg,
+                          border: `1px solid ${badgeStyle.bd}`,
                         }}
                       >
-                        {item.badge}
+                        {item.badge === 'CONNECTED' ? 'CONNECTED TO AGENT' : item.badge}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 600,
+                          padding: '1px 5px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'rgba(161, 161, 170, 0.06)',
+                          color: 'var(--muted)',
+                          border: '1px solid var(--border)',
+                        }}
+                      >
+                        {item.health}
                       </span>
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                )
+              })}
             </div>
           </div>
         ))}
