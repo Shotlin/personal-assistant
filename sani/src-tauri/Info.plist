@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>CFBundleIdentifier</key>
+    <string>app.sani.local</string>
+    <key>CFBundleName</key>
+    <string>Sani</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Sani transcribes your voice locally (on-device Moonshine speech-to-text) only while you press the Sani shortcut. Audio is never uploaded or stored.</string>
+  </dict>
+</plist>

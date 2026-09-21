@@ -315,6 +315,49 @@ class RunStore:
             a for a in await self.run_actions(run_id) if str(a.get("state")) == state
         ]
 
+    async def run_activity(self, run_id: str) -> dict[str, Any] | None:
+        """One safe activity snapshot for external run-event streaming.
+
+        Read-only view over the same registry/ledger rows the gateway
+        already writes: run status plus every action row with its real
+        timestamps. Contains no payloads, prompts, or tool arguments --
+        only tool names, bounded target descriptions, and states.
+        """
+        async with self._conn.cursor() as cur:
+            await cur.execute(
+                "SELECT status, created_at, updated_at, failure_reason "
+                "FROM run_registry WHERE run_id=%s",
+                (run_id,),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                return None
+            status, created_at, updated_at, failure_reason = row
+            await cur.execute(
+                "SELECT step_id, tool_name, target_desc, state, created_at, updated_at "
+                "FROM action_ledger WHERE run_id=%s ORDER BY ledger_id",
+                (run_id,),
+            )
+            actions = await cur.fetchall()
+        return {
+            "run_id": run_id,
+            "status": str(status),
+            "created_at": created_at,
+            "updated_at": updated_at,
+            "failure_reason": str(failure_reason or ""),
+            "actions": [
+                {
+                    "step_id": str(a[0]),
+                    "tool_name": str(a[1]),
+                    "target_desc": str(a[2]),
+                    "state": str(a[3]),
+                    "created_at": a[4],
+                    "updated_at": a[5],
+                }
+                for a in actions
+            ],
+        }
+
 
 class DesktopLease:
     """Atomic lease primitive, not production desktop fencing (WP4/11.3).

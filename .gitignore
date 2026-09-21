@@ -19,3 +19,10 @@ compose.override.yml
 # macOS
 .DS_Store
 var/
+
+# Sani desktop shell build artifacts
+sani/node_modules/
+sani/dist/
+sani/src-tauri/target/
+sani/src-tauri/gen/
+sani/.stt-venv/

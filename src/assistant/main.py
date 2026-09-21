@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 
 from assistant import __version__
 from assistant.agent.build import build_agent
-from assistant.api import chat_route, models_route
+from assistant.api import chat_route, models_route, run_events_route
 from assistant.memory.postgres import open_memory_resources
 from assistant.models import build_chat_model
 from assistant.observability.logging import setup_logging
@@ -102,6 +102,7 @@ def create_app(
 
     app.include_router(models_route.router)
     app.include_router(chat_route.router)
+    app.include_router(run_events_route.router)
 
     # Designer mounts ONLY when explicitly enabled (C2 + Safety note 1).
     # Flag-off: no designer routes, no designer state, legacy behavior.

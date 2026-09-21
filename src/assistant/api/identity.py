@@ -33,7 +33,13 @@ TASK_HEADER = "X-OpenWebUI-Task"
 DEV_USER_ID_HEADER = "X-Assistant-Dev-User-Id"
 DEV_CHAT_ID_HEADER = "X-Assistant-Dev-Chat-Id"
 
-IdentitySource = Literal["openwebui", "dev-test"]
+# Neutral desktop-client identity (Sani voice shell). A first-class local
+# client lineage -- valid in any environment, unlike the dev-test headers.
+DESKTOP_USER_ID_HEADER = "X-Assistant-User-Id"
+DESKTOP_CHAT_ID_HEADER = "X-Assistant-Chat-Id"
+DESKTOP_MESSAGE_ID_HEADER = "X-Assistant-Message-Id"
+
+IdentitySource = Literal["openwebui", "dev-test", "desktop"]
 
 
 @dataclass(frozen=True)
@@ -66,12 +72,34 @@ def extract_identity(
     *,
     is_production: bool,
 ) -> RequestIdentity:
-    """Map request headers to a thread identity, or raise ``missing_chat_identity``."""
+    """Map request headers to a thread identity, or raise ``missing_chat_identity``.
+
+    Precedence: Open WebUI lineage (unchanged), then the neutral desktop
+    client headers (Sani), then development-only test headers.
+    """
     user_id = (headers.get(USER_ID_HEADER) or "").strip()
     chat_id = (headers.get(CHAT_ID_HEADER) or "").strip()
     source: IdentitySource = "openwebui"
 
     if not user_id or not chat_id:
+        desktop_user = (headers.get(DESKTOP_USER_ID_HEADER) or "").strip()
+        desktop_chat = (headers.get(DESKTOP_CHAT_ID_HEADER) or "").strip()
+        if desktop_user and desktop_chat:
+            # The desktop message id is both the client message id and the
+            # user-message lineage id: the WP4 claim/dedup path keys on the
+            # latter, which keeps one finalized voice turn = one agent run.
+            message_id = (headers.get(DESKTOP_MESSAGE_ID_HEADER) or "").strip() or None
+            return RequestIdentity(
+                user_id=desktop_user,
+                chat_id=desktop_chat,
+                thread_id=thread_id_for(desktop_user, desktop_chat),
+                message_id=message_id,
+                user_message_id=message_id,
+                user_message_parent_id=None,
+                task=None,
+                is_utility=False,
+                source="desktop",
+            )
         dev_user = (headers.get(DEV_USER_ID_HEADER) or "").strip()
         dev_chat = (headers.get(DEV_CHAT_ID_HEADER) or "").strip()
         if not is_production and dev_user and dev_chat:

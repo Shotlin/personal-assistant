@@ -5,6 +5,9 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from assistant.api.identity import (
     CHAT_ID_HEADER,
+    DESKTOP_CHAT_ID_HEADER,
+    DESKTOP_MESSAGE_ID_HEADER,
+    DESKTOP_USER_ID_HEADER,
     DEV_CHAT_ID_HEADER,
     DEV_USER_ID_HEADER,
     TASK_HEADER,
@@ -60,6 +63,44 @@ def test_identity_dev_test_headers_ignored_in_production() -> None:
     headers = {DEV_USER_ID_HEADER: "dev-user", DEV_CHAT_ID_HEADER: "dev-chat"}
     with pytest.raises(GatewayError):
         extract_identity(headers, is_production=True)
+
+
+def test_identity_desktop_headers_accepted_in_production() -> None:
+    """Neutral desktop-client lineage (Sani) is first-class, not dev-only."""
+    headers = {
+        DESKTOP_USER_ID_HEADER: "local-user",
+        DESKTOP_CHAT_ID_HEADER: "sani-chat-1",
+        DESKTOP_MESSAGE_ID_HEADER: "sani-msg-1",
+    }
+    identity = extract_identity(headers, is_production=True)
+    assert identity.source == "desktop"
+    assert identity.user_id == "local-user"
+    assert identity.chat_id == "sani-chat-1"
+    assert identity.thread_id == "owui:local-user:sani-chat-1"
+    assert identity.message_id == "sani-msg-1"
+    # The desktop message id doubles as the user-message lineage id so the
+    # WP4 claim path gives one finalized voice turn exactly one run.
+    assert identity.user_message_id == "sani-msg-1"
+    assert identity.is_utility is False
+
+
+def test_identity_desktop_headers_require_user_and_chat() -> None:
+    headers = {DESKTOP_USER_ID_HEADER: "local-user"}  # no chat id
+    with pytest.raises(GatewayError) as excinfo:
+        extract_identity(headers, is_production=False)
+    assert excinfo.value.code == "missing_chat_identity"
+
+
+def test_identity_openwebui_lineage_wins_over_desktop_headers() -> None:
+    headers = {
+        USER_ID_HEADER: "owui-user",
+        CHAT_ID_HEADER: "owui-chat",
+        DESKTOP_USER_ID_HEADER: "local-user",
+        DESKTOP_CHAT_ID_HEADER: "sani-chat-1",
+    }
+    identity = extract_identity(headers, is_production=True)
+    assert identity.source == "openwebui"
+    assert identity.user_id == "owui-user"
 
 
 def test_utility_task_detection_is_fail_safe() -> None:

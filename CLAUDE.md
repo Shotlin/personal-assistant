@@ -136,6 +136,18 @@ entry below.** One line: date/time, what changed, why if non-obvious.
 Keep entries newest-first. This is the log the project owner asked to be
 able to see at a glance; don't skip it because a diff seems small.
 
+- **2026-09-21 04:05 IST** — Added Sani (`sani/`): a local Tauri 2 desktop voice shell in front of the
+  existing Deep Agent (global hotkey → mic pill → on-device Moonshine Small Streaming English STT via a
+  Python sidecar → final transcript sent exactly once → streamed reply + safe run-activity in a
+  right-side panel; local SQLite UI history). Gateway changes kept minimal: (1) neutral desktop identity
+  headers `X-Assistant-{User,Chat,Message}-Id` accepted in any environment as identity source "desktop"
+  (Open WebUI lineage unchanged; `src/assistant/api/identity.py`), (2) new key-protected
+  `GET /v1/runs/{run_id}/events` neutral activity SSE reading the existing run_registry/action_ledger
+  via a read-only `RunStore.run_activity()` (`src/assistant/api/run_events_route.py`), registered
+  unconditionally in `main.py`. No changes to build.py, skills, memory, CUA, MCP, planner, or Designer.
+  All 144 unit + integration + designer tests pass (`ruff`/`mypy` clean); desktop identity + activity SSE
+  verified live against the running gateway. See `sani/README.md` for setup; STT venv via
+  `sani/scripts/setup-stt.sh`; packaged app needs one-time macOS microphone permission.
 - **2026-09-19 14:25 IST** — Completed Agent Designer delivery (P0–P11 per `docs/designer/PLAN.md` v5.1).
   Added visual node-based editor (`frontend/agent-designer/` Vite + React 18 SPA mounted at `/designer/`),
   PostgreSQL schema migrations (`002_agent_designer.sql`, `003_agent_designer_runtimes.sql`),
