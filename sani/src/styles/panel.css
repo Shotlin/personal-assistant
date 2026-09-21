@@ -31,17 +31,6 @@
   z-index: 0;
 }
 
-/* Diagonal reflective wash — the second glass layer. */
-.panel::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--sheen);
-  opacity: 0.55;
-  pointer-events: none;
-  z-index: 0;
-}
-
 .panel > * {
   position: relative;
   z-index: 1;
@@ -63,7 +52,7 @@
   height: 34px;
   border-radius: 50%;
   background: var(--surface-glass);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   box-shadow: var(--edge-lit);
   color: var(--text-secondary);
   display: flex;
@@ -143,6 +132,9 @@
 /* -------------------------------------------------------------------- body */
 .panel-body {
   flex: 1;
+  /* Without this the body refuses to shrink below its content and pushes the
+     footer out of the card at the shorter panel height. */
+  min-height: 0;
   overflow-y: auto;
   padding: 18px 18px 20px;
   display: flex;
@@ -186,7 +178,7 @@
   font-size: 12px;
   line-height: 1.5;
   background: var(--surface-glass);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   box-shadow: var(--edge-lit);
   color: var(--text-secondary);
 }
@@ -224,7 +216,7 @@
   height: 34px;
   border-radius: 50%;
   background: var(--surface-glass);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   box-shadow: var(--edge-lit);
   color: var(--text-secondary);
   display: flex;
@@ -354,9 +346,9 @@
   gap: 18px;
   padding: 15px 18px 17px;
   border-top: 1px solid var(--hairline);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), var(--bg-elevated));
-  -webkit-backdrop-filter: blur(var(--blur-soft));
-  backdrop-filter: blur(var(--blur-soft));
+  /* Measured: the reference footer band is *darker* than the body (#151618 vs
+     #1c1e22), so it reads as a scrim, not a lit shelf. */
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.26));
 }
 
 .footer-col {
@@ -386,7 +378,7 @@
   padding: 0 13px;
   border-radius: var(--radius-pill);
   background: var(--surface-glass);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   box-shadow: var(--edge-lit);
   color: var(--text);
   font-size: 13px;
@@ -400,7 +392,7 @@
 
 .agent-chip:hover,
 .agent-chip-mini:hover {
-  background: linear-gradient(158deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06));
+  background: linear-gradient(168deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05));
   border-color: var(--border-strong);
 }
 
@@ -589,7 +581,7 @@
 .settings-row select,
 .text-input {
   background: var(--surface-glass);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   box-shadow: var(--edge-lit);
   color: var(--text);
   border-radius: 9px;
@@ -608,13 +600,13 @@
   padding: 5px 12px;
   border-radius: var(--radius-pill);
   background: var(--surface-glass);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   box-shadow: var(--edge-lit);
   color: var(--text);
 }
 
 .mini-btn:hover {
-  background: linear-gradient(158deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08));
+  background: linear-gradient(168deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05));
   border-color: var(--border-strong);
 }
 

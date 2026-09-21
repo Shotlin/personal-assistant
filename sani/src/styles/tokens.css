@@ -1,40 +1,41 @@
 :root {
-  /* Base palette — light, translucent macOS-style glass.
-     The fill is deliberately low-opacity; the depth comes from the backdrop
-     filter plus the lit edge and gloss layers, not from a dark wash. */
-  --bg: rgba(28, 30, 38, 0.46);
-  --bg-elevated: rgba(40, 43, 52, 0.38);
+  /* Base palette — measured from SANI_UI_REFERENCE.png.
+     The reference glass is a *neutral* dark tint (sampled saturation spread is
+     only ~5/255) at roughly 76% opacity, letting about a quarter of a heavily
+     blurred backdrop bleed through as soft light/dark shapes. Its transparency
+     reads from the blur and the crisp lit hairline — not from a white film, so
+     there is deliberately no gloss/sheen wash here. */
+  --bg: rgba(24, 26, 30, 0.76);
+  --bg-elevated: rgba(30, 33, 38, 0.62);
   --bg-solid: #121214;
-  --surface: rgba(255, 255, 255, 0.07);
-  --surface-strong: rgba(255, 255, 255, 0.13);
+  --surface: rgba(255, 255, 255, 0.055);
+  --surface-strong: rgba(255, 255, 255, 0.09);
   --surface-glass: linear-gradient(
-    158deg,
-    rgba(255, 255, 255, 0.13),
-    rgba(255, 255, 255, 0.03) 46%,
-    rgba(255, 255, 255, 0.07)
+    168deg,
+    rgba(255, 255, 255, 0.085),
+    rgba(255, 255, 255, 0.035) 52%,
+    rgba(255, 255, 255, 0.06)
   );
-  --border: rgba(255, 255, 255, 0.13);
-  --border-strong: rgba(255, 255, 255, 0.22);
+  /* The signature: a single ~1px light edge, measured at lum 112 against an
+     interior of lum 30 — i.e. roughly 30% white. */
+  --border: rgba(255, 255, 255, 0.3);
+  --border-strong: rgba(255, 255, 255, 0.42);
+  /* Inner controls sit *on* the glass, so their edge is far softer than the
+     card's lit hairline. */
+  --border-soft: rgba(255, 255, 255, 0.13);
   --hairline: rgba(255, 255, 255, 0.09);
-  /* Top-lit sheen across the glass, and a diagonal reflective wash. */
+  /* Only a faint top highlight; the reference interior is flat, not washed. */
   --gloss: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.17),
-    rgba(255, 255, 255, 0.03) 34%,
-    rgba(255, 255, 255, 0) 58%
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.008) 18%,
+    rgba(255, 255, 255, 0) 34%
   );
-  --sheen: linear-gradient(
-    118deg,
-    rgba(255, 255, 255, 0.12),
-    rgba(255, 255, 255, 0) 44%
-  );
-  /* The lit edge is what reads as "glass" rather than "dark rectangle". */
-  --edge-lit: inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.07),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.05);
-  --text: #f7f7fa;
-  --text-secondary: #adadb8;
-  --text-dim: #7c7c88;
+  --edge-lit: inset 0 0 0 0.5px rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28);
+  --text: #f4f4f7;
+  --text-secondary: #b6b7bd;
+  --text-dim: #85868d;
 
   /* Status only */
   --running: #5b9bff;
@@ -49,43 +50,44 @@
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --shadow: 0 32px 84px rgba(0, 0, 0, 0.42), 0 4px 18px rgba(0, 0, 0, 0.26);
-  /* Two-stage frosted blur: a tight blur then a wider saturate lift keeps
-     colours vivid instead of collapsing into grey mud. */
-  --blur: 30px;
-  --blur-soft: 12px;
-  --filter: saturate(1.9) brightness(1.08);
+  --shadow: 0 34px 90px rgba(0, 0, 0, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
+  /* Blur has to be wide enough that the backdrop becomes smooth gradients;
+     a tight blur leaves recognisable content and reads as cheap transparency. */
+  --blur: 56px;
+  --blur-soft: 20px;
+  /* Neutral — boosting saturation or brightness is what makes glass look milky. */
+  --filter: saturate(1.05);
 }
 
 :root[data-theme="light"] {
-  --bg: rgba(252, 252, 254, 0.58);
-  --bg-elevated: rgba(255, 255, 255, 0.5);
+  --bg: rgba(246, 246, 250, 0.78);
+  --bg-elevated: rgba(255, 255, 255, 0.66);
   --bg-solid: #f8f8fa;
-  --surface: rgba(255, 255, 255, 0.55);
-  --surface-strong: rgba(255, 255, 255, 0.78);
+  --surface: rgba(0, 0, 0, 0.05);
+  --surface-strong: rgba(0, 0, 0, 0.09);
   --surface-glass: linear-gradient(
-    158deg,
-    rgba(255, 255, 255, 0.85),
-    rgba(255, 255, 255, 0.4) 46%,
-    rgba(255, 255, 255, 0.6)
+    168deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(255, 255, 255, 0.55) 52%,
+    rgba(255, 255, 255, 0.75)
   );
-  --border: rgba(0, 0, 0, 0.09);
-  --border-strong: rgba(0, 0, 0, 0.16);
-  --hairline: rgba(0, 0, 0, 0.08);
+  --border: rgba(0, 0, 0, 0.14);
+  --border-strong: rgba(0, 0, 0, 0.22);
+  --border-soft: rgba(0, 0, 0, 0.09);
+  --hairline: rgba(0, 0, 0, 0.09);
   --gloss: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.9),
-    rgba(255, 255, 255, 0.2) 34%,
-    rgba(255, 255, 255, 0) 58%
+    rgba(255, 255, 255, 0.7),
+    rgba(255, 255, 255, 0.1) 18%,
+    rgba(255, 255, 255, 0) 34%
   );
-  --sheen: linear-gradient(118deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 44%);
-  --edge-lit: inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+  --edge-lit: inset 0 0 0 0.5px rgba(255, 255, 255, 0.6),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.06);
   --text: #14141a;
-  --text-secondary: #52525c;
-  --text-dim: #86868f;
-  --shadow: 0 32px 84px rgba(0, 0, 0, 0.16), 0 4px 18px rgba(0, 0, 0, 0.08);
-  --filter: saturate(1.7) brightness(1.02);
+  --text-secondary: #4d4d57;
+  --text-dim: #7d7d87;
+  --shadow: 0 34px 90px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  --filter: saturate(1.1);
 }
 
 * {
