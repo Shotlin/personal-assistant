@@ -39,21 +39,28 @@ export default function ActivityTimeline({ events, status, working }: ActivityTi
     <div className="activity">
       <div className="activity-header">
         <span className="activity-spinner" />
-        <span>{working ? status || "Agent working…" : "Activity"}</span>
+        <span>{working ? status || "Thinking…" : "Activity"}</span>
       </div>
-      {events.map((e) => (
-        <div key={`${e.run_id}-${e.sequence}`} className="activity-row">
-          <span className="activity-icon" style={{ color: STATUS_COLOR[e.status] ?? "var(--text-dim)" }}>
-            {EVENT_ICON[e.status] ?? "·"}
-          </span>
-          <span className="activity-time">{clock(e.timestamp)}</span>
-          <span className="activity-label">
-            {e.label}
-            {e.duration_ms ? <span className="activity-duration"> · {(e.duration_ms / 1000).toFixed(1)}s</span> : null}
-            {e.detail ? <span className="activity-detail"> — {e.detail}</span> : null}
-          </span>
-        </div>
-      ))}
+      <div className="activity-rows">
+        {events.map((e) => (
+          <div key={`${e.run_id}-${e.sequence}`} className="activity-row">
+            <span
+              className="activity-icon"
+              style={{ color: STATUS_COLOR[e.status] ?? "var(--text-dim)" }}
+            >
+              {EVENT_ICON[e.status] ?? "·"}
+            </span>
+            <span className="activity-time">{clock(e.timestamp)}</span>
+            <span className="activity-label">
+              {e.label}
+              {e.duration_ms ? (
+                <span className="activity-duration"> · {(e.duration_ms / 1000).toFixed(1)}s</span>
+              ) : null}
+              {e.detail ? <span className="activity-detail"> — {e.detail}</span> : null}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

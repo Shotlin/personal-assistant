@@ -15,9 +15,11 @@ import {
   onPartial,
   onState,
   onSttError,
+  onUiCommand,
   getMessages,
   listConversations,
   panelReady,
+  selectConversation,
   type ActivityEvent,
   type AgentChunk,
   type ChatMessage,
@@ -76,6 +78,7 @@ export default function PanelApp() {
   const [agentOnline, setAgentOnline] = useState<boolean | null>(null);
   const [drawer, setDrawer] = useState<"none" | "history" | "settings">("none");
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeChatId, setActiveChatId] = useState("");
   const [notice, setNotice] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -90,8 +93,19 @@ export default function PanelApp() {
   }, []);
 
   const refreshConversations = useCallback(async () => {
-    setConversations(await listConversations());
+    const list = await listConversations();
+    setConversations(list);
+    setActiveChatId((current) => current || list[0]?.id || "");
   }, []);
+
+  const selectAndReload = useCallback(
+    async (conversationId: string) => {
+      setActiveChatId(conversationId);
+      await selectConversation(conversationId);
+      await reloadConversation(conversationId);
+    },
+    [reloadConversation],
+  );
 
   useEffect(() => {
     const unlistens: Array<() => void> = [];
@@ -147,10 +161,14 @@ export default function PanelApp() {
           setMessages(m);
           setRun(null);
         }),
-        await onConversationChanged(() => void refreshConversations()),
+        await onConversationChanged((id) => {
+          setActiveChatId(id);
+          void refreshConversations();
+        }),
         await onAgentStatus((online) => setAgentOnline(online)),
         await onMicError((msg) => setNotice(msg)),
         await onSttError((msg) => setNotice(msg)),
+        await onUiCommand((command) => setDrawer(command === "settings" ? "settings" : "history")),
       );
       const current = await getState();
       setState(current.state);
@@ -188,29 +206,30 @@ export default function PanelApp() {
     state === "error" ? "var(--error)"
     : state === "working" || state === "finalizing" ? "var(--running)"
     : state === "preparing" ? "var(--warning)"
-    : state === "listening" ? "var(--success)"
     : "var(--success)";
+
+  const activeChat = conversations.find((c) => c.id === activeChatId) ?? conversations[0];
+  const otherChats = conversations.filter((c) => c.id !== activeChat?.id).slice(0, 3);
 
   return (
     <div className="panel-root">
       <div className="panel">
         {/* Header */}
         <div className="panel-header">
-          <div className="panel-id">
-            <span className="dot" style={{ background: statusColor }} />
-            <div>
-              <div className="panel-title">Sani</div>
-              <div className="panel-subtitle">{STATE_TEXT[state]}</div>
-            </div>
+          <span className="panel-avatar">
+            <span className="dot" style={{ color: statusColor }} />
+          </span>
+          <div className="panel-heading">
+            <button className="panel-title" onClick={() => openDrawer("history")} title="Conversations">
+              Sani
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="m7 10 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <div className="panel-subtitle">{STATE_TEXT[state]}</div>
           </div>
           <div className="panel-header-actions">
             {agentOnline === false && <span className="offline-chip">Agent offline</span>}
-            <button className="icon-btn" onClick={() => openDrawer("history")} title="History">
-              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 7v5l3.5 2" strokeLinecap="round" />
-              </svg>
-            </button>
             <button className="icon-btn" onClick={() => openDrawer("settings")} title="Settings">
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <circle cx="12" cy="12" r="3.2" />
@@ -261,6 +280,40 @@ export default function PanelApp() {
               )}
             </>
           )}
+        </div>
+
+        {/* Footer: the conversation this panel is bound to, and quick switches */}
+        <div className="panel-footer">
+          <div className="footer-col">
+            <div className="footer-label">Active chat</div>
+            <button className="chat-chip" onClick={() => openDrawer("history")} title="All conversations">
+              <span className="dot" style={{ color: "var(--success)" }} />
+              <span className="chat-chip-title">{activeChat?.title ?? "New chat"}</span>
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="m7 10 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+          <div className="footer-col footer-switch">
+            <div className="footer-label">Switch chat</div>
+            <div className="footer-chips">
+              {otherChats.length === 0 && (
+                <button className="mini-chip" onClick={() => openDrawer("history")}>
+                  No others yet
+                </button>
+              )}
+              {otherChats.map((c) => (
+                <button
+                  key={c.id}
+                  className="mini-chip"
+                  onClick={() => void selectAndReload(c.id)}
+                  title={c.title}
+                >
+                  {c.title}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {drawer === "history" && (

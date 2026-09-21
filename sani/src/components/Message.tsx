@@ -17,12 +17,15 @@ export default function Message({ role, text, createdAt, muted }: MessageProps) 
       <div className="msg-header">
         <span className="msg-avatar">
           {isUser ? (
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
-              <rect x="8" y="4" width="8" height="12" rx="4" fill="currentColor" />
-              <path d="M5 11.5a7 7 0 0 0 14 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor">
+              <rect x="3" y="10.5" width="2" height="3" rx="1" />
+              <rect x="7" y="7.5" width="2" height="9" rx="1" />
+              <rect x="11" y="4.5" width="2" height="15" rx="1" />
+              <rect x="15" y="8" width="2" height="8" rx="1" />
+              <rect x="19" y="10.5" width="2" height="3" rx="1" />
             </svg>
           ) : (
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none">
               <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.6" />
               <circle cx="12" cy="12" r="3" fill="currentColor" />
             </svg>

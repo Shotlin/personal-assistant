@@ -14,10 +14,22 @@ use tauri::webview::PageLoadEvent;
 pub const PILL_LABEL: &str = "pill";
 pub const PANEL_LABEL: &str = "panel";
 
-const PILL_SIZE: (f64, f64) = (640.0, 104.0);
+const PILL_SIZE: (f64, f64) = (680.0, 96.0);
+const PILL_MIN_WIDTH: f64 = 560.0;
+const PILL_MAX_WIDTH: f64 = 760.0;
 const PANEL_WIDTH: f64 = 524.0;
+const PANEL_MIN_WIDTH: f64 = 500.0;
+const PANEL_MAX_WIDTH: f64 = 640.0;
+const PANEL_HEIGHT_RATIO: f64 = 0.72;
+const PANEL_MIN_HEIGHT: f64 = 520.0;
+const PANEL_MAX_HEIGHT: f64 = 900.0;
 const PILL_BOTTOM_MARGIN: f64 = 92.0; // above dock/taskbar
 const SCREEN_MARGIN: f64 = 20.0;
+/// The glass card fills its window exactly, so the vibrancy layer — a plain
+/// rect behind the webview — can be clipped to the same radius. Without this
+/// a square dark halo shows outside the rounded corners.
+const PILL_GLASS_RADIUS: f64 = 48.0;
+const PANEL_GLASS_RADIUS: f64 = 22.0;
 
 /// Build the pill webview. Shared by cold-launch creation and the defensive
 /// recreate path in `show_pill`.
@@ -110,6 +122,35 @@ struct MonitorBox {
     scale: f64,
 }
 
+impl MonitorBox {
+    /// Monitor size in logical (CSS) points — the unit every layout constant here uses.
+    /// `available_monitors()` reports physical pixels, so this division is required
+    /// before any arithmetic with the constants above.
+    fn logical_size(&self) -> (f64, f64) {
+        (
+            self.size.0 as f64 / self.scale,
+            self.size.1 as f64 / self.scale,
+        )
+    }
+
+    /// Top-left of a window placed at logical offset `(dx, dy)` from this
+    /// monitor's top-left. Monitor position is already physical.
+    fn place(&self, dx: f64, dy: f64) -> PhysicalPosition<i32> {
+        PhysicalPosition::new(
+            self.position.0 + (dx * self.scale).round() as i32,
+            self.position.1 + (dy * self.scale).round() as i32,
+        )
+    }
+
+    /// Logical size → physical `PhysicalSize` for `set_size`.
+    fn physical_size(&self, w: f64, h: f64) -> PhysicalSize<u32> {
+        PhysicalSize::new(
+            (w * self.scale).round().max(1.0) as u32,
+            (h * self.scale).round().max(1.0) as u32,
+        )
+    }
+}
+
 fn monitor_under_cursor(app: &AppHandle) -> MonitorBox {
     let default = MonitorBox { position: (0, 0), size: (1440, 900), scale: 1.0 };
     let cursor = app.cursor_position().ok();
@@ -141,10 +182,6 @@ fn monitor_under_cursor(app: &AppHandle) -> MonitorBox {
     }
 }
 
-fn logical(size: f64, scale: f64) -> f64 {
-    (size / scale).round()
-}
-
 pub fn show_pill(app: &AppHandle) -> tauri::Result<()> {
     // Defensive recreate: if the pill is unexpectedly gone, build it again so
     // Sani can always reveal itself.
@@ -155,12 +192,13 @@ pub fn show_pill(app: &AppHandle) -> tauri::Result<()> {
     }
     let Some(pill) = app.get_webview_window(PILL_LABEL) else { return Ok(()) };
     let mon = monitor_under_cursor(app);
-    let (mw, mh) = (mon.size.0 as f64, mon.size.1 as f64);
-    let (pw, ph) = PILL_SIZE;
-    let x = mon.position.0 + logical((mw - pw) / 2.0, mon.scale) as i32;
-    let y = mon.position.1
-        + logical(mh - PILL_BOTTOM_MARGIN - ph, mon.scale) as i32;
-    pill.set_position(PhysicalPosition::new(x, y))?;
+    let (mlw, mlh) = mon.logical_size();
+    let pill_height = PILL_SIZE.1;
+    // Width tracks the display; height stays fixed so it matches
+    // PILL_GLASS_RADIUS, which clips the vibrancy layer.
+    let pill_width = (mlw * 0.47).clamp(PILL_MIN_WIDTH, PILL_MAX_WIDTH);
+    pill.set_size(mon.physical_size(pill_width, pill_height))?;
+    pill.set_position(mon.place((mlw - pill_width) / 2.0, mlh - PILL_BOTTOM_MARGIN - pill_height))?;
     pill.show()?;
     Ok(())
 }
@@ -174,14 +212,13 @@ pub fn show_panel(app: &AppHandle) -> tauri::Result<()> {
     }
     let Some(panel) = app.get_webview_window(PANEL_LABEL) else { return Ok(()) };
     let mon = monitor_under_cursor(app);
-    let (mw, mh) = (mon.size.0 as f64, mon.size.1 as f64);
-    let panel_height = (mh * 0.72).min(860.0).max(480.0);
-    let width_l = logical(PANEL_WIDTH, mon.scale) as i32;
-    let height_l = logical(panel_height, mon.scale) as i32;
-    let x = mon.position.0 + logical(mw - PANEL_WIDTH - SCREEN_MARGIN, mon.scale) as i32;
-    let y = mon.position.1 + logical(SCREEN_MARGIN, mon.scale) as i32;
-    panel.set_size(PhysicalSize::new(width_l.max(1), height_l.max(1)))?;
-    panel.set_position(PhysicalPosition::new(x, y))?;
+    let (mlw, mlh) = mon.logical_size();
+    // Responsive: the panel tracks the display instead of staying a fixed
+    // 524pt sliver on a large monitor.
+    let panel_width = (mlw * 0.36).clamp(PANEL_MIN_WIDTH, PANEL_MAX_WIDTH);
+    let panel_height = (mlh * PANEL_HEIGHT_RATIO).clamp(PANEL_MIN_HEIGHT, PANEL_MAX_HEIGHT);
+    panel.set_size(mon.physical_size(panel_width, panel_height))?;
+    panel.set_position(mon.place(mlw - panel_width - SCREEN_MARGIN, SCREEN_MARGIN))?;
     panel.show()?;
     Ok(())
 }
@@ -220,13 +257,16 @@ pub fn hide_overlays(app: &AppHandle) {
 pub fn apply_materials(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     {
-        for label in [PILL_LABEL, PANEL_LABEL] {
+        for (label, radius) in [
+            (PILL_LABEL, PILL_GLASS_RADIUS),
+            (PANEL_LABEL, PANEL_GLASS_RADIUS),
+        ] {
             if let Some(window) = app.get_webview_window(label) {
                 let _ = window_vibrancy::apply_vibrancy(
                     &window,
                     window_vibrancy::NSVisualEffectMaterial::HudWindow,
                     None,
-                    None,
+                    Some(radius),
                 );
             }
         }
