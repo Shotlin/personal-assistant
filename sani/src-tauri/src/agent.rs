@@ -64,8 +64,8 @@ pub async fn stream_chat(app: AppHandle, message_id: String, text: String) {
         request = request.bearer_auth(key.trim());
     }
 
-    let finish = |app: &AppHandle, message_id: &str, run_id: &str, text: &str, ok: bool, error: String| {
-        crate::app_state::agent_finished(app, message_id, run_id, text, ok, error);
+    let finish = |app: &AppHandle, message_id: &str, run_id: &str, text: &str, ok: bool, status: &str, error: String| {
+        crate::app_state::agent_finished(app, message_id, run_id, text, ok, status, error);
     };
 
     let response = match request.send().await {
@@ -74,12 +74,12 @@ pub async fn stream_chat(app: AppHandle, message_id: String, text: String) {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             log::error!("agent http {status}: {}", truncate(&body, 300));
-            finish(&app, &message_id, "", "", false, format!("Agent error ({status})"));
+            finish(&app, &message_id, "", "", false, "failed", format!("Agent error ({status})"));
             return;
         }
         Err(err) => {
             log::error!("agent unreachable: {err}");
-            finish(&app, &message_id, "", "", false, "Agent offline".to_string());
+            finish(&app, &message_id, "", "", false, "failed", "Agent offline".to_string());
             return;
         }
     };
@@ -100,7 +100,9 @@ pub async fn stream_chat(app: AppHandle, message_id: String, text: String) {
                             let block: String = buffer.drain(..pos + 2).collect();
                             for event in parse_sse_block(&block) {
                                 if event == "[DONE]" {
-                                    finish(&app, &message_id, &run_id, &accumulated, true, String::new());
+                                    // The only normal success path: the gateway
+                                    // closed the protocol cleanly (FIX-03).
+                                    finish(&app, &message_id, &run_id, &accumulated, true, "completed", String::new());
                                     return;
                                 }
                                 if let Ok(payload) = serde_json::from_str::<Value>(&event) {
@@ -146,17 +148,26 @@ pub async fn stream_chat(app: AppHandle, message_id: String, text: String) {
                     }
                     Some(Err(err)) => {
                         log::error!("agent stream error: {err}");
+                        // FIX-03: a broken stream is an interruption, never a
+                        // normal success — even if some text already arrived.
                         let error = if got_any {
                             "Stream interrupted; partial answer kept.".to_string()
                         } else {
                             "Agent stream failed.".to_string()
                         };
-                        finish(&app, &message_id, &run_id, &accumulated, got_any, error);
+                        finish(&app, &message_id, &run_id, &accumulated, false, "interrupted", error);
                         return;
                     }
                     None => {
-                        // Server closed without [DONE]: treat as ended, keep text.
-                        finish(&app, &message_id, &run_id, &accumulated, true, String::new());
+                        // Server closed without [DONE]: interrupted, not a clean
+                        // success. Preserve any partial text (FIX-03).
+                        log::warn!("agent stream ended without [DONE]");
+                        let error = if got_any {
+                            "Stream ended unexpectedly; partial answer kept.".to_string()
+                        } else {
+                            "Agent stream ended unexpectedly.".to_string()
+                        };
+                        finish(&app, &message_id, &run_id, &accumulated, false, "interrupted", error);
                         return;
                     }
                 }
@@ -168,7 +179,8 @@ pub async fn stream_chat(app: AppHandle, message_id: String, text: String) {
                 } else {
                     "Cancelled.".to_string()
                 };
-                finish(&app, &message_id, &run_id, &accumulated, got_any, error);
+                // FIX-03: a user cancel is reported as cancelled, never success.
+                finish(&app, &message_id, &run_id, &accumulated, false, "cancelled", error);
                 if !run_id.is_empty() {
                     stop_run(&app, &run_id).await;
                 }

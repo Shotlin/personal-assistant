@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  hidePanel,
   onActivity,
   onAgentChunk,
   onAgentDone,
@@ -7,10 +8,13 @@ import {
   onAgentStatus,
   onConversationChanged,
   onFinal,
+  getState,
   onHistoryLoaded,
   onMessage,
+  onMicError,
   onPartial,
   onState,
+  onSttError,
   getMessages,
   listConversations,
   panelReady,
@@ -29,10 +33,18 @@ import "../styles/panel.css";
 
 const STATE_TEXT: Record<UiState, string> = {
   idle: "Ready",
+  preparing: "Preparing voice…",
   listening: "Listening…",
   finalizing: "Finalizing…",
   working: "Working…",
   error: "Something went wrong",
+};
+
+/** Terminal outcome of an agent run — never reported as success by accident (FIX-03). */
+const OUTCOME_TEXT: Record<string, string> = {
+  cancelled: "Stopped — this run was cancelled. Any partial answer is kept above.",
+  interrupted: "Interrupted — the stream ended before the answer finished. Partial text is kept.",
+  failed: "The agent could not finish this run.",
 };
 
 interface LiveRun {
@@ -41,7 +53,19 @@ interface LiveRun {
   status: string;
   activity: ActivityEvent[];
   done: boolean;
+  outcome: string;
+  error: string;
 }
+
+const EMPTY_RUN: LiveRun = {
+  runId: "",
+  text: "",
+  status: "",
+  activity: [],
+  done: false,
+  outcome: "",
+  error: "",
+};
 
 export default function PanelApp() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -52,6 +76,7 @@ export default function PanelApp() {
   const [agentOnline, setAgentOnline] = useState<boolean | null>(null);
   const [drawer, setDrawer] = useState<"none" | "history" | "settings">("none");
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [notice, setNotice] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
 
@@ -72,7 +97,10 @@ export default function PanelApp() {
     const unlistens: Array<() => void> = [];
     const reg = async () => {
       unlistens.push(
-        await onState((s) => setState(s)),
+        await onState((s) => {
+          setState(s);
+          if (s === "preparing" || s === "listening") setNotice("");
+        }),
         await onPartial((t) => {
           setPartial(t);
           setFinalText("");
@@ -89,21 +117,30 @@ export default function PanelApp() {
           setFinalText("");
         }),
         await onAgentChunk((c: AgentChunk) => {
-          setRun((prev) =>
-            prev
-              ? { ...prev, text: c.kind === "text" ? prev.text + c.delta : prev.text, status: c.kind === "status" ? c.delta : prev.status }
-              : { runId: "", text: c.kind === "text" ? c.delta : "", status: c.kind === "status" ? c.delta : "", activity: [], done: false },
-          );
+          setRun((prev) => {
+            const base = prev ?? EMPTY_RUN;
+            return c.kind === "text"
+              ? { ...base, text: base.text + c.delta }
+              : { ...base, status: c.delta };
+          });
         }),
         await onAgentStart((s) => {
-          setRun((prev) => (prev ? { ...prev, runId: s.run_id } : { runId: s.run_id, text: "", status: "", activity: [], done: false }));
+          setRun((prev) => ({ ...(prev ?? EMPTY_RUN), runId: s.run_id }));
         }),
         await onActivity((a) => {
-          setRun((prev) => (prev ? { ...prev, activity: [...prev.activity, a] } : { runId: a.run_id, text: "", status: "", activity: [a], done: false }));
+          setRun((prev) => {
+            const base = prev ?? { ...EMPTY_RUN, runId: a.run_id };
+            return { ...base, activity: [...base.activity, a] };
+          });
         }),
         await onAgentDone((d) => {
-          setRun((prev) => (prev ? { ...prev, done: true } : prev));
-          setAgentOnline(d.ok === false ? false : true);
+          setRun((prev) => ({
+            ...(prev ?? EMPTY_RUN),
+            done: true,
+            outcome: d.status,
+            error: d.error,
+          }));
+          setAgentOnline(d.ok ? true : false);
           if (d.run_id) void refreshConversations();
         }),
         await onHistoryLoaded((m) => {
@@ -112,7 +149,11 @@ export default function PanelApp() {
         }),
         await onConversationChanged(() => void refreshConversations()),
         await onAgentStatus((online) => setAgentOnline(online)),
+        await onMicError((msg) => setNotice(msg)),
+        await onSttError((msg) => setNotice(msg)),
       );
+      const current = await getState();
+      setState(current.state);
       await panelReady();
       await refreshConversations();
     };
@@ -146,6 +187,7 @@ export default function PanelApp() {
   const statusColor =
     state === "error" ? "var(--error)"
     : state === "working" || state === "finalizing" ? "var(--running)"
+    : state === "preparing" ? "var(--warning)"
     : state === "listening" ? "var(--success)"
     : "var(--success)";
 
@@ -175,7 +217,7 @@ export default function PanelApp() {
                 <path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.5-2-3.4-2.3.9a7.7 7.7 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.5a7.7 7.7 0 0 0-2.6 1.5L4.6 5.6l-2 3.4 2 1.5a7.6 7.6 0 0 0 0 3l-2 1.5 2 3.4 2.3-.9a7.7 7.7 0 0 0 2.6 1.5l.5 2.5h4l.5-2.5a7.7 7.7 0 0 0 2.6-1.5l2.3.9 2-3.4-2-1.5Z" strokeLinejoin="round" />
               </svg>
             </button>
-            <button className="icon-btn" onClick={() => window.close()} title="Hide panel">
+            <button className="icon-btn" onClick={() => void hidePanel()} title="Hide panel">
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                 <path d="M6 12h12" />
               </svg>
@@ -185,6 +227,12 @@ export default function PanelApp() {
 
         {/* Body */}
         <div className="panel-body" ref={scrollRef} onScroll={onScroll}>
+          {notice && (
+            <div className="panel-notice" role="alert">
+              {notice}
+            </div>
+          )}
+
           {messages.length === 0 && !partial && !finalText && !run && (
             <div className="panel-empty">
               <div className="panel-empty-mark">Sani</div>
@@ -202,10 +250,15 @@ export default function PanelApp() {
             <Message role="user" text={finalText} />
           )}
 
-          {run && (run.text || run.status || run.activity.length > 0) && (
+          {run && (run.text || run.status || run.activity.length > 0 || run.done) && (
             <>
               {run.text && <Message role="assistant" text={run.text} />}
               <ActivityTimeline events={run.activity} status={run.status} working={!run.done} />
+              {run.done && run.outcome !== "completed" && (
+                <div className={`run-outcome ${run.outcome}`}>
+                  {OUTCOME_TEXT[run.outcome] ?? run.error ?? "Run finished."}
+                </div>
+              )}
             </>
           )}
         </div>

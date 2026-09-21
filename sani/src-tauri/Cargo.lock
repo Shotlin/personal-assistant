@@ -3371,6 +3371,7 @@ dependencies = [
 name = "sani"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "cpal",
  "env_logger",
  "futures-util",

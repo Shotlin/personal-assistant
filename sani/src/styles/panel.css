@@ -112,6 +112,40 @@
   color: var(--text-secondary);
 }
 
+/* Error / permission banner */
+.panel-notice {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: var(--radius-small);
+  background: rgba(240, 86, 79, 0.1);
+  border: 1px solid rgba(240, 86, 79, 0.32);
+  color: #f7a6a2;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* Terminal outcome of a non-successful run */
+.run-outcome {
+  margin: 6px 0 2px;
+  padding: 8px 12px;
+  border-radius: var(--radius-small);
+  font-size: 12px;
+  line-height: 1.45;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.run-outcome.cancelled {
+  border-color: rgba(230, 162, 60, 0.32);
+  color: #f0c479;
+}
+
+.run-outcome.failed {
+  border-color: rgba(240, 86, 79, 0.32);
+  color: #f7a6a2;
+}
+
 /* Messages */
 .msg-header {
   display: flex;

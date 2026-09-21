@@ -80,15 +80,59 @@ fn write_frame(stdin: &mut ChildStdin, frame_type: u8, payload: &[u8]) -> std::i
     stdin.flush()
 }
 
+/// Locate the packaged, self-contained STT sidecar (Tauri `externalBin`).
+///
+/// In a bundled macOS app the sidecar sits next to the main executable inside
+/// `Sani.app/Contents/MacOS/`. When present it is used directly — no repo
+/// `.stt-venv`, no global Python, no shell environment (RC-05).
+fn packaged_sidecar() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    for name in [
+        "sani-stt-aarch64-apple-darwin",
+        "sani-stt-x86_64-apple-darwin",
+        "sani-stt",
+    ] {
+        let p = dir.join(name);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("sani-stt") && entry.path().is_file() {
+                return Some(entry.path());
+            }
+        }
+    }
+    None
+}
+
 /// Spawn the sidecar and wire its JSON events to Tauri. Returns `Err` with a
 /// user-presentable reason when the STT environment is not set up.
 pub fn start(app: AppHandle, model: &str) -> Result<Arc<SpeechHandle>, String> {
-    let python = stt_python_path(&app, &crate::app_state::settings(&app).read().clone())
-        .ok_or("STT_NOT_SET_UP")?;
-    let script = crate::settings::stt_script_path(&app).ok_or("STT_SCRIPT_MISSING")?;
+    // Prefer the packaged sidecar; fall back to the dev venv + script so
+    // `tauri dev` inside the repository keeps working.
+    let (program, lead_args) = match packaged_sidecar() {
+        Some(bin) => {
+            log::info!("STT sidecar (packaged): {}", bin.display());
+            (bin, Vec::new())
+        }
+        None => {
+            let python = stt_python_path(&app, &crate::app_state::settings(&app).read().clone())
+                .ok_or("STT_NOT_SET_UP")?;
+            let script = crate::settings::stt_script_path(&app).ok_or("STT_SCRIPT_MISSING")?;
+            log::info!("STT sidecar (dev venv): {} {}", python.display(), script.display());
+            (python, vec![script.to_string_lossy().to_string()])
+        }
+    };
 
-    let mut child = Command::new(python)
-        .arg(&script)
+    let mut command = Command::new(&program);
+    for arg in &lead_args {
+        command.arg(arg);
+    }
+    let mut child = command
         .arg("--model")
         .arg(model)
         .arg("--update-interval")
@@ -129,6 +173,9 @@ pub fn start(app: AppHandle, model: &str) -> Result<Arc<SpeechHandle>, String> {
                     log::info!("stt sidecar ready (model={})", event.model);
                     ready.store(true, Ordering::Relaxed);
                     let _ = app.emit("sani://stt-status", "ready");
+                    // FIX-05: only now may a pending listen attempt open the
+                    // audio gate and show Listening.
+                    crate::app_state::on_stt_ready(&app);
                 }
                 "downloading" => {
                     let _ = app.emit(

@@ -6,10 +6,24 @@
     <title>Sani</title>
     <style>
       html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+      /* Boot fallback: opaque, visible card so a failed React mount can never
+         present as an empty translucent rectangle. Hidden on announceReady(). */
+      #boot-fallback {
+        position: fixed; inset: 0; display: flex; align-items: center;
+        justify-content: center; gap: 10px;
+        background: #101012; color: #f4f4f6;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+        font-size: 13px; letter-spacing: 0.01em;
+      }
+      #boot-fallback .bf-dot {
+        width: 9px; height: 9px; border-radius: 50%;
+        background: #e6a23c; box-shadow: 0 0 0 4px rgba(230,162,60,0.18);
+      }
     </style>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/app/OverlayApp.tsx"></script>
+    <div id="boot-fallback"><span class="bf-dot"></span><span>Sani is starting…</span></div>
+    <script type="module" src="/src/app/pill-main.tsx"></script>
   </body>
 </html>

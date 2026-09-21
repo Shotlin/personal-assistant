@@ -82,6 +82,24 @@
   min-width: 60px;
 }
 
+/* Center: microphone permission action */
+.pill-permission {
+  flex: 1;
+  min-width: 60px;
+  height: 32px;
+  align-self: center;
+  border-radius: var(--radius-small);
+  background: rgba(230, 162, 60, 0.12);
+  border: 1px solid rgba(230, 162, 60, 0.4);
+  color: #f0c479;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.pill-permission:hover {
+  background: rgba(230, 162, 60, 0.2);
+}
+
 /* Mic control */
 .pill-mic {
   position: relative;
@@ -107,6 +125,11 @@
 .pill-mic.working {
   background: rgba(79, 142, 247, 0.14);
   border-color: rgba(79, 142, 247, 0.4);
+}
+
+.pill-mic:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .mic-ring {

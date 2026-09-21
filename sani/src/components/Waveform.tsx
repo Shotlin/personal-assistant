@@ -4,13 +4,19 @@ interface WaveformProps {
   levels: number[];
   active: boolean;
   color: string;
+  /**
+   * Split mode: the reference layout puts a bar group on each side of the mic
+   * button. "left" mirrors the buffer so the newest sample sits next to the
+   * button; "right" reads it forwards. Omit for a single full-width strip.
+   */
+  side?: "left" | "right";
+  bars?: number;
 }
 
 /**
- * Real microphone RMS levels, mirrored around the center like a quiet
- * voice visualizer. No fake animation: zero input is a flat line.
+ * Real microphone RMS levels. No fake animation: zero input is a flat line.
  */
-export default function Waveform({ levels, active, color }: WaveformProps) {
+export default function Waveform({ levels, active, color, side, bars = 24 }: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const levelsRef = useRef(levels);
   levelsRef.current = levels;
@@ -35,16 +41,19 @@ export default function Waveform({ levels, active, color }: WaveformProps) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
+      // Newest samples last; each half of a split strip reads the recent window.
       const data = levelsRef.current;
-      const barCount = 44;
-      const gap = 2.5;
-      const barW = (w - gap * (barCount - 1)) / barCount;
+      const window = side ? Math.min(data.length, bars) : data.length;
+      const recent = data.slice(Math.max(0, data.length - window));
+      if (side === "left") recent.reverse();
+
+      const gap = 3;
+      const barW = Math.max(1.5, (w - gap * (bars - 1)) / bars);
       const midY = h / 2;
 
       ctx.fillStyle = color;
-      for (let i = 0; i < barCount; i++) {
-        // sample the rolling level buffer, newest at the right edge
-        const src = data.length > 0 ? data[Math.min(i, data.length - 1)] : 0;
+      for (let i = 0; i < bars; i++) {
+        const src = recent.length > 0 ? recent[Math.min(i, recent.length - 1)] : 0;
         const amplitude = Math.max(0.02, Math.min(1, src * 6.5));
         const barH = activeRef.current ? amplitude * (h - 6) : 2;
         const x = i * (barW + gap);
@@ -58,7 +67,7 @@ export default function Waveform({ levels, active, color }: WaveformProps) {
     };
     animRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animRef.current);
-  }, [color]);
+  }, [color, side, bars]);
 
   return <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />;
 }

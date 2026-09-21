@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 
-export type UiState = "idle" | "listening" | "finalizing" | "working" | "error";
+export type UiState = "idle" | "preparing" | "listening" | "finalizing" | "working" | "error";
 export interface ChatMessage {
   id: string;
   conversation_id?: string;
@@ -40,8 +40,18 @@ export interface AgentDone {
   message_id: string;
   run_id: string;
   ok: boolean;
+  /** "completed" | "cancelled" | "interrupted" | "failed" (FIX-03). */
+  status: string;
   error: string;
 }
+
+/** macOS microphone authorization state (RC-04). */
+export type MicPermission =
+  | "not_determined"
+  | "restricted"
+  | "denied"
+  | "granted"
+  | "unknown";
 
 export interface SettingsShape {
   hotkey: string;
@@ -85,12 +95,14 @@ export const onSttError = (cb: (s: string) => void) =>
   listen<string>("sani://stt-error", (e) => cb(e.payload));
 export const onMicError = (cb: (s: string) => void) =>
   listen<string>("sani://mic-error", (e) => cb(e.payload));
+export const onMicPermission = (cb: (s: MicPermission) => void) =>
+  listen<MicPermission>("sani://mic-permission", (e) => cb(e.payload));
 export const onAgentStatus = (cb: (online: boolean) => void) =>
   listen<boolean>("sani://agent-status", (e) => cb(e.payload));
 
 // -------------------------------------------------------------- commands
 
-export const getState = () => invoke<{ state: UiState; stt_ready: boolean; stt_model: string; partial: string }>("get_state");
+export const getState = () => invoke<{ state: UiState; stt_ready: boolean; stt_model: string; partial: string; mic_permission: MicPermission }>("get_state");
 export const getSettings = () => invoke<SettingsShape>("get_settings");
 export const saveSettings = (patch: {
   hotkey?: string;
@@ -113,3 +125,21 @@ export const deleteConversation = (conversationId: string) =>
   invoke<void>("delete_conversation", { conversationId });
 export const panelReady = () => invoke<void>("panel_ready");
 export const agentHealth = () => invoke<boolean>("agent_health");
+
+/** Hide the panel without destroying it (RC-02). Reopen is instant. */
+export const hidePanel = () => invoke<void>("hide_panel");
+/** Show the panel if hidden, hide it if visible. */
+export const togglePanel = () => invoke<void>("toggle_panel");
+
+/** Cross-overlay UI intent: the pill can ask the panel to open a drawer. */
+export type UiCommand = "settings" | "history";
+export const sendUiCommand = (command: UiCommand) => emit<UiCommand>("sani://ui-command", command);
+export const onUiCommand = (cb: (command: UiCommand) => void) =>
+  listen<UiCommand>("sani://ui-command", (e) => cb(e.payload));
+
+/** Current macOS microphone authorization state; never triggers a prompt. */
+export const micPermissionState = () => invoke<MicPermission>("mic_permission_state");
+/** Kick the system prompt when undetermined; poll micPermissionState for the answer. */
+export const requestMicPermission = () => invoke<MicPermission>("request_mic_permission");
+/** System Settings › Privacy & Security › Microphone. */
+export const openMicSettings = () => invoke<void>("open_mic_settings");

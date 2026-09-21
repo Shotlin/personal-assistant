@@ -51,12 +51,22 @@ pub async fn watch(app: AppHandle, run_id: String) {
                 while let Some(pos) = buffer.find("\n\n") {
                     let block: String = buffer.drain(..pos + 2).collect();
                     if let Some(event) = parse_event_block(&block) {
+                        // FIX-01: only these three close the stream. `run.started`
+                        // and `agent.processing` are NOT terminal — treating them
+                        // as such cut off every tool/activity event that follows.
                         let terminal = event
                             .get("event_type")
                             .and_then(Value::as_str)
-                            .map(|t| t.starts_with("run."))
+                            .map(|t| {
+                                matches!(t, "run.completed" | "run.failed" | "run.cancelled")
+                            })
                             .unwrap_or(false);
-                        let _ = app.emit("sani://activity", event);
+                        let _ = app.emit("sani://activity", event.clone());
+                        log::info!(
+                            "[activity] {} {}",
+                            event.get("event_type").and_then(Value::as_str).unwrap_or("?"),
+                            event.get("label").and_then(Value::as_str).unwrap_or("")
+                        );
                         if terminal {
                             return;
                         }

@@ -73,7 +73,7 @@ pub fn set_esc_active(app: &AppHandle, active: bool) {
 pub fn rebind_on_state_change(app: &AppHandle) {
     let active = matches!(
         app_state::current_state(app),
-        UiState::Listening | UiState::Finalizing | UiState::Working
+        UiState::Preparing | UiState::Listening | UiState::Finalizing | UiState::Working
     );
     set_esc_active(app, active);
     let _ = app.emit("sani://state", app_state::current_state(app).as_str());

@@ -26,3 +26,5 @@ sani/dist/
 sani/src-tauri/target/
 sani/src-tauri/gen/
 sani/.stt-venv/
+sani/.sidecar-build/
+sani/src-tauri/binaries/

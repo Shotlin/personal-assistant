@@ -13,20 +13,22 @@ mod app_state;
 mod audio;
 mod history;
 mod hotkey;
+mod permissions;
 mod settings;
+mod snapshot;
 mod speech;
 mod windows;
 
 use parking_lot::RwLock;
 use serde::Serialize;
-use tauri::{Manager, Emitter};
+use std::io::Write;
+use std::sync::atomic::Ordering;
+use tauri::{Manager, Emitter, Listener};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use app_state::SaniState;
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -36,8 +38,10 @@ fn main() {
         .manage(hotkey::HotkeyState::default())
         .setup(|app| {
             let handle = app.handle().clone();
+            init_logging(handle.path().app_log_dir().ok());
 
-            // No dock icon: Sani is an overlay, reachable via hotkey/tray.
+            // No dock icon: Sani is an overlay, reachable via hotkey/tray and
+            // (on macOS) the app-reopen event handled in run() below.
             #[cfg(target_os = "macos")]
             let _ = handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -69,8 +73,34 @@ fn main() {
             hotkey::register_user_shortcut(&handle, &hotkey_str)
                 .map_err(|e| format!("{e}"))?;
 
+            // Frontend startup evidence (RC-03): React emits these once each
+            // window's tree mounts. Recorded so the reveal/watchdog below can
+            // prove the UI actually came up rather than showing empty glass.
+            {
+                let h = handle.clone();
+                app.listen("sani://pill-ui-ready", move |_| app_state::mark_ui_ready(&h, "pill"));
+            }
+            {
+                let h = handle.clone();
+                app.listen("sani://panel-ui-ready", move |_| app_state::mark_ui_ready(&h, "panel"));
+            }
+            // Any JS-side failure is mirrored into the Rust log: a UI problem
+            // must be visible in the terminal, not only behind transparent glass.
+            app.listen("sani://ui-error", |payload| {
+                #[derive(serde::Deserialize)]
+                struct UiError {
+                    label: String,
+                    message: String,
+                }
+                match serde_json::from_str::<UiError>(payload.payload()) {
+                    Ok(err) => log::error!("[ui-boot] {} webview error: {}", err.label, err.message),
+                    Err(_) => log::error!("[ui-boot] webview error: {}", payload.payload()),
+                }
+            });
+
             app_state::spawn_level_ticker(handle.clone());
             app_state::spawn_health_probe(handle.clone());
+            spawn_cold_launch_reveal(handle.clone());
 
             // Dev/verification affordance: SANI_AUTOSTART=1 begins listening
             // right after launch (equivalent to pressing the hotkey).
@@ -92,6 +122,8 @@ fn main() {
             start_listening_cmd,
             stop_listening_cmd,
             escape_cmd,
+            hide_panel,
+            toggle_panel,
             list_conversations,
             get_messages,
             new_conversation,
@@ -99,9 +131,120 @@ fn main() {
             delete_conversation,
             panel_ready,
             agent_health,
+            mic_permission_state,
+            request_mic_permission,
+            open_mic_settings,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Sani");
+        .build(tauri::generate_context!())
+        .expect("error while building Sani")
+        .run(|app_handle, event| {
+            // RC-01: opening Sani again while it already runs (Finder/Dock)
+            // must reveal the hidden overlays instead of doing nothing.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                log::info!("[ui-boot] macOS reopen — revealing overlays");
+                windows::show_overlays(app_handle);
+                let h = app_handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(700));
+                    snapshot::snapshot_overlays(&h, "reopened");
+                });
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app_handle, event);
+        });
+}
+
+/// Logs go to stderr *and* to `~/Library/Logs/app.sani.local/sani.log`, because
+/// a Finder-launched app has no console: without this the startup evidence for
+/// "opened but showed nothing" is unrecoverable.
+fn init_logging(log_dir: Option<std::path::PathBuf>) {
+    let file = log_dir.and_then(|dir| {
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("sani.log"))
+            .ok()
+    });
+    let writer = TeeWriter {
+        stderr: std::io::stderr(),
+        file,
+    };
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .target(env_logger::Target::Pipe(Box::new(writer)))
+        .init();
+}
+
+struct TeeWriter {
+    stderr: std::io::Stderr,
+    file: Option<std::fs::File>,
+}
+
+impl Write for TeeWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let written = self.stderr.write(buf)?;
+        if let Some(file) = &mut self.file {
+            let _ = file.write_all(buf);
+            let _ = file.flush();
+        }
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let _ = self.stderr.flush();
+        if let Some(file) = &mut self.file {
+            let _ = file.flush();
+        }
+        Ok(())
+    }
+}
+
+/// Cold launch from Finder must show a visible Sani interface (RC-01). We wait
+/// briefly for React to report both windows ready, then reveal; if the frontend
+/// never reports ready we reveal anyway (the opaque boot fallback is on screen,
+/// so the user still sees something) and log a clear startup failure.
+fn spawn_cold_launch_reveal(handle: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let start = std::time::Instant::now();
+        let reveal_deadline = std::time::Duration::from_millis(3000);
+        let failure_deadline = std::time::Duration::from_millis(6000);
+        let mut revealed = false;
+        loop {
+            let state = handle.state::<SaniState>();
+            let pill = state.ui_ready_pill.load(Ordering::Relaxed);
+            let panel = state.ui_ready_panel.load(Ordering::Relaxed);
+            let elapsed = start.elapsed();
+
+            if !revealed && ((pill && panel) || elapsed >= reveal_deadline) {
+                if pill && panel {
+                    log::info!("[ui-boot] cold-launch reveal: both UIs ready in {elapsed:?}");
+                } else {
+                    log::warn!("[ui-boot] cold-launch reveal after timeout (pill_ready={pill} panel_ready={panel})");
+                }
+                windows::show_overlays(&handle);
+                revealed = true;
+                {
+                    let h = handle.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(700));
+                        snapshot::snapshot_overlays(&h, "revealed");
+                    });
+                }
+            }
+
+            if elapsed >= failure_deadline {
+                if !pill {
+                    log::error!("[ui-boot] STARTUP FAILURE: pill window never emitted pill-ui-ready within 6s (React mount or asset load failed)");
+                }
+                if !panel {
+                    log::error!("[ui-boot] STARTUP FAILURE: panel window never emitted panel-ui-ready within 6s (React mount or asset load failed)");
+                }
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    });
 }
 
 fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -140,6 +283,7 @@ struct AppStateOut {
     stt_model: String,
     agent_online: Option<bool>,
     partial: String,
+    mic_permission: String,
 }
 
 #[tauri::command]
@@ -160,6 +304,7 @@ fn get_state(app: tauri::AppHandle) -> AppStateOut {
         stt_model,
         agent_online: None,
         partial,
+        mic_permission: permissions::status().as_str().to_string(),
     }
 }
 
@@ -263,6 +408,26 @@ fn escape_cmd(app: tauri::AppHandle) {
     app_state::handle_escape(&app);
 }
 
+/// Hide the panel without destroying it (replaces the browser window.close()).
+#[tauri::command]
+fn hide_panel(app: tauri::AppHandle) {
+    windows::hide_panel(&app);
+}
+
+/// Show/hide the panel from the pill's transcript button. Hiding is always
+/// reversible and never destroys the webview.
+#[tauri::command]
+fn toggle_panel(app: tauri::AppHandle) {
+    match app.get_webview_window(windows::PANEL_LABEL) {
+        Some(w) if w.is_visible().unwrap_or(false) => windows::hide_panel(&app),
+        _ => {
+            if let Err(err) = windows::show_panel(&app) {
+                log::warn!("could not show the panel: {err}");
+            }
+        }
+    }
+}
+
 #[tauri::command]
 fn list_conversations(app: tauri::AppHandle) -> Result<Vec<history::Conversation>, String> {
     app_state::history(&app).list_conversations()
@@ -335,4 +500,33 @@ fn panel_ready(app: tauri::AppHandle) {
 #[tauri::command]
 async fn agent_health(app: tauri::AppHandle) -> bool {
     agent::health(&app).await
+}
+
+/// Current macOS microphone authorization state (never triggers a prompt).
+#[tauri::command]
+fn mic_permission_state() -> String {
+    permissions::status().as_str().to_string()
+}
+
+/// Kick the system microphone prompt when the state is NotDetermined. Returns
+/// the state at call time; the frontend polls `mic_permission_state` for the
+/// user's decision (the prompt is answered asynchronously).
+#[tauri::command]
+fn request_mic_permission() -> String {
+    if matches!(permissions::status(), permissions::MicPermission::NotDetermined) {
+        permissions::request();
+    }
+    permissions::status().as_str().to_string()
+}
+
+/// Open System Settings › Privacy & Security › Microphone so a denied user has
+/// an actionable path back (RC-04).
+#[tauri::command]
+fn open_mic_settings() {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+            .spawn();
+    }
 }

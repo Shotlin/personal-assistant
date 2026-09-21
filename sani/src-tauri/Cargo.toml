@@ -9,6 +9,9 @@ rust-version = "1.77"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[target.'cfg(target_os = "macos")'.build-dependencies]
+cc = "1.4"
+
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-global-shortcut = "2"
@@ -25,6 +28,11 @@ parking_lot = "0.12"
 log = "0.4"
 env_logger = "0.11"
 window-vibrancy = "0.5"
+
+# Dev-only WebView inspector: `npm run tauri -- dev --features devtools`
+# (then SANI_DEVTOOLS=pill,panel opens it on window creation).
+[features]
+devtools = ["tauri/devtools"]
 
 [profile.release]
 strip = true

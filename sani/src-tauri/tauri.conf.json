@@ -27,6 +27,7 @@
       "icons/icon.ico"
     ],
     "resources": ["python/sani_stt.py"],
+    "externalBin": ["binaries/sani-stt"],
     "macOS": {
       "minimumSystemVersion": "12.0",
       "infoPlist": "Info.plist"
