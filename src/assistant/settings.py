@@ -81,6 +81,20 @@ class Settings(BaseSettings):
     # the general agent exactly as before WP6.
     compact_planner_enabled: bool = False
 
+    # Velo (standalone quick-control agent: JEV decision engine + CUA driver).
+    # Opt-in flag: the gateway runtime never consults these; only
+    # scripts/run_velo.py does, and it fails closed when disabled.
+    velo_enabled: bool = False
+    typesafe_api_key: str = ""
+    velo_jev_model: str = "jev-latest"
+    velo_max_steps: int = 20
+    velo_max_runtime_seconds: int = 120
+    velo_recent_history_steps: int = 5
+    # Tunable via env but not advertised in .env.example; tune only from
+    # real testing (Velo spec section 14).
+    velo_max_same_action_repeats: int = 2
+    velo_max_consecutive_failed_actions: int = 2
+
     # Agent Designer (frozen plan v5.1, C2 + Safety note 1). Default false:
     # the legacy Phase-1 path is the rollback boundary. Designer-only
     # settings below are validated ONLY when this is true; missing or
@@ -128,6 +142,36 @@ class Settings(BaseSettings):
             errors.append(
                 f"STATUS_QUIET_SECONDS must be > 0, got {self.status_quiet_seconds}"
             )
+
+        # Velo limits are validated only when Velo is enabled: a flag-off
+        # gateway never fails because of Velo-specific values.
+        if self.velo_enabled:
+            if not self.typesafe_api_key:
+                errors.append(
+                    "VELO_ENABLED=true requires TYPESAFE_API_KEY "
+                    "(real JEV/TypeSafe key in the local .env only; "
+                    "OPENAI_API_KEY is never used by Velo)"
+                )
+            if self.velo_max_steps <= 0:
+                errors.append(f"VELO_MAX_STEPS must be > 0, got {self.velo_max_steps}")
+            if self.velo_max_runtime_seconds <= 0:
+                errors.append(
+                    f"VELO_MAX_RUNTIME_SECONDS must be > 0, got {self.velo_max_runtime_seconds}"
+                )
+            if self.velo_recent_history_steps < 1:
+                errors.append(
+                    f"VELO_RECENT_HISTORY_STEPS must be >= 1, got {self.velo_recent_history_steps}"
+                )
+            if self.velo_max_same_action_repeats < 1:
+                errors.append(
+                    f"VELO_MAX_SAME_ACTION_REPEATS must be >= 1, "
+                    f"got {self.velo_max_same_action_repeats}"
+                )
+            if self.velo_max_consecutive_failed_actions < 1:
+                errors.append(
+                    f"VELO_MAX_CONSECUTIVE_FAILED_ACTIONS must be >= 1, "
+                    f"got {self.velo_max_consecutive_failed_actions}"
+                )
 
         if self.model_provider not in SUPPORTED_MODEL_PROVIDERS:
             errors.append(
