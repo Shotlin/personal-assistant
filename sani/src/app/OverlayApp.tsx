@@ -131,6 +131,8 @@ export default function OverlayApp() {
       // One turn at a time: while the agent works, the button cancels it.
       pressEscape();
     } else if (active || state === "preparing") {
+      // "Stop listening" commits what was heard rather than discarding it;
+      // Esc is the only path that throws the utterance away.
       stopListening();
     } else {
       startListening();
@@ -197,7 +199,7 @@ export default function OverlayApp() {
             <button
               className={`pill-mic ${state}`}
               onClick={onMicClick}
-              aria-label={active || working ? "Stop" : "Start listening"}
+              aria-label={working ? "Stop" : active || state === "preparing" ? "Finish" : "Start listening"}
             >
               {working ? (
                 <span className="mic-spinner" />

@@ -38,7 +38,7 @@ fn main() {
         .manage(hotkey::HotkeyState::default())
         .setup(|app| {
             let handle = app.handle().clone();
-            init_logging(handle.path().app_log_dir().ok());
+            init_logging(log_dir(&handle));
 
             // No dock icon: Sani is an overlay, reachable via hotkey/tray and
             // (on macOS) the app-reopen event handled in run() below.
@@ -153,6 +153,12 @@ fn main() {
             #[cfg(not(target_os = "macos"))]
             let _ = (app_handle, event);
         });
+}
+
+/// Where Sani writes its logs. Shared with the STT sidecar so the Python
+/// traceback lands next to the app log instead of vanishing.
+pub(crate) fn log_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_log_dir().ok()
 }
 
 /// Logs go to stderr *and* to `~/Library/Logs/app.sani.local/sani.log`, because
@@ -398,9 +404,12 @@ fn start_listening_cmd(app: tauri::AppHandle) {
     app_state::start_listening(&app);
 }
 
+/// The pill's stop control. Named "stop" on the wire for compatibility with the
+/// already-shipped UI, but the semantic is Finish: commit what was heard rather
+/// than discard it. Esc (`escape_cmd`) remains the discard path.
 #[tauri::command]
 fn stop_listening_cmd(app: tauri::AppHandle) {
-    app_state::stop_listening(&app);
+    app_state::finish_listening(&app);
 }
 
 #[tauri::command]

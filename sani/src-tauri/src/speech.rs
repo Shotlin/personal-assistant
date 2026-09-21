@@ -17,6 +17,7 @@ use tauri::{AppHandle, Emitter};
 use crate::settings::stt_python_path;
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)] // fields are read selectively per event kind
 pub struct SttEvent {
     #[serde(rename = "type")]
     pub kind: String,
@@ -28,6 +29,26 @@ pub struct SttEvent {
     pub model: String,
     #[serde(default)]
     pub progress: f64,
+    /// Why a `note` was emitted: segment / possible_end / resumed / commit /
+    /// suppressed-filler / vad-unavailable ...
+    #[serde(default)]
+    pub reason: String,
+    /// Completed segments in the pending user turn.
+    #[serde(default)]
+    pub segments: u32,
+    #[serde(default)]
+    pub chars: u32,
+    /// The sidecar's commit-timer generation, for cancelling a stale commit.
+    #[serde(default)]
+    pub gen: u64,
+    /// Measured end-of-speech -> commit gap, in ms. The tuning datum.
+    #[serde(default)]
+    pub silence_ms: u32,
+    #[serde(default)]
+    pub vad: f64,
+    /// Which model produced this (`silero-v5` / `rms-fallback`).
+    #[serde(default)]
+    pub vad_model: String,
 }
 
 pub struct SpeechHandle {
@@ -109,9 +130,28 @@ fn packaged_sidecar() -> Option<std::path::PathBuf> {
     None
 }
 
+/// Sidecar stderr goes to its own log file beside `sani.log`.
+///
+/// `Stdio::null()` made this feature undebuggable: `moonshine_voice` swallows
+/// listener exceptions and prints them to stderr, so a broken VAD tensor or a
+/// panicking callback produced no evidence at all.
+fn sidecar_stderr(app: &AppHandle) -> Stdio {
+    match crate::log_dir(app).and_then(|dir| {
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("sani-stt.log"))
+            .ok()
+    }) {
+        Some(file) => Stdio::from(file),
+        None => Stdio::null(),
+    }
+}
+
 /// Spawn the sidecar and wire its JSON events to Tauri. Returns `Err` with a
 /// user-presentable reason when the STT environment is not set up.
-pub fn start(app: AppHandle, model: &str) -> Result<Arc<SpeechHandle>, String> {
+pub fn start(app: AppHandle, model: &str, turn_end_ms: u32) -> Result<Arc<SpeechHandle>, String> {
     // Prefer the packaged sidecar; fall back to the dev venv + script so
     // `tauri dev` inside the repository keeps working.
     let (program, lead_args) = match packaged_sidecar() {
@@ -137,9 +177,11 @@ pub fn start(app: AppHandle, model: &str) -> Result<Arc<SpeechHandle>, String> {
         .arg(model)
         .arg("--update-interval")
         .arg("0.25")
+        .arg("--turn-end-ms")
+        .arg(turn_end_ms.to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(sidecar_stderr(&app))
         .spawn()
         .map_err(|e| format!("STT_SPAWN_FAILED: {e}"))?;
 
@@ -170,7 +212,11 @@ pub fn start(app: AppHandle, model: &str) -> Result<Arc<SpeechHandle>, String> {
             };
             match event.kind.as_str() {
                 "ready" => {
-                    log::info!("stt sidecar ready (model={})", event.model);
+                    log::info!(
+                        "stt sidecar ready (model={} vad={})",
+                        event.model,
+                        if event.vad_model.is_empty() { "unknown" } else { &event.vad_model }
+                    );
                     ready.store(true, Ordering::Relaxed);
                     let _ = app.emit("sani://stt-status", "ready");
                     // FIX-05: only now may a pending listen attempt open the
@@ -195,7 +241,8 @@ pub fn start(app: AppHandle, model: &str) -> Result<Arc<SpeechHandle>, String> {
                     log::error!("stt sidecar error: {}", event.message);
                     let _ = app.emit("sani://stt-error", event.message);
                 }
-                _ => {}
+                "note" => crate::app_state::on_stt_note(&app, &event),
+                other => log::debug!("[stt] unhandled sidecar event kind={other}"),
             }
         }
         ready.store(false, Ordering::Relaxed);

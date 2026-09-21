@@ -160,7 +160,9 @@ pub fn mark_ui_ready(app: &AppHandle, which: &str) {
 
 pub fn toggle_listening(app: &AppHandle) {
     match current_state(app) {
-        UiState::Listening | UiState::Finalizing | UiState::Preparing => stop_listening(app),
+        // Tapping the mic while listening means "I have finished speaking".
+        UiState::Listening | UiState::Preparing => finish_listening(app),
+        UiState::Finalizing => cancel_listening(app),
         _ => start_listening(app),
     }
 }
@@ -244,10 +246,12 @@ fn begin_capture(app: &AppHandle) {
         return;
     }
 
-    // Speech engine: load once, keep warm.
+    // Speech engine: load once, keep warm. Because the process is reused across
+    // turns, `--turn-end-ms` is fixed at spawn — changing it needs a restart.
     let model = state.settings.read().stt_model.clone();
+    let turn_end_ms = settings::stt_turn_end_ms(&state.settings.read());
     if state.speech.lock().is_none() {
-        match speech::start(app.clone(), &model) {
+        match speech::start(app.clone(), &model, turn_end_ms) {
             Ok(handle) => *state.speech.lock() = Some(handle),
             Err(err) => {
                 let hint = speech::setup_hint(&err);
@@ -364,7 +368,43 @@ pub fn on_stt_ready(app: &AppHandle) {
     }
 }
 
-pub fn stop_listening(app: &AppHandle) {
+/// Stop / Finish: commit what the user actually said, immediately.
+///
+/// Pressing the mic or the hotkey is an explicit declaration that the turn is
+/// over, so it must not wait out the silence deadline. The state machine is
+/// deliberately left alone: the sidecar still owes us exactly one `final`, and
+/// `on_final` remains the only voice->agent handoff.
+pub fn finish_listening(app: &AppHandle) {
+    let state = app.state::<SaniState>();
+    match current_state(app) {
+        // Already committed and in flight — nothing left to finish.
+        UiState::Finalizing => cancel_listening(app),
+        UiState::Listening | UiState::Preparing => {
+            if let Some(audio) = state.audio.lock().as_ref() {
+                audio.gate.store(false, Ordering::Relaxed);
+            }
+            if let Some(speech) = state.speech.lock().as_ref() {
+                speech.control(&json!({"cmd": "flush"}));
+            }
+            // A flush that never produced a final must not strand us in
+            // Listening; once `final` arrives the state moves on and this
+            // check no longer matches.
+            let app2 = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(1500));
+                if current_state(&app2) != UiState::Listening {
+                    return;
+                }
+                log::warn!("[turn] flush produced no final within 1500ms; returning to idle");
+                cancel_listening(&app2);
+            });
+        }
+        _ => {}
+    }
+}
+
+/// Esc / Cancel: throw the pending utterance away. Never sends to the agent.
+pub fn cancel_listening(app: &AppHandle) {
     let state = app.state::<SaniState>();
     // Cancel any in-flight prepare and invalidate a pending finalization so a
     // delayed begin_turn cannot still fire (FIX-02).
@@ -391,25 +431,82 @@ pub fn on_partial(app: &AppHandle, text: String) {
     let _ = app.emit("sani://partial", text);
 }
 
+/// Diagnostics from the sidecar's turn committer.
+///
+/// Log-only, by contract: `on_final` remains the single voice->agent handoff,
+/// so a `note` must never touch the state machine, the audio gate or `turn_gen`.
+pub fn on_stt_note(app: &AppHandle, ev: &crate::speech::SttEvent) {
+    let _ = app;
+    match ev.reason.as_str() {
+        "segment" => {
+            log::info!("[stt] segment completed chars={} segments={}", ev.chars, ev.segments)
+        }
+        "possible_end" => log::info!(
+            "[turn] possible end silence_ms={} gen={} segments={}",
+            ev.silence_ms,
+            ev.gen,
+            ev.segments
+        ),
+        "resumed" => log::info!(
+            "[turn] speech resumed — commit cancelled gen={} gap_ms={}",
+            ev.gen,
+            ev.silence_ms
+        ),
+        "commit" => log::info!(
+            "[turn] committed segments={} chars={} gen={} silence_ms={} cause={}",
+            ev.segments,
+            ev.chars,
+            ev.gen,
+            ev.silence_ms,
+            ev.message
+        ),
+        "suppressed-filler" => log::info!(
+            "[turn] suppressed filler-only candidate chars={}",
+            ev.chars
+        ),
+        "vad-unavailable" => log::warn!("[stt] VAD unavailable — endpointing on RMS: {}", ev.message),
+        "rms-rescue" => log::warn!(
+            "[turn] committed without VAD speech evidence (low-confidence VAD) chars={}",
+            ev.chars
+        ),
+        "flush-empty" => log::info!("[turn] flush requested with nothing pending"),
+        "unknown-cmd" => log::warn!("[stt] sidecar received an unknown control command: {}", ev.message),
+        "deprecated-flag" => log::debug!("[stt] deprecated sidecar flag: {}", ev.message),
+        other => log::debug!("[stt] note reason={other} message={}", ev.message),
+    }
+}
+
 /// A final transcript arrived from the speech engine.
+///
+/// This is the only voice->agent handoff in the product. The state check runs
+/// before every side effect on purpose: closing the gate and then reopening it
+/// on the empty-text path used to let audio flow outside a turn whenever a late
+/// final arrived while Idle or Working.
 pub fn on_final(app: &AppHandle, text: String) {
-    let trimmed = text.trim().to_string();
     let state = app.state::<SaniState>();
+    let trimmed = text.trim().to_string();
+    // A final only counts while we are actually listening.
+    if current_state(app) != UiState::Listening {
+        log::info!(
+            "[turn] late final dropped state={} chars={}",
+            current_state(app).as_str(),
+            trimmed.chars().count()
+        );
+        return;
+    }
     if let Some(audio) = state.audio.lock().as_ref() {
         audio.gate.store(false, Ordering::Relaxed);
     }
     if trimmed.is_empty() {
-        // Never send empty text: keep listening.
+        // Never send empty text: keep listening. Safe to reopen now that the
+        // Listening check above has passed.
         if let Some(speech) = state.speech.lock().as_ref() {
             speech.control(&json!({"cmd": "discard"}));
         }
         if let Some(audio) = state.audio.lock().as_ref() {
             audio.gate.store(true, Ordering::Relaxed);
         }
-        return;
-    }
-    // A final only counts while we are actually listening.
-    if current_state(app) != UiState::Listening {
+        log::info!("[turn] empty final; discarding and continuing to listen");
         return;
     }
 
@@ -422,6 +519,14 @@ pub fn on_final(app: &AppHandle, text: String) {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(250));
         begin_turn_if_current(&app_handle, my_gen, trimmed);
+        // `begin_turn_if_current` can return without changing anything, and
+        // nothing else ever leaves Finalizing — so this is the only escape from
+        // a permanently stuck Finalizing state.
+        let still_ours = app_handle.state::<SaniState>().turn_gen.load(Ordering::Relaxed) == my_gen;
+        if still_ours && current_state(&app_handle) == UiState::Finalizing {
+            log::error!("[turn] stuck in Finalizing; forcing error");
+            set_state(&app_handle, UiState::Error);
+        }
     });
 }
 
@@ -435,6 +540,7 @@ fn begin_turn_if_current(app: &AppHandle, gen: u64, final_text: String) {
         return;
     }
     if current_state(app) != UiState::Finalizing {
+        log::warn!("[turn] finalization skipped state={}", current_state(app).as_str());
         return;
     }
     begin_turn(app, final_text);
@@ -570,7 +676,8 @@ pub fn agent_finished(
 
 pub fn handle_escape(app: &AppHandle) {
     match current_state(app) {
-        UiState::Listening | UiState::Finalizing | UiState::Preparing => stop_listening(app),
+        // Esc always means "forget what I said", never "send it".
+        UiState::Listening | UiState::Finalizing | UiState::Preparing => cancel_listening(app),
         UiState::Working => {
             let state = app.state::<SaniState>();
             let guard_lock = state.run.lock();

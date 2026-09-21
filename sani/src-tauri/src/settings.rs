@@ -34,6 +34,10 @@ pub struct Settings {
     pub theme: String,
     #[serde(default = "default_stt_model")]
     pub stt_model: String,
+    /// Silence that closes a user turn. Speech resuming inside this window
+    /// cancels the commit and continues the same utterance.
+    #[serde(default = "default_stt_turn_end_ms")]
+    pub stt_turn_end_ms: u32,
     /// Override path to the Python interpreter that runs the STT sidecar.
     #[serde(default)]
     pub stt_python: String,
@@ -53,6 +57,20 @@ fn default_theme() -> String {
 }
 fn default_stt_model() -> String {
     "small-streaming-en".into()
+}
+fn default_stt_turn_end_ms() -> u32 {
+    1400
+}
+
+/// Effective turn-end silence: `$SANI_STT_TURN_END_MS` overrides the stored
+/// setting, which overrides the default. Clamped so a mistyped value cannot
+/// make Sani either jumpy or unresponsive.
+pub fn stt_turn_end_ms(settings: &Settings) -> u32 {
+    let raw = std::env::var("SANI_STT_TURN_END_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .unwrap_or(settings.stt_turn_end_ms);
+    raw.clamp(600, 5000)
 }
 
 impl Default for Settings {
