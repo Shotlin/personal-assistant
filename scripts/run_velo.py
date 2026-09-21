@@ -84,11 +84,7 @@ async def main(argv: list[str] | None = None) -> int:
             recent_history_steps=settings.velo_recent_history_steps,
         )
         allowed_apps = allowed_apps_from_manifest(settings.cua_capability_manifest_path)
-        jev = JevDecisionEngine(
-            api_key=settings.typesafe_api_key,
-            model=settings.velo_jev_model,
-            timeout=30.0,
-        )
+        jev = JevDecisionEngine.from_settings(settings, timeout=30.0)
     except Exception as exc:  # noqa: BLE001 -- config errors are terminal
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2

@@ -1,11 +1,22 @@
-"""JEV decision engine -- the ONLY module that knows the TypeSafe API.
+"""JEV decision engine -- the ONLY module that knows the JEV provider API.
 
 Pinned integration (tested 2026-09-22): ``langchain-typesafe==0.0.1a3``
 (the LangChain integration from the "Building a harness with JEV" blog
 post), whose ``TypeSafeClassifier`` is a LangChain ``Runnable`` over the
-TypeSafe System One API (model ``jev-latest``). One request carries a
-``Choice`` question (which constrained action to take) and three ``Noul``
-questions (objective complete? ask the user? impossible to continue?).
+TypeSafe System One contract. One request carries a ``Choice`` question
+(which constrained action to take) and three ``Noul`` questions
+(objective complete? ask the user? impossible to continue?).
+
+Provider resolution (Sani master doc "OpenRouter only"): the SAME
+System One contract is reachable two ways --
+- ``OPENROUTER_API_KEY`` -> ``https://openrouter.ai/api/v1/systemone``
+  with model ``~typesafe/jev-latest`` (one-key product story; the model
+  route was not yet publicly listed on 2026-09-22, so verify on first use);
+- ``TYPESAFE_API_KEY`` -> ``https://api.typesafe.ai`` with model
+  ``jev-latest`` (verified working end to end).
+``VELO_TYPESAFE_BASE_URL`` overrides both for any System One-compatible
+proxy. Provider-specific logic lives ONLY here; the Velo agent loop never
+changes with the provider.
 
 JEV is a classifier, not a text generator: every decision option below is
 built MECHANICALLY from bounded evidence -- observed element tokens,
@@ -14,7 +25,8 @@ table, and the capability-manifest app allowlist. JEV selects among them
 with probabilities; it can never emit shell commands, code, paths, or any
 action outside the Velo schema. Malformed or out-of-contract answers raise
 :class:`JevContractError` and the run fails closed -- never a fallback to
-another model (Velo spec sections 2, 9, 15).
+a free-form LLM, the Deep Agent, or any other model (Velo spec sections
+2, 9, 15).
 """
 
 from __future__ import annotations
@@ -23,7 +35,7 @@ import logging
 import re
 import warnings
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from assistant.velo.types import (
     JevContractError,
@@ -34,6 +46,9 @@ from assistant.velo.types import (
     VeloObjective,
     VeloObservation,
 )
+
+if TYPE_CHECKING:  # pragma: no cover
+    from assistant.settings import Settings
 
 logger = logging.getLogger("assistant.velo.jev")
 
@@ -95,14 +110,89 @@ class JevAnswers:
     confidence: float
 
 
+#: OpenRouter serves the native System One contract (POST /api/v1/systemone,
+#: verified to route on 2026-09-22). The typesafe model route was not yet in
+#: the public catalog that day -- re-verify on first live use.
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_JEV_MODEL = "~typesafe/jev-latest"
+
+#: TypeSafe's direct model route and the default VELO_JEV_MODEL value.
+DIRECT_JEV_MODEL = "jev-latest"
+
+
+@dataclass(frozen=True)
+class JevProvider:
+    """Resolved JEV endpoint: one credential, one System One base URL."""
+
+    api_key: str
+    base_url: str  # "" = the pinned package default (api.typesafe.ai)
+    model: str
+    source: str  # typesafe_direct | openrouter | manual_override
+
+
+def resolve_jev_provider(settings: Settings) -> JevProvider:
+    """Pick the JEV endpoint from settings (Sani one-key model).
+
+    Precedence: explicit ``VELO_TYPESAFE_BASE_URL`` override, then a direct
+    TypeSafe key (verified working), then the OpenRouter key. Exactly one
+    external credential is required -- the Sani product story uses
+    ``OPENROUTER_API_KEY`` alone for both the Deep Agent and JEV.
+    """
+    key = settings.typesafe_api_key or settings.openrouter_api_key
+    if settings.velo_typesafe_base_url:
+        if not key:
+            raise JevServiceError(
+                "VELO_TYPESAFE_BASE_URL is set but no credential was found; "
+                "set TYPESAFE_API_KEY or OPENROUTER_API_KEY"
+            )
+        return JevProvider(
+            api_key=key,
+            base_url=settings.velo_typesafe_base_url,
+            model=settings.velo_jev_model,
+            source="manual_override",
+        )
+    if settings.typesafe_api_key:
+        return JevProvider(
+            api_key=settings.typesafe_api_key,
+            base_url="",
+            model=settings.velo_jev_model,
+            source="typesafe_direct",
+        )
+    if settings.openrouter_api_key:
+        # The default direct-route name is not a valid OpenRouter model id;
+        # map it to OpenRouter's typesafe namespace.
+        model = settings.velo_jev_model
+        if model == DIRECT_JEV_MODEL:
+            model = OPENROUTER_JEV_MODEL
+        return JevProvider(
+            api_key=settings.openrouter_api_key,
+            base_url=OPENROUTER_BASE_URL,
+            model=model,
+            source="openrouter",
+        )
+    raise JevServiceError(
+        "No JEV credential configured: Velo requires TYPESAFE_API_KEY "
+        "(direct api.typesafe.ai) or OPENROUTER_API_KEY (OpenRouter "
+        "System One surface); a free-form LLM is never a fallback"
+    )
+
+
 class JevDecisionEngine:
     """Compact state in, one validated :class:`VeloDecision` out."""
 
-    def __init__(self, *, api_key: str, model: str = "jev-latest", timeout: float = 30.0) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str = "jev-latest",
+        timeout: float = 30.0,
+        base_url: str = "",
+    ) -> None:
         if not api_key:
             raise JevServiceError(
-                "TYPESAFE_API_KEY is empty; Velo Phase 1 uses real JEV/TypeSafe "
-                "only and never falls back to OpenAI/OpenRouter or the Deep Agent"
+                "JEV credential is empty; Velo uses the structured System One "
+                "decision API only and never falls back to a free-form LLM, "
+                "the Deep Agent, or any other model"
             )
         from langchain_core._api import LangChainBetaWarning
 
@@ -110,8 +200,33 @@ class JevDecisionEngine:
             # The pinned 0.0.1a3 integration is marked beta upstream; the
             # contract tests pin the exact surface Velo depends on.
             warnings.filterwarnings("ignore", category=LangChainBetaWarning)
-            self._classifier = TypeSafeClassifier(model=model, api_key=api_key, timeout=timeout)
+            classifier_kwargs: dict[str, Any] = {
+                "model": model,
+                "api_key": api_key,
+                "timeout": timeout,
+            }
+            if base_url:
+                # Only a System One-compatible root (Noul/Choice/Score over
+                # /v1/systemone); an OpenAI chat-completions surface cannot
+                # serve JEV decisions.
+                classifier_kwargs["base_url"] = base_url
+            self._classifier = TypeSafeClassifier(**classifier_kwargs)
         self.model = model
+
+    @classmethod
+    def from_settings(cls, settings: Settings, *, timeout: float = 30.0) -> JevDecisionEngine:
+        """Build the engine from the resolved provider (Sani Stage B)."""
+        provider = resolve_jev_provider(settings)
+        logger.info(
+            "velo_jev_provider_resolved",
+            extra={"event": "velo_jev_provider_resolved", "source": provider.source},
+        )
+        return cls(
+            api_key=provider.api_key,
+            model=provider.model,
+            timeout=timeout,
+            base_url=provider.base_url,
+        )
 
     async def decide(
         self,

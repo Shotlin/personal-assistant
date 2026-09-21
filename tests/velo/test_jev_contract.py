@@ -10,9 +10,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from assistant.settings import Settings, SettingsError
 from assistant.velo.jev import (
+    OPENROUTER_BASE_URL,
     JevAnswers,
     JevDecisionEngine,
+    resolve_jev_provider,
     text_candidates_from_objective,
 )
 from assistant.velo.types import (
@@ -325,9 +328,114 @@ async def test_service_errors_map_to_jev_service_error(
         )
 
 
-async def test_engine_requires_typesafe_key_not_openai_key() -> None:
-    with pytest.raises(JevServiceError, match="TYPESAFE_API_KEY"):
+async def test_engine_requires_a_jev_credential() -> None:
+    with pytest.raises(JevServiceError, match="credential is empty"):
         JevDecisionEngine(api_key="")
+
+
+def _settings(**overrides: object) -> Settings:
+    """Settings valid apart from Velo fields (isolates Velo validation)."""
+    base: dict[str, object] = {
+        "app_env": "development",
+        "model_provider": "generic_openai_compatible",
+        "model_base_url": "http://127.0.0.1:1",
+        "model_api_key": "k",
+        "model_name": "m",
+        "velo_enabled": True,
+        "typesafe_api_key": "",
+        "openrouter_api_key": "",
+    }
+    base.update(overrides)
+    return Settings(**base)
+
+
+def test_provider_resolution_typesafe_direct() -> None:
+    provider = resolve_jev_provider(_settings(typesafe_api_key="ts-key"))
+    assert provider.source == "typesafe_direct"
+    assert provider.base_url == ""
+    assert provider.model == "jev-latest"
+    assert provider.api_key == "ts-key"
+
+
+def test_provider_resolution_openrouter_one_key_story() -> None:
+    provider = resolve_jev_provider(_settings(openrouter_api_key="sk-or-test"))
+    assert provider.source == "openrouter"
+    assert provider.base_url == OPENROUTER_BASE_URL
+    assert provider.model == "~typesafe/jev-latest"
+    assert provider.api_key == "sk-or-test"
+
+
+def test_provider_resolution_openrouter_keeps_explicit_model_pin() -> None:
+    provider = resolve_jev_provider(
+        _settings(openrouter_api_key="sk-or-test", velo_jev_model="jev-1.13")
+    )
+    assert provider.model == "jev-1.13"
+
+
+def test_provider_resolution_prefers_direct_typeafe_when_both_present() -> None:
+    provider = resolve_jev_provider(
+        _settings(typesafe_api_key="ts-key", openrouter_api_key="sk-or-test")
+    )
+    assert provider.source == "typesafe_direct"
+
+
+def test_provider_resolution_manual_override_uses_any_credential() -> None:
+    provider = resolve_jev_provider(
+        _settings(
+            velo_typesafe_base_url="https://systemone-proxy.example.ai/v1",
+            openrouter_api_key="sk-or-test",
+            velo_jev_model="jev-1.13",
+        )
+    )
+    assert provider.source == "manual_override"
+    assert provider.base_url == "https://systemone-proxy.example.ai/v1"
+    assert provider.api_key == "sk-or-test"
+    assert provider.model == "jev-1.13"
+
+
+def test_provider_resolution_without_any_credential_fails_closed() -> None:
+    # velo_enabled=False lets Settings construct; the resolver still refuses.
+    with pytest.raises(JevServiceError, match="OPENROUTER_API_KEY"):
+        resolve_jev_provider(_settings(velo_enabled=False))
+
+
+def test_from_settings_plumbs_the_openrouter_provider() -> None:
+    engine = JevDecisionEngine.from_settings(
+        _settings(openrouter_api_key="sk-or-test"), timeout=15.0
+    )
+    assert engine._classifier.model == "~typesafe/jev-latest"
+    assert engine._classifier.base_url == OPENROUTER_BASE_URL
+
+
+def test_settings_accept_velo_enabled_with_openrouter_key_only() -> None:
+    settings = Settings(
+        app_env="development",
+        model_provider="openrouter",
+        openrouter_api_key="sk-or-test",
+        velo_enabled=True,
+        typesafe_api_key="",
+    )
+    assert settings.velo_enabled
+
+
+def test_settings_reject_velo_enabled_without_any_jev_credential() -> None:
+    # The helper pins typesafe_api_key="" and openrouter_api_key="" so the
+    # local .env cannot satisfy the credential check implicitly.
+    with pytest.raises(SettingsError, match="OPENROUTER_API_KEY"):
+        _settings()
+
+
+def test_base_url_and_model_pin_are_plumbed_to_the_classifier() -> None:
+    engine = JevDecisionEngine(
+        api_key="test-key",
+        model="jev-1.13",
+        base_url="https://systemone-proxy.example.ai/v1",
+    )
+    assert engine._classifier.model == "jev-1.13"
+    assert engine._classifier.base_url == "https://systemone-proxy.example.ai/v1"
+
+    default = JevDecisionEngine(api_key="test-key")
+    assert default._classifier.base_url == "https://api.typesafe.ai"
 
 
 async def test_choice_question_only_offers_schema_options(

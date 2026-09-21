@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     velo_enabled: bool = False
     typesafe_api_key: str = ""
     velo_jev_model: str = "jev-latest"
+    # Optional override for the System One API root. Empty = the official
+    # https://api.typesafe.ai. Useful only for a proxy/gateway that speaks
+    # the native System One contract (Noul/Choice/Score) -- OpenRouter's
+    # OpenAI-compatible chat API cannot serve JEV decisions.
+    velo_typesafe_base_url: str = ""
     velo_max_steps: int = 20
     velo_max_runtime_seconds: int = 120
     velo_recent_history_steps: int = 5
@@ -109,7 +114,6 @@ class Settings(BaseSettings):
     # (SSO Mode C). Empty disables SSO entirely — the standalone Designer
     # login flow is then the only path.
     designer_proxy_key: str = ""
-
 
     @property
     def is_production(self) -> bool:
@@ -139,21 +143,28 @@ class Settings(BaseSettings):
         if self.model_max_tokens < 200:
             errors.append(f"MODEL_MAX_TOKENS must be >= 200, got {self.model_max_tokens}")
         if self.status_quiet_seconds <= 0:
-            errors.append(
-                f"STATUS_QUIET_SECONDS must be > 0, got {self.status_quiet_seconds}"
-            )
+            errors.append(f"STATUS_QUIET_SECONDS must be > 0, got {self.status_quiet_seconds}")
 
         # Velo limits are validated only when Velo is enabled: a flag-off
-        # gateway never fails because of Velo-specific values.
+        # gateway never fails because of Velo-specific values. One external
+        # credential rule (Sani master doc): OPENROUTER_API_KEY alone drives
+        # the Deep Agent and JEV; a direct TYPESAFE_API_KEY also works.
         if self.velo_enabled:
-            if not self.typesafe_api_key:
+            if not (self.typesafe_api_key or self.openrouter_api_key):
                 errors.append(
-                    "VELO_ENABLED=true requires TYPESAFE_API_KEY "
-                    "(real JEV/TypeSafe key in the local .env only; "
-                    "OPENAI_API_KEY is never used by Velo)"
+                    "VELO_ENABLED=true requires a JEV credential: "
+                    "OPENROUTER_API_KEY (one-key Sani story) or TYPESAFE_API_KEY "
+                    "(direct api.typesafe.ai)"
                 )
             if self.velo_max_steps <= 0:
                 errors.append(f"VELO_MAX_STEPS must be > 0, got {self.velo_max_steps}")
+            if self.velo_typesafe_base_url and not self.velo_typesafe_base_url.startswith(
+                ("http://", "https://")
+            ):
+                errors.append(
+                    "VELO_TYPESAFE_BASE_URL must be an http(s) URL "
+                    f"(got {self.velo_typesafe_base_url!r})"
+                )
             if self.velo_max_runtime_seconds <= 0:
                 errors.append(
                     f"VELO_MAX_RUNTIME_SECONDS must be > 0, got {self.velo_max_runtime_seconds}"
