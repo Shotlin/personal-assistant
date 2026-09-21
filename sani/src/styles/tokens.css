@@ -1,47 +1,91 @@
 :root {
-  /* Base palette — quiet dark glass */
-  --bg: rgba(18, 18, 20, 0.72);
+  /* Base palette — light, translucent macOS-style glass.
+     The fill is deliberately low-opacity; the depth comes from the backdrop
+     filter plus the lit edge and gloss layers, not from a dark wash. */
+  --bg: rgba(28, 30, 38, 0.46);
+  --bg-elevated: rgba(40, 43, 52, 0.38);
   --bg-solid: #121214;
-  --surface: rgba(255, 255, 255, 0.05);
-  --surface-strong: rgba(255, 255, 255, 0.09);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --hairline: rgba(255, 255, 255, 0.06);
-  --gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 42%);
-  --text: #f6f6f8;
-  --text-secondary: #a4a4ad;
-  --text-dim: #71717c;
+  --surface: rgba(255, 255, 255, 0.07);
+  --surface-strong: rgba(255, 255, 255, 0.13);
+  --surface-glass: linear-gradient(
+    158deg,
+    rgba(255, 255, 255, 0.13),
+    rgba(255, 255, 255, 0.03) 46%,
+    rgba(255, 255, 255, 0.07)
+  );
+  --border: rgba(255, 255, 255, 0.13);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --hairline: rgba(255, 255, 255, 0.09);
+  /* Top-lit sheen across the glass, and a diagonal reflective wash. */
+  --gloss: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.17),
+    rgba(255, 255, 255, 0.03) 34%,
+    rgba(255, 255, 255, 0) 58%
+  );
+  --sheen: linear-gradient(
+    118deg,
+    rgba(255, 255, 255, 0.12),
+    rgba(255, 255, 255, 0) 44%
+  );
+  /* The lit edge is what reads as "glass" rather than "dark rectangle". */
+  --edge-lit: inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.05);
+  --text: #f7f7fa;
+  --text-secondary: #adadb8;
+  --text-dim: #7c7c88;
 
   /* Status only */
-  --running: #4f8ef7;
-  --success: #34c77b;
-  --warning: #e6a23c;
-  --error: #f0564f;
+  --running: #5b9bff;
+  --success: #37d487;
+  --warning: #f0ad4e;
+  --error: #ff6a63;
 
   --radius-pill: 999px;
-  --radius-card: 22px;
-  --radius-small: 10px;
+  --radius-card: 24px;
+  --radius-small: 12px;
 
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 3px 12px rgba(0, 0, 0, 0.4);
-  --blur: 34px;
+  --shadow: 0 32px 84px rgba(0, 0, 0, 0.42), 0 4px 18px rgba(0, 0, 0, 0.26);
+  /* Two-stage frosted blur: a tight blur then a wider saturate lift keeps
+     colours vivid instead of collapsing into grey mud. */
+  --blur: 30px;
+  --blur-soft: 12px;
+  --filter: saturate(1.9) brightness(1.08);
 }
 
 :root[data-theme="light"] {
-  --bg: rgba(250, 250, 252, 0.82);
+  --bg: rgba(252, 252, 254, 0.58);
+  --bg-elevated: rgba(255, 255, 255, 0.5);
   --bg-solid: #f8f8fa;
-  --surface: rgba(0, 0, 0, 0.045);
-  --surface-strong: rgba(0, 0, 0, 0.08);
+  --surface: rgba(255, 255, 255, 0.55);
+  --surface-strong: rgba(255, 255, 255, 0.78);
+  --surface-glass: linear-gradient(
+    158deg,
+    rgba(255, 255, 255, 0.85),
+    rgba(255, 255, 255, 0.4) 46%,
+    rgba(255, 255, 255, 0.6)
+  );
   --border: rgba(0, 0, 0, 0.09);
   --border-strong: rgba(0, 0, 0, 0.16);
-  --hairline: rgba(0, 0, 0, 0.07);
-  --gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 42%);
-  --text: #17171b;
-  --text-secondary: #55555e;
-  --text-dim: #8b8b94;
-  --shadow: 0 24px 70px rgba(0, 0, 0, 0.18), 0 3px 12px rgba(0, 0, 0, 0.08);
+  --hairline: rgba(0, 0, 0, 0.08);
+  --gloss: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(255, 255, 255, 0.2) 34%,
+    rgba(255, 255, 255, 0) 58%
+  );
+  --sheen: linear-gradient(118deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 44%);
+  --edge-lit: inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+  --text: #14141a;
+  --text-secondary: #52525c;
+  --text-dim: #86868f;
+  --shadow: 0 32px 84px rgba(0, 0, 0, 0.16), 0 4px 18px rgba(0, 0, 0, 0.08);
+  --filter: saturate(1.7) brightness(1.02);
 }
 
 * {

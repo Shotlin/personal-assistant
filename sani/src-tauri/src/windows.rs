@@ -20,9 +20,9 @@ const PILL_MAX_WIDTH: f64 = 760.0;
 const PANEL_WIDTH: f64 = 524.0;
 const PANEL_MIN_WIDTH: f64 = 500.0;
 const PANEL_MAX_WIDTH: f64 = 640.0;
-const PANEL_HEIGHT_RATIO: f64 = 0.72;
-const PANEL_MIN_HEIGHT: f64 = 520.0;
-const PANEL_MAX_HEIGHT: f64 = 900.0;
+const PANEL_HEIGHT_RATIO: f64 = 0.48;
+const PANEL_MIN_HEIGHT: f64 = 400.0;
+const PANEL_MAX_HEIGHT: f64 = 680.0;
 const PILL_BOTTOM_MARGIN: f64 = 92.0; // above dock/taskbar
 const SCREEN_MARGIN: f64 = 20.0;
 /// The glass card fills its window exactly, so the vibrancy layer — a plain

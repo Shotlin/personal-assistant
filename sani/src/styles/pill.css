@@ -14,10 +14,9 @@
   border-radius: var(--radius-pill);
   background: var(--bg);
   border: 1px solid var(--border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -18px 30px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(var(--blur)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.4);
+  box-shadow: var(--shadow), var(--edge-lit);
+  backdrop-filter: blur(var(--blur)) var(--filter);
+  -webkit-backdrop-filter: blur(var(--blur)) var(--filter);
   display: flex;
   align-items: center;
   gap: 14px;
@@ -25,12 +24,25 @@
   overflow: hidden;
 }
 
+/* Top-lit sheen. */
 .pill::before {
   content: "";
   position: absolute;
   inset: 0;
   background: var(--gloss);
   pointer-events: none;
+  z-index: 0;
+}
+
+/* Diagonal reflective wash — matches the panel's second glass layer. */
+.pill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--sheen);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .pill > * {
@@ -48,22 +60,26 @@
   flex: none;
   padding: 9px 12px 9px 9px;
   border-radius: var(--radius-pill);
-  background: var(--surface);
+  background: var(--surface-glass);
   border: 1px solid var(--border);
+  box-shadow: var(--edge-lit);
   text-align: left;
   color: var(--text);
+  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 .pill-chip:hover {
-  background: var(--surface-strong);
+  background: linear-gradient(158deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08));
+  border-color: var(--border-strong);
 }
 
 .pill-avatar {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--surface-strong);
+  background: var(--surface-glass);
   border: 1px solid var(--border);
+  box-shadow: var(--edge-lit);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -123,15 +139,16 @@
   min-width: 60px;
   height: 44px;
   border-radius: var(--radius-pill);
-  background: rgba(230, 162, 60, 0.12);
-  border: 1px solid rgba(230, 162, 60, 0.4);
-  color: #f0c479;
+  background: linear-gradient(158deg, rgba(240, 173, 78, 0.24), rgba(240, 173, 78, 0.08));
+  border: 1px solid rgba(240, 173, 78, 0.42);
+  box-shadow: var(--edge-lit);
+  color: #ffd191;
   font-size: 12.5px;
   font-weight: 560;
 }
 
 .pill-grant:hover {
-  background: rgba(230, 162, 60, 0.2);
+  background: linear-gradient(158deg, rgba(240, 173, 78, 0.34), rgba(240, 173, 78, 0.14));
 }
 
 /* Mic control */
@@ -140,32 +157,48 @@
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: var(--surface-strong);
+  background: var(--surface-glass);
   border: 1px solid var(--border-strong);
+  box-shadow: var(--edge-lit), 0 6px 18px rgba(0, 0, 0, 0.28);
   color: var(--text);
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  transition: background 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .pill-mic.listening,
 .pill-mic.finalizing {
-  background: rgba(52, 199, 123, 0.14);
-  border-color: rgba(52, 199, 123, 0.4);
-  color: #7fe0ae;
+  background: linear-gradient(
+    158deg,
+    rgba(55, 212, 135, 0.26),
+    rgba(55, 212, 135, 0.07) 48%,
+    rgba(55, 212, 135, 0.16)
+  );
+  border-color: rgba(55, 212, 135, 0.45);
+  color: #92f0c0;
 }
 
 .pill-mic.preparing {
-  background: rgba(230, 162, 60, 0.12);
-  border-color: rgba(230, 162, 60, 0.36);
-  color: #f0c479;
+  background: linear-gradient(
+    158deg,
+    rgba(240, 173, 78, 0.24),
+    rgba(240, 173, 78, 0.06) 48%,
+    rgba(240, 173, 78, 0.15)
+  );
+  border-color: rgba(240, 173, 78, 0.4);
+  color: #ffd191;
 }
 
 .pill-mic.working {
-  background: rgba(79, 142, 247, 0.14);
-  border-color: rgba(79, 142, 247, 0.4);
+  background: linear-gradient(
+    158deg,
+    rgba(91, 155, 255, 0.26),
+    rgba(91, 155, 255, 0.07) 48%,
+    rgba(91, 155, 255, 0.16)
+  );
+  border-color: rgba(91, 155, 255, 0.45);
 }
 
 .mic-ring {
@@ -178,12 +211,12 @@
 
 .pill-mic.listening .mic-ring,
 .pill-mic.finalizing .mic-ring {
-  border-color: rgba(52, 199, 123, 0.35);
+  border-color: rgba(55, 212, 135, 0.4);
   animation: breathe 2.4s ease-in-out infinite;
 }
 
 .pill-mic.working .mic-ring {
-  border-color: rgba(79, 142, 247, 0.3);
+  border-color: rgba(91, 155, 255, 0.35);
   animation: breathe 2.4s ease-in-out infinite;
 }
 
@@ -203,8 +236,8 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid rgba(79, 142, 247, 0.25);
-  border-top-color: #7aa9f8;
+  border: 2px solid rgba(91, 155, 255, 0.28);
+  border-top-color: #9cc2ff;
   animation: spin 0.9s linear infinite;
 }
 
@@ -229,16 +262,19 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--surface);
+  background: var(--surface-glass);
   border: 1px solid var(--border);
+  box-shadow: var(--edge-lit);
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
 
 .pill-icon:hover {
-  background: var(--surface-strong);
+  background: linear-gradient(158deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08));
+  border-color: var(--border-strong);
   color: var(--text);
 }

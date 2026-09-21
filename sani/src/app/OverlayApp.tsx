@@ -32,12 +32,12 @@ const STATE_TEXT: Record<UiState, string> = {
 };
 
 const STATE_COLOR: Record<UiState, string> = {
-  idle: "#34c77b",
-  preparing: "#e6a23c",
-  listening: "#34c77b",
-  finalizing: "#e6a23c",
-  working: "#4f8ef7",
-  error: "#f0564f",
+  idle: "#37d487",
+  preparing: "#f0ad4e",
+  listening: "#37d487",
+  finalizing: "#f0ad4e",
+  working: "#5b9bff",
+  error: "#ff6a63",
 };
 
 /**
@@ -116,8 +116,8 @@ export default function OverlayApp() {
   };
 
   const active = state === "listening" || state === "finalizing";
-  const color = active ? "rgba(244, 244, 246, 0.85)" : "rgba(244, 244, 246, 0.35)";
-  const statusColor = prompt ? "#e6a23c" : STATE_COLOR[state];
+  const color = active ? "rgba(247, 247, 250, 0.88)" : "rgba(247, 247, 250, 0.32)";
+  const statusColor = prompt ? "#f0ad4e" : STATE_COLOR[state];
   const working = state === "working";
   const busy = working || state === "preparing";
   const statusLabel = prompt

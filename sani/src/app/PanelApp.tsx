@@ -19,13 +19,13 @@ import {
   getMessages,
   listConversations,
   panelReady,
-  selectConversation,
   type ActivityEvent,
   type AgentChunk,
   type ChatMessage,
   type Conversation,
   type UiState,
 } from "../lib/tauri";
+import { ACTIVE_AGENT, OTHER_AGENTS } from "../lib/agents";
 import Message from "../components/Message";
 import ActivityTimeline from "../components/ActivityTimeline";
 import HistoryDrawer from "../components/HistoryDrawer";
@@ -78,7 +78,6 @@ export default function PanelApp() {
   const [agentOnline, setAgentOnline] = useState<boolean | null>(null);
   const [drawer, setDrawer] = useState<"none" | "history" | "settings">("none");
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeChatId, setActiveChatId] = useState("");
   const [notice, setNotice] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -93,19 +92,8 @@ export default function PanelApp() {
   }, []);
 
   const refreshConversations = useCallback(async () => {
-    const list = await listConversations();
-    setConversations(list);
-    setActiveChatId((current) => current || list[0]?.id || "");
+    setConversations(await listConversations());
   }, []);
-
-  const selectAndReload = useCallback(
-    async (conversationId: string) => {
-      setActiveChatId(conversationId);
-      await selectConversation(conversationId);
-      await reloadConversation(conversationId);
-    },
-    [reloadConversation],
-  );
 
   useEffect(() => {
     const unlistens: Array<() => void> = [];
@@ -161,10 +149,7 @@ export default function PanelApp() {
           setMessages(m);
           setRun(null);
         }),
-        await onConversationChanged((id) => {
-          setActiveChatId(id);
-          void refreshConversations();
-        }),
+        await onConversationChanged(() => void refreshConversations()),
         await onAgentStatus((online) => setAgentOnline(online)),
         await onMicError((msg) => setNotice(msg)),
         await onSttError((msg) => setNotice(msg)),
@@ -207,9 +192,6 @@ export default function PanelApp() {
     : state === "working" || state === "finalizing" ? "var(--running)"
     : state === "preparing" ? "var(--warning)"
     : "var(--success)";
-
-  const activeChat = conversations.find((c) => c.id === activeChatId) ?? conversations[0];
-  const otherChats = conversations.filter((c) => c.id !== activeChat?.id).slice(0, 3);
 
   return (
     <div className="panel-root">
@@ -282,36 +264,26 @@ export default function PanelApp() {
           )}
         </div>
 
-        {/* Footer: the conversation this panel is bound to, and quick switches */}
+        {/* Footer: which agent is answering, and what else can be switched to */}
         <div className="panel-footer">
           <div className="footer-col">
-            <div className="footer-label">Active chat</div>
-            <button className="chat-chip" onClick={() => openDrawer("history")} title="All conversations">
+            <div className="footer-label">Active Agent</div>
+            <div className="agent-chip">
               <span className="dot" style={{ color: "var(--success)" }} />
-              <span className="chat-chip-title">{activeChat?.title ?? "New chat"}</span>
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="m7 10 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+              <span className="agent-chip-title">{ACTIVE_AGENT.name}</span>
+            </div>
           </div>
           <div className="footer-col footer-switch">
-            <div className="footer-label">Switch chat</div>
-            <div className="footer-chips">
-              {otherChats.length === 0 && (
-                <button className="mini-chip" onClick={() => openDrawer("history")}>
-                  No others yet
-                </button>
-              )}
-              {otherChats.map((c) => (
-                <button
-                  key={c.id}
-                  className="mini-chip"
-                  onClick={() => void selectAndReload(c.id)}
-                  title={c.title}
-                >
-                  {c.title}
+            <div className="footer-label">Switch Agent</div>
+            <div className="agent-chips">
+              {OTHER_AGENTS.map((a) => (
+                <button key={a.id} className="agent-chip-mini" title={a.blurb}>
+                  {a.name}
                 </button>
               ))}
+              {OTHER_AGENTS.length === 0 && (
+                <span className="agent-none">Only {ACTIVE_AGENT.name} is connected</span>
+              )}
             </div>
           </div>
         </div>
