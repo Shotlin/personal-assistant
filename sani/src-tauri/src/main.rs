@@ -23,6 +23,7 @@ mod snapshot;
 mod speech;
 mod system_permissions;
 mod windows;
+mod window_geometry;
 
 use parking_lot::RwLock;
 use serde::Serialize;
