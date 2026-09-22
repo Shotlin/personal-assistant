@@ -136,7 +136,12 @@ mod tests {
     }
 
     fn bounds(x: f64, y: f64, width: f64, height: f64) -> NormalWindowBounds {
-        NormalWindowBounds { x, y, width, height }
+        NormalWindowBounds {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     #[test]

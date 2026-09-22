@@ -23,13 +23,12 @@ mod setup;
 mod snapshot;
 mod speech;
 mod system_permissions;
-mod windows;
 mod window_geometry;
+mod windows;
 
 use parking_lot::RwLock;
 use serde::Serialize;
 use std::io::Write;
-use std::sync::atomic::Ordering;
 use tauri::{Emitter, Listener, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
@@ -87,6 +86,12 @@ fn main() {
                 let h = handle.clone();
                 app.listen("sani://panel-ui-ready", move |_| {
                     app_state::mark_ui_ready(&h, "panel")
+                });
+            }
+            {
+                let h = handle.clone();
+                app.listen("sani://main-ui-ready", move |_| {
+                    app_state::mark_ui_ready(&h, "main")
                 });
             }
             // Any JS-side failure is mirrored into the Rust log: a UI problem
@@ -213,6 +218,9 @@ pub fn enter_normal_mode(app: &tauri::AppHandle) -> Result<(), Box<dyn std::erro
     // The assistant runtime is Sani's own child process, started here rather
     // than on demand: the first turn must not pay for spawning it.
     sani_core::start_at_startup(app);
+    // Hidden webviews do not consistently begin loading on macOS. Resolve the
+    // safe frame and show the opaque boot fallback immediately; React then
+    // replaces it and records the main-ui-ready handshake.
     windows::show_main(app)?;
     Ok(())
 }
@@ -266,53 +274,6 @@ impl Write for TeeWriter {
         }
         Ok(())
     }
-}
-
-/// Cold launch from Finder must show a visible Sani interface (RC-01). We wait
-/// briefly for React to report both windows ready, then reveal; if the frontend
-/// never reports ready we reveal anyway (the opaque boot fallback is on screen,
-/// so the user still sees something) and log a clear startup failure.
-fn spawn_cold_launch_reveal(handle: tauri::AppHandle) {
-    std::thread::spawn(move || {
-        let start = std::time::Instant::now();
-        let reveal_deadline = std::time::Duration::from_millis(3000);
-        let failure_deadline = std::time::Duration::from_millis(6000);
-        let mut revealed = false;
-        loop {
-            let state = handle.state::<SaniState>();
-            let pill = state.ui_ready_pill.load(Ordering::Relaxed);
-            let panel = state.ui_ready_panel.load(Ordering::Relaxed);
-            let elapsed = start.elapsed();
-
-            if !revealed && ((pill && panel) || elapsed >= reveal_deadline) {
-                if pill && panel {
-                    log::info!("[ui-boot] cold-launch reveal: both UIs ready in {elapsed:?}");
-                } else {
-                    log::warn!("[ui-boot] cold-launch reveal after timeout (pill_ready={pill} panel_ready={panel})");
-                }
-                windows::show_overlays(&handle);
-                revealed = true;
-                {
-                    let h = handle.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(700));
-                        snapshot::snapshot_overlays(&h, "revealed");
-                    });
-                }
-            }
-
-            if elapsed >= failure_deadline {
-                if !pill {
-                    log::error!("[ui-boot] STARTUP FAILURE: pill window never emitted pill-ui-ready within 6s (React mount or asset load failed)");
-                }
-                if !panel {
-                    log::error!("[ui-boot] STARTUP FAILURE: panel window never emitted panel-ui-ready within 6s (React mount or asset load failed)");
-                }
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-    });
 }
 
 fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {

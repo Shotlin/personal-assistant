@@ -74,6 +74,11 @@ pub struct SaniState {
     /// mounts and emits its `*-ui-ready` handshake.
     pub ui_ready_pill: AtomicBool,
     pub ui_ready_panel: AtomicBool,
+    /// Main desktop shell startup evidence. The normal window has an opaque
+    /// boot fallback until this React-mount handshake arrives.
+    pub ui_ready_main: AtomicBool,
+    /// Monotonic debounce token for normal-window geometry persistence.
+    pub main_window_persist_generation: AtomicU64,
 }
 
 impl SaniState {
@@ -92,6 +97,8 @@ impl SaniState {
             turn_gen: AtomicU64::new(0),
             ui_ready_pill: AtomicBool::new(false),
             ui_ready_panel: AtomicBool::new(false),
+            ui_ready_main: AtomicBool::new(false),
+            main_window_persist_generation: AtomicU64::new(0),
         }
     }
 }
@@ -146,6 +153,10 @@ pub fn mark_ui_ready(app: &AppHandle, which: &str) {
         "panel" => {
             state.ui_ready_panel.store(true, Ordering::Relaxed);
             log::info!("[ui-boot] panel UI READY (React mounted)");
+        }
+        "main" => {
+            state.ui_ready_main.store(true, Ordering::Relaxed);
+            log::info!("[ui-boot] main UI READY (React mounted)");
         }
         _ => {}
     }

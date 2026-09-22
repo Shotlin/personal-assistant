@@ -1,14 +1,18 @@
 # Sani
 
 A minimal, local, cross-platform desktop **voice shell** for the existing
-[Personal Assistant](../) Deep Agent. One global shortcut opens a floating
-mic pill; live English transcription appears while you speak; the final
-utterance is sent **exactly once** to the existing agent; its streamed reply
-and real run activity appear in a right-side panel.
+[Personal Assistant](../) Deep Agent. On macOS, Sani opens as a normal Dock
+application with a native titlebar and an always-available desktop workspace;
+the floating mic pill and side panel remain optional quick-access companions.
+Live English transcription appears while you speak; the final utterance is
+sent **exactly once** to the existing agent; its streamed reply and real run
+activity appear in the desktop conversation surface and companion panel.
 
 ```text
 Global hotkey -> mic pill -> live STT (local Moonshine) -> final transcript
              -> existing Personal Assistant gateway (SSE) -> right-side panel
+
+Double-click Sani -> restored main desktop window -> resumed conversation
 ```
 
 Sani is not a second agent, not a chat client rebuild, and not a workflow
@@ -26,8 +30,8 @@ editor. Open WebUI and Agent Designer are not required for normal Sani use.
 
 ```text
 sani/
-├── src/                    # React UI (pill window + panel window)
-│   ├── app/                # OverlayApp.tsx (pill), PanelApp.tsx (panel)
+├── src/                    # React UI (main workspace + pill + panel)
+│   ├── app/                # MainApp.tsx, OverlayApp.tsx, PanelApp.tsx
 │   ├── components/         # Waveform, Message, ActivityTimeline, drawers
 │   ├── lib/tauri.ts        # typed event/command bridge
 │   └── styles/             # design tokens + per-window styles
@@ -108,6 +112,23 @@ uv run python scripts/bootstrap_designer.py   # idempotent; imports the existing
 
 Base URL, hotkey, microphone, theme and launch-at-login are configurable in
 Settings (panel → ⚙). Only these minimal settings exist by design.
+
+### macOS main window behavior
+
+Phase 1 is optimized for MacBook Air 13-inch, MacBook Pro 14-inch, and
+MacBook Pro 16-inch displays at Retina scaling. Sani uses a regular decorated
+window (no forced fullscreen), appears in the Dock, and uses the normal macOS
+maximize behavior. Closing the main window hides it while the existing runtime
+continues when supported; reopening from the Dock, Finder, or Spotlight safely
+restores and focuses it.
+
+Sani persists the display affinity, normal x/y/width/height in logical points,
+and a separate maximized flag. On launch it reads macOS's native visible work
+area (`NSScreen.visibleFrame`), including the menu bar/notch and Dock on any
+edge. It validates and clamps saved normal bounds before applying them, falls
+back to the primary MacBook display if a saved external display is absent, and
+only then reapplies maximization. Maximized work-area dimensions never replace
+the previous normal frame.
 
 ### Identity contract
 

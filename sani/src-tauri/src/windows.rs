@@ -142,8 +142,10 @@ fn build_main(app: &AppHandle) -> tauri::Result<()> {
             persist_main_window(&app_for_events);
             let _ = window_for_events.hide();
         }
-        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. } => {
-            persist_main_window(&app_for_events);
+        tauri::WindowEvent::Moved(_)
+        | tauri::WindowEvent::Resized(_)
+        | tauri::WindowEvent::ScaleFactorChanged { .. } => {
+            schedule_main_window_persist(app_for_events.clone());
         }
         _ => {}
     });
@@ -375,7 +377,8 @@ fn main_work_areas(app: &AppHandle) -> Vec<MainWorkArea> {
             MainWorkArea {
                 logical: LogicalWorkArea {
                     id,
-                    is_primary: primary_position == Some((monitor.position().x, monitor.position().y)),
+                    is_primary: primary_position
+                        == Some((monitor.position().x, monitor.position().y)),
                     ..logical
                 },
                 monitor: MonitorBox {
@@ -424,9 +427,14 @@ pub fn show_main(app: &AppHandle) -> tauri::Result<()> {
         .or_else(|| work_areas.first());
     if let Some(area) = selected {
         let scale = area.monitor.scale;
-        let x = area.monitor.position.0 + ((area.logical.x + resolved.normal.x) * scale).round() as i32;
-        let y = area.monitor.position.1 + ((area.logical.y + resolved.normal.y) * scale).round() as i32;
-        window.set_size(area.monitor.physical_size(resolved.normal.width, resolved.normal.height))?;
+        let x =
+            area.monitor.position.0 + ((area.logical.x + resolved.normal.x) * scale).round() as i32;
+        let y =
+            area.monitor.position.1 + ((area.logical.y + resolved.normal.y) * scale).round() as i32;
+        window.set_size(
+            area.monitor
+                .physical_size(resolved.normal.width, resolved.normal.height),
+        )?;
         window.set_position(PhysicalPosition::new(x, y))?;
     }
     if resolved.maximized {
@@ -445,7 +453,9 @@ pub fn hide_main(app: &AppHandle) {
 }
 
 pub fn persist_main_window(app: &AppHandle) {
-    let Some(window) = app.get_webview_window(MAIN_LABEL) else { return };
+    let Some(window) = app.get_webview_window(MAIN_LABEL) else {
+        return;
+    };
     let maximized = window.is_maximized().unwrap_or(false);
     let settings_arc = crate::app_state::settings(app);
     let mut settings = settings_arc.write();
@@ -465,8 +475,12 @@ pub fn persist_main_window(app: &AppHandle) {
                 &mut settings,
                 area.logical.id.clone(),
                 NormalWindowBounds {
-                    x: position.x as f64 / scale - area.monitor.position.0 as f64 / scale - area.logical.x,
-                    y: position.y as f64 / scale - area.monitor.position.1 as f64 / scale - area.logical.y,
+                    x: position.x as f64 / scale
+                        - area.monitor.position.0 as f64 / scale
+                        - area.logical.x,
+                    y: position.y as f64 / scale
+                        - area.monitor.position.1 as f64 / scale
+                        - area.logical.y,
                     width: size.width as f64 / scale,
                     height: size.height as f64 / scale,
                 },
@@ -475,6 +489,28 @@ pub fn persist_main_window(app: &AppHandle) {
         }
     }
     let _ = crate::settings::save(app, &settings);
+}
+
+/// Window managers can emit a dense stream of resize/move events. Persist
+/// only after it settles, while CloseRequested remains immediate so a normal
+/// close cannot lose the last geometry.
+fn schedule_main_window_persist(app: AppHandle) {
+    let state = app.state::<crate::app_state::SaniState>();
+    let generation = state
+        .main_window_persist_generation
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let state = app.state::<crate::app_state::SaniState>();
+        if state
+            .main_window_persist_generation
+            .load(std::sync::atomic::Ordering::Relaxed)
+            == generation
+        {
+            persist_main_window(&app);
+        }
+    });
 }
 
 pub fn show_pill(app: &AppHandle) -> tauri::Result<()> {
