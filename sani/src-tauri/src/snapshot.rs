@@ -11,9 +11,13 @@ use tauri::{AppHandle, Manager};
 use crate::windows::{ONBOARDING_LABEL, PANEL_LABEL, PILL_LABEL};
 
 pub fn dir() -> Option<PathBuf> {
-    std::env::var("SANI_SNAPSHOT_DIR")
-        .ok()
-        .map(|d| if d.is_empty() { PathBuf::from("/tmp") } else { PathBuf::from(d) })
+    std::env::var("SANI_SNAPSHOT_DIR").ok().map(|d| {
+        if d.is_empty() {
+            PathBuf::from("/tmp")
+        } else {
+            PathBuf::from(d)
+        }
+    })
 }
 
 /// Render both overlays' current web content, tagged (e.g. "listening").
@@ -29,7 +33,9 @@ pub fn snapshot_overlays(app: &AppHandle, tag: &str) {
 pub fn snapshot_window(app: &AppHandle, label: &str, tag: &str) {
     let Some(dir) = dir() else { return };
     let _ = std::fs::create_dir_all(&dir);
-    let Some(window) = app.get_webview_window(label) else { return };
+    let Some(window) = app.get_webview_window(label) else {
+        return;
+    };
     let path = dir.join(format!("{label}-{tag}.png"));
     if !window.is_visible().unwrap_or(false) {
         log::debug!("[snapshot] {label} not visible; skipped");

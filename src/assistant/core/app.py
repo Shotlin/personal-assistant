@@ -19,6 +19,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from assistant.core.protocol import (
+    AGENT_CANCELLED,
+    AGENT_COMPLETED,
+    AGENT_FAILED,
+    AGENT_STARTED,
     Event,
     ProtocolError,
     Request,
@@ -33,6 +37,12 @@ from assistant.core.registry import AgentProtocol, AgentRegistry
 logger = logging.getLogger("assistant.core")
 
 DEFAULT_MAX_CONCURRENT_RUNS = 4
+
+#: Wall-clock ceiling for one run. Deliberately below the Tauri host's own
+#: read deadline: whichever side gives up must be the one that can say why,
+#: and a sidecar that outlives the host's patience keeps its stdout writer --
+#: and the client's single "streaming" slot -- occupied forever.
+RUN_WALL_CLOCK_SECONDS = 13 * 60
 
 
 def _parse_request(frame: dict[str, Any]) -> Request:
@@ -53,7 +63,9 @@ class _Run:
 
     request: Request
     run_id: str
+    agent_id: str
     agent: AgentProtocol
+    thread_id: str
     cancel_requested: bool = False
     task: asyncio.Task[None] = field(init=False)
 
@@ -109,12 +121,16 @@ class SaniCoreApp:
         max_concurrent_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
         *,
         status_provider: Callable[[], Awaitable[dict[str, Any]]] | None = None,
+        run_wall_clock_seconds: float = RUN_WALL_CLOCK_SECONDS,
     ) -> None:
         if max_concurrent_runs < 1:
             raise ValueError("max_concurrent_runs must be at least 1")
+        if run_wall_clock_seconds <= 0:
+            raise ValueError("run_wall_clock_seconds must be positive")
         self._registry = registry
         self._max_concurrent_runs = max_concurrent_runs
         self._status_provider = status_provider
+        self._run_wall_clock_seconds = run_wall_clock_seconds
 
     async def serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Serve framed requests until clean EOF; malformed frames end the session."""
@@ -195,7 +211,37 @@ class SaniCoreApp:
                 ).to_frame()
             )
             return
-        run = _Run(request=request, run_id=uuid.uuid4().hex, agent=agent)
+        # Optional: the host may name the run. It then knows the id before the
+        # first frame arrives, which is what lets it cancel a run that is
+        # already streaming instead of only between runs.
+        supplied = request.params.get("run_id", "")
+        if not isinstance(supplied, str):
+            await session.send(
+                error_from_request(request, "run.start param 'run_id' must be a string").to_frame()
+            )
+            return
+        run_id = supplied.strip() or uuid.uuid4().hex
+        if run_id in session.runs:
+            await session.send(error_from_request(request, f"run id in use: {run_id}").to_frame())
+            return
+        # Optional: the caller's conversation identity, so a stateful agent can
+        # resume the same thread turn over turn. An absent id stays a one-shot
+        # thread rather than silently merging into another conversation.
+        thread_id = request.params.get("thread_id", "")
+        if not isinstance(thread_id, str):
+            await session.send(
+                error_from_request(
+                    request, "run.start param 'thread_id' must be a string"
+                ).to_frame()
+            )
+            return
+        run = _Run(
+            request=request,
+            run_id=run_id,
+            agent_id=agent_id,
+            agent=agent,
+            thread_id=thread_id,
+        )
         run.task = asyncio.create_task(
             self._execute_run(session, run, text), name=f"sani-run-{run.run_id}"
         )
@@ -221,31 +267,52 @@ class SaniCoreApp:
         )
 
     async def _execute_run(self, session: _Session, run: _Run, text: str) -> None:
-        async def on_event(kind: str, data: dict[str, Any]) -> None:
-            await session.send(Event(run_id=run.run_id, kind=kind, data=data).to_frame())
-
-        try:
-            result = await run.agent.run(
-                text, on_event=on_event, cancel_check=lambda: run.cancel_requested
+        async def send_event(kind: str, data: dict[str, Any]) -> None:
+            await session.send(
+                Event(
+                    run_id=run.run_id, agent_id=run.agent_id, kind=kind, data=data
+                ).to_frame()
             )
+
+        # Ownership is announced by the loop, not the agent: this is the frame
+        # that makes "who is working" structured for the whole run.
+        await send_event(AGENT_STARTED, {"text": text})
+        try:
+            async with asyncio.timeout(self._run_wall_clock_seconds):
+                result = await run.agent.run(
+                    text,
+                    thread_id=run.thread_id,
+                    on_event=send_event,
+                    cancel_check=lambda: run.cancel_requested,
+                )
         except asyncio.CancelledError:
             # Constraint: a second cancel() landing during cleanup must not
             # corrupt the frame writer -- cleanup sends are shielded, and the
             # cancellation is re-raised so the task still ends cancelled.
             with contextlib.suppress(asyncio.CancelledError):
-                await asyncio.shield(
-                    session.send(Event(run_id=run.run_id, kind="cancelled", data={}).to_frame())
-                )
+                await asyncio.shield(send_event(AGENT_CANCELLED, {}))
                 await asyncio.shield(
                     session.send(
                         response_from_request(run.request, {"status": "cancelled"}).to_frame()
                     )
                 )
             raise
+        except TimeoutError:
+            logger.warning("sani-core: run %s exceeded the wall clock", run.run_id)
+            with contextlib.suppress(Exception):
+                await run.agent.cancel()
+            await send_event(AGENT_FAILED, {"error": "run exceeded the wall-clock ceiling"})
+            await session.send(
+                error_from_request(
+                    run.request, "agent error: run exceeded the wall-clock ceiling"
+                ).to_frame()
+            )
         except Exception as exc:
             logger.warning("sani-core: run %s failed: %s", run.run_id, exc)
+            await send_event(AGENT_FAILED, {"error": str(exc)})
             await session.send(error_from_request(run.request, f"agent error: {exc}").to_frame())
         else:
+            await send_event(AGENT_COMPLETED, {"status": result.get("status", "done")})
             await session.send(response_from_request(run.request, result).to_frame())
         finally:
             session.runs.pop(run.run_id, None)

@@ -32,10 +32,16 @@ class AgentProtocol(Protocol):
         self,
         text: str,
         *,
+        thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
     ) -> dict[str, Any]:
         """Run to completion, streaming progress via on_event(kind, data).
+
+        `thread_id` is the caller's conversation identity, supplied so a
+        stateful agent resumes the same thread across turns instead of
+        starting a fresh one every run. Agents that hold no conversation
+        state ignore it.
 
         Returns the final result payload dict. A cooperative agent checks
         cancel_check between steps and lets CancelledError propagate; the

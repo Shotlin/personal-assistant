@@ -68,7 +68,11 @@ mod platform {
 
     pub fn accessibility_prompt() -> super::PermissionStatus {
         let trusted = unsafe { sani_accessibility_prompt() } != 0;
-        if trusted { super::PermissionStatus::Granted } else { super::PermissionStatus::Denied }
+        if trusted {
+            super::PermissionStatus::Granted
+        } else {
+            super::PermissionStatus::Denied
+        }
     }
 
     pub fn screen_recording() -> super::PermissionStatus {
@@ -81,7 +85,11 @@ mod platform {
 
     pub fn screen_recording_request() -> super::PermissionStatus {
         let allowed = unsafe { sani_screen_recording_request() } != 0;
-        if allowed { super::PermissionStatus::Granted } else { super::PermissionStatus::Denied }
+        if allowed {
+            super::PermissionStatus::Granted
+        } else {
+            super::PermissionStatus::Denied
+        }
     }
 }
 
@@ -129,9 +137,15 @@ pub fn open_settings(pane: &str) {
     #[cfg(target_os = "macos")]
     {
         let url = match pane {
-            "accessibility" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-            "screen_recording" => "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-            "microphone" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+            "accessibility" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            }
+            "screen_recording" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+            }
+            "microphone" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+            }
             other => {
                 log::warn!("[perms] unknown settings pane '{other}'");
                 return;
@@ -149,8 +163,14 @@ mod tests {
 
     #[test]
     fn statuses_serialize_snake_case() {
-        assert_eq!(serde_json::to_string(&PermissionStatus::NotDetermined).unwrap(), "\"not_determined\"");
-        assert_eq!(serde_json::to_string(&PermissionStatus::Granted).unwrap(), "\"granted\"");
+        assert_eq!(
+            serde_json::to_string(&PermissionStatus::NotDetermined).unwrap(),
+            "\"not_determined\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PermissionStatus::Granted).unwrap(),
+            "\"granted\""
+        );
     }
 
     #[test]

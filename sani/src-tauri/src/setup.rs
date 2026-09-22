@@ -143,7 +143,11 @@ pub struct ComponentRecord {
 
 impl ComponentRecord {
     fn pending() -> Self {
-        Self { status: ComponentStatus::Pending, detail: String::new(), error: None }
+        Self {
+            status: ComponentStatus::Pending,
+            detail: String::new(),
+            error: None,
+        }
     }
 }
 
@@ -182,7 +186,12 @@ impl SetupState {
     pub fn percent(&self) -> u32 {
         let done: u32 = Component::all()
             .iter()
-            .filter(|c| self.components.get(c).map(|r| r.status.is_done()).unwrap_or(false))
+            .filter(|c| {
+                self.components
+                    .get(c)
+                    .map(|r| r.status.is_done())
+                    .unwrap_or(false)
+            })
             .map(|c| c.weight())
             .sum();
         done.min(100)
@@ -201,7 +210,9 @@ impl SetupState {
     /// component, add any newly-introduced ones as Pending. Never discards work.
     fn migrate(mut self) -> Self {
         for c in Component::all() {
-            self.components.entry(c).or_insert_with(ComponentRecord::pending);
+            self.components
+                .entry(c)
+                .or_insert_with(ComponentRecord::pending);
         }
         self.schema_version = SETUP_SCHEMA_VERSION;
         self
@@ -226,7 +237,10 @@ pub struct SetupManager {
 
 impl Default for SetupManager {
     fn default() -> Self {
-        Self { state: Mutex::new(SetupState::default()), running: AtomicBool::new(false) }
+        Self {
+            state: Mutex::new(SetupState::default()),
+            running: AtomicBool::new(false),
+        }
     }
 }
 
@@ -242,7 +256,10 @@ fn now_ms() -> i64 {
 // -------------------------------------------------------------- persistence
 
 fn state_path(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|dir| dir.join("setup_state.json"))
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join("setup_state.json"))
 }
 
 pub fn load(app: &AppHandle) -> SetupState {
@@ -287,7 +304,10 @@ pub fn persist_state(app: &AppHandle, state: &SetupState) {
 
 /// Initialize the managed state from disk (call once during setup()).
 pub fn init(app: &AppHandle) -> SharedSetup {
-    let manager = SetupManager { state: Mutex::new(load(app)), running: AtomicBool::new(false) };
+    let manager = SetupManager {
+        state: Mutex::new(load(app)),
+        running: AtomicBool::new(false),
+    };
     let shared: SharedSetup = Arc::new(manager);
     app.manage(shared.clone());
     shared
@@ -303,20 +323,32 @@ struct Outcome {
 
 impl Outcome {
     fn complete(detail: impl Into<String>) -> Self {
-        Self { status: ComponentStatus::Complete, detail: detail.into(), error: None }
+        Self {
+            status: ComponentStatus::Complete,
+            detail: detail.into(),
+            error: None,
+        }
     }
     fn skipped(detail: impl Into<String>) -> Self {
-        Self { status: ComponentStatus::Skipped, detail: detail.into(), error: None }
+        Self {
+            status: ComponentStatus::Skipped,
+            detail: detail.into(),
+            error: None,
+        }
     }
     fn failed(err: impl Into<String>) -> Self {
         let err = err.into();
-        Self { status: ComponentStatus::Failed, detail: String::new(), error: Some(err) }
+        Self {
+            status: ComponentStatus::Failed,
+            detail: String::new(),
+            error: Some(err),
+        }
     }
 }
 
 /// Walk up from the executable and cwd looking for a directory that looks like
 /// the Sani source checkout (has both `pyproject.toml` and `src/assistant`).
-fn find_repo_root() -> Option<PathBuf> {
+pub(crate) fn find_repo_root() -> Option<PathBuf> {
     let mut starts: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
         starts.extend(exe.ancestors().skip(1).take(12).map(Path::to_path_buf));
@@ -324,7 +356,37 @@ fn find_repo_root() -> Option<PathBuf> {
     if let Ok(cwd) = std::env::current_dir() {
         starts.extend(cwd.ancestors().take(12).map(Path::to_path_buf));
     }
-    starts.into_iter().find(|dir| dir.join("pyproject.toml").exists() && dir.join("src/assistant").is_dir())
+    starts
+        .into_iter()
+        .find(|dir| dir.join("pyproject.toml").exists() && dir.join("src/assistant").is_dir())
+}
+
+/// Absolute path to a repository file the runtime needs at startup (the CUA
+/// capability manifest, the skills tree). Packaged builds resolve resources
+/// from the bundle; a dev build falls back to the checkout.
+pub(crate) fn resource_path(app: &AppHandle, rel: &str) -> Option<PathBuf> {
+    resource_candidates(app, rel)
+        .into_iter()
+        .find(|candidate| candidate.exists())
+}
+
+/// Interpreter that can run the `assistant` package: an explicit override, then
+/// the checkout's own venv. Shared by the setup probe and the real launch.
+pub(crate) fn core_python() -> Option<PathBuf> {
+    if let Some(override_path) = std::env::var("SANI_CORE_PYTHON").ok().map(PathBuf::from) {
+        if override_path.exists() {
+            return Some(override_path);
+        }
+    }
+    let root = find_repo_root()?;
+    [
+        ".venv/bin/python3",
+        ".venv/bin/python",
+        ".venv/Scripts/python.exe",
+    ]
+    .iter()
+    .map(|rel| root.join(rel))
+    .find(|path| path.exists())
 }
 
 fn resource_candidates(app: &AppHandle, rel: &str) -> Vec<PathBuf> {
@@ -342,7 +404,11 @@ fn resource_candidates(app: &AppHandle, rel: &str) -> Vec<PathBuf> {
 /// could not spawn, `Some(true)` = exit code 0.
 fn probe(cmd: &str, args: &[&str], envs: &[(&str, &str)], timeout: Duration) -> Option<bool> {
     let mut command = Command::new(cmd);
-    command.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     for (k, v) in envs {
         command.env(k, v);
     }
@@ -410,7 +476,12 @@ fn op_database(app: &AppHandle) -> Outcome {
             let now = now_ms();
             let result = history
                 .create_conversation(&probe_id, "setup-probe", now)
-                .and_then(|_| history.get_conversation(&probe_id)?.map(|_| ()).ok_or_else(|| "probe read failed".to_string()))
+                .and_then(|_| {
+                    history
+                        .get_conversation(&probe_id)?
+                        .map(|_| ())
+                        .ok_or_else(|| "probe read failed".to_string())
+                })
                 .and_then(|_| history.delete_conversation(&probe_id));
             match result {
                 Ok(()) => Outcome::complete(format!("{} ready (WAL)", db_path.display())),
@@ -422,44 +493,30 @@ fn op_database(app: &AppHandle) -> Outcome {
 }
 
 fn op_core(_app: &AppHandle) -> Outcome {
-    // Locate a Python interpreter that can import the assistant package, then
-    // confirm `assistant.core` is importable *without* executing it (find_spec).
-    let env_python = std::env::var("SANI_CORE_PYTHON").ok().map(PathBuf::from);
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(p) = env_python.filter(|p| p.exists()) {
-        candidates.push(p);
-    }
-    if let Some(root) = find_repo_root() {
-        for rel in [".venv/bin/python3", ".venv/bin/python", ".venv/Scripts/python.exe"] {
-            let p = root.join(rel);
-            if p.exists() {
-                candidates.push(p);
-            }
-        }
-    }
-    if candidates.is_empty() {
+    // Same discovery the real launch uses, so "setup says ready" and "the
+    // runtime actually starts" can never disagree. Confirms `assistant.core`
+    // is importable *without* executing it (find_spec).
+    let Some(python) = core_python() else {
         // Packaged builds will resolve a bundled interpreter here; until then,
         // an absent runtime is an honest, retryable failure.
         return Outcome::failed("AI runtime not found (no bundled interpreter)");
-    }
-    let src_dir = find_repo_root().map(|r| r.join("src"));
+    };
+    let python_str = python.to_string_lossy().to_string();
     let code = "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('assistant.core') else 2)";
-    for python in &candidates {
-        let python_str = python.to_string_lossy().to_string();
-        let ok = match &src_dir {
-            Some(src) => probe(
-                &python_str,
-                &["-c", code],
-                &[("PYTHONPATH", &src.to_string_lossy())],
-                Duration::from_secs(15),
-            ),
-            None => probe(&python_str, &["-c", code], &[], Duration::from_secs(15)),
-        };
-        if ok == Some(true) {
-            return Outcome::complete(format!("sani-core importable ({python_str})"));
-        }
+    let ok = match find_repo_root().map(|root| root.join("src")) {
+        Some(src_dir) => probe(
+            &python_str,
+            &["-c", code],
+            &[("PYTHONPATH", &src_dir.to_string_lossy())],
+            Duration::from_secs(15),
+        ),
+        None => probe(&python_str, &["-c", code], &[], Duration::from_secs(15)),
+    };
+    match ok {
+        Some(true) => Outcome::complete(format!("sani-core importable ({python_str})")),
+        Some(false) => Outcome::failed("AI runtime could not start"),
+        None => Outcome::failed("AI runtime check timed out"),
     }
-    Outcome::failed("AI runtime could not start")
 }
 
 fn op_skills(app: &AppHandle) -> Outcome {
@@ -521,7 +578,9 @@ fn model_files(dir: &Path, depth: u8, out: &mut Vec<String>) {
     if depth == 0 {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -551,15 +610,18 @@ fn op_stt_model(app: &AppHandle) -> Outcome {
     let Some(root) = moonshine_cache_root() else {
         return Outcome::skipped(note);
     };
-    let model_dir = root.join("download.moonshine.ai").join("model").join(&model);
+    let model_dir = root
+        .join("download.moonshine.ai")
+        .join("model")
+        .join(&model);
     if !model_dir.is_dir() {
         return Outcome::skipped(note);
     }
     let mut files = Vec::new();
     model_files(&model_dir, 3, &mut files);
     // Require the encoder + tokenizer: enough to prove the download finished.
-    let complete = files.iter().any(|f| f == "encoder.ort")
-        && files.iter().any(|f| f == "tokenizer.bin");
+    let complete =
+        files.iter().any(|f| f == "encoder.ort") && files.iter().any(|f| f == "tokenizer.bin");
     if complete {
         Outcome::complete(format!("{} · cached", model))
     } else {
@@ -602,7 +664,14 @@ fn emit_progress(app: &AppHandle, component: Component, status: ComponentStatus)
     let (percent, detail) = {
         let mgr = app.state::<SharedSetup>();
         let state = mgr.state.lock();
-        (state.percent(), state.components.get(&component).map(|r| r.detail.clone()).unwrap_or_default())
+        (
+            state.percent(),
+            state
+                .components
+                .get(&component)
+                .map(|r| r.detail.clone())
+                .unwrap_or_default(),
+        )
     };
     let message = match status {
         ComponentStatus::Running => component.running_message().to_string(),
@@ -628,7 +697,14 @@ fn emit_progress(app: &AppHandle, component: Component, status: ComponentStatus)
 fn execute(app: &AppHandle, component: Component) {
     {
         let mgr = app.state::<SharedSetup>();
-        mgr.state.lock().components.insert(component, ComponentRecord { status: ComponentStatus::Running, detail: String::new(), error: None });
+        mgr.state.lock().components.insert(
+            component,
+            ComponentRecord {
+                status: ComponentStatus::Running,
+                detail: String::new(),
+                error: None,
+            },
+        );
     }
     emit_progress(app, component, ComponentStatus::Running);
 
@@ -643,7 +719,11 @@ fn execute(app: &AppHandle, component: Component) {
         let mut state = mgr.state.lock();
         state.components.insert(
             component,
-            ComponentRecord { status: outcome.status, detail: outcome.detail, error: outcome.error },
+            ComponentRecord {
+                status: outcome.status,
+                detail: outcome.detail,
+                error: outcome.error,
+            },
         );
         if matches!(outcome.status, ComponentStatus::Failed) {
             state.last_error = next_error;
@@ -673,7 +753,11 @@ pub fn run_local_setup(app: &AppHandle) {
         for component in Component::all() {
             let done = {
                 let state = mgr.state.lock();
-                state.components.get(&component).map(|r| r.status.is_done()).unwrap_or(false)
+                state
+                    .components
+                    .get(&component)
+                    .map(|r| r.status.is_done())
+                    .unwrap_or(false)
             };
             if !done {
                 execute(&handle, component);
@@ -686,14 +770,17 @@ pub fn run_local_setup(app: &AppHandle) {
 
 /// Retry a single failed subsystem without restarting the whole setup.
 pub fn retry_component(app: &AppHandle, key: &str) -> Result<(), String> {
-    let component = Component::from_key(key).ok_or_else(|| format!("unknown setup step '{key}'"))?;
+    let component =
+        Component::from_key(key).ok_or_else(|| format!("unknown setup step '{key}'"))?;
     let mgr = manager(app);
     if mgr.running.swap(true, Ordering::SeqCst) {
         return Err("setup is still running; try again in a moment".to_string());
     }
     {
         let mut state = mgr.state.lock();
-        state.components.insert(component, ComponentRecord::pending());
+        state
+            .components
+            .insert(component, ComponentRecord::pending());
         persist(app, &state);
     }
     let handle = app.clone();
@@ -715,7 +802,10 @@ mod tests {
 
     #[test]
     fn weights_sum_to_one_hundred() {
-        assert_eq!(Component::all().iter().map(|c| c.weight()).sum::<u32>(), 100);
+        assert_eq!(
+            Component::all().iter().map(|c| c.weight()).sum::<u32>(),
+            100
+        );
     }
 
     #[test]
@@ -728,7 +818,14 @@ mod tests {
     fn all_complete_reaches_one_hundred() {
         let mut state = SetupState::default();
         for c in Component::all() {
-            state.components.insert(c, ComponentRecord { status: ComponentStatus::Complete, detail: String::new(), error: None });
+            state.components.insert(
+                c,
+                ComponentRecord {
+                    status: ComponentStatus::Complete,
+                    detail: String::new(),
+                    error: None,
+                },
+            );
         }
         assert_eq!(state.percent(), 100);
         assert!(state.local_setup_complete());
@@ -738,8 +835,19 @@ mod tests {
     fn skipped_counts_as_done() {
         let mut state = SetupState::default();
         for c in Component::all() {
-            let status = if c == Component::SttModel { ComponentStatus::Skipped } else { ComponentStatus::Complete };
-            state.components.insert(c, ComponentRecord { status, detail: String::new(), error: None });
+            let status = if c == Component::SttModel {
+                ComponentStatus::Skipped
+            } else {
+                ComponentStatus::Complete
+            };
+            state.components.insert(
+                c,
+                ComponentRecord {
+                    status,
+                    detail: String::new(),
+                    error: None,
+                },
+            );
         }
         assert_eq!(state.percent(), 100);
         assert!(state.local_setup_complete());
@@ -748,7 +856,10 @@ mod tests {
     #[test]
     fn keys_are_unique_and_round_trip() {
         let keys: Vec<&str> = Component::all().iter().map(|c| c.key()).collect();
-        assert_eq!(keys.iter().collect::<std::collections::HashSet<_>>().len(), keys.len());
+        assert_eq!(
+            keys.iter().collect::<std::collections::HashSet<_>>().len(),
+            keys.len()
+        );
         for key in keys {
             assert!(Component::from_key(key).is_some());
         }
@@ -757,11 +868,28 @@ mod tests {
     #[test]
     fn migrate_preserves_completed_and_adds_new() {
         let mut old = SetupState::default();
-        old.components.insert(Component::Database, ComponentRecord { status: ComponentStatus::Complete, detail: "x".into(), error: None });
+        old.components.insert(
+            Component::Database,
+            ComponentRecord {
+                status: ComponentStatus::Complete,
+                detail: "x".into(),
+                error: None,
+            },
+        );
         old.components.remove(&Component::Cua);
         let migrated = old.migrate();
-        assert_eq!(migrated.components.get(&Component::Database).unwrap().status, ComponentStatus::Complete);
-        assert_eq!(migrated.components.get(&Component::Cua).unwrap().status, ComponentStatus::Pending);
+        assert_eq!(
+            migrated
+                .components
+                .get(&Component::Database)
+                .unwrap()
+                .status,
+            ComponentStatus::Complete
+        );
+        assert_eq!(
+            migrated.components.get(&Component::Cua).unwrap().status,
+            ComponentStatus::Pending
+        );
         assert_eq!(migrated.components.len(), Component::all().len());
     }
 }

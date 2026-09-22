@@ -28,6 +28,7 @@ class _FakeAgent:
 
     def __init__(self, agent_id: str = "fake", name: str = "Fake") -> None:
         self._descriptor = AgentDescriptor(id=agent_id, name=name, capabilities=("chat",))
+        self.threads: list[str] = []
 
     @property
     def descriptor(self) -> AgentDescriptor:
@@ -37,9 +38,11 @@ class _FakeAgent:
         self,
         text: str,
         *,
+        thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
     ) -> dict[str, Any]:
+        self.threads.append(thread_id)
         await on_event("step", {"n": 1})
         await on_event("step", {"n": 2})
         return {"status": "done", "echo": text}
@@ -64,6 +67,7 @@ class _GatedAgent:
         self,
         text: str,
         *,
+        thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
     ) -> dict[str, Any]:
@@ -90,6 +94,7 @@ class _SlowCancellableAgent:
         self,
         text: str,
         *,
+        thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
     ) -> dict[str, Any]:
@@ -114,6 +119,7 @@ class _ExplodingAgent:
         self,
         text: str,
         *,
+        thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
     ) -> dict[str, Any]:
@@ -121,6 +127,32 @@ class _ExplodingAgent:
 
     async def cancel(self) -> None:
         return None
+
+
+class _StallingAgent:
+    """Never finishes: models a hung provider call or a wedged tool."""
+
+    def __init__(self) -> None:
+        self._descriptor = AgentDescriptor(id="stall", name="Stall", capabilities=("chat",))
+        self.cancel_calls = 0
+
+    @property
+    def descriptor(self) -> AgentDescriptor:
+        return self._descriptor
+
+    async def run(
+        self,
+        text: str,
+        *,
+        thread_id: str,
+        on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
+        cancel_check: Callable[[], bool],
+    ) -> dict[str, Any]:
+        await asyncio.sleep(3600)
+        return {"status": "done"}
+
+    async def cancel(self) -> None:
+        self.cancel_calls += 1
 
 
 def _request(request_id: str, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -171,6 +203,14 @@ class _Sidecar:
         with contextlib.suppress(Exception):
             await self._writer.wait_closed()
 
+    async def recv_response(self, request_id: str, limit: int = 8) -> dict[str, Any]:
+        """Next response frame for `request_id`, skipping interleaved events."""
+        for _ in range(limit):
+            frame = await self.recv()
+            if frame["type"] == "response" and frame.get("id") == request_id:
+                return frame
+        raise AssertionError(f"no response frame for request {request_id!r}")
+
 
 async def _start(app: SaniCoreApp) -> _Sidecar:
     loop = asyncio.get_running_loop()
@@ -210,26 +250,65 @@ async def test_run_start_streams_events_then_final_response() -> None:
     sidecar = await _start(SaniCoreApp(registry))
     try:
         sidecar.send(_request("r1", "run.start", {"agent_id": "fake", "text": "hi"}))
-        first = await sidecar.recv()
-        second = await sidecar.recv()
-        final = await sidecar.recv()
-        assert first["type"] == "event"
-        assert first["kind"] == "step"
-        assert first["data"] == {"n": 1}
-        assert first["run_id"]
-        assert second == {
-            "type": "event",
-            "run_id": first["run_id"],
-            "kind": "step",
-            "data": {"n": 2},
-        }
-        assert final == {
+        frames = [await sidecar.recv() for _ in range(5)]
+        kinds = [frame.get("kind") for frame in frames if frame["type"] == "event"]
+        assert kinds == ["agent.started", "step", "step", "agent.completed"]
+        run_id = frames[0]["run_id"]
+        # Identity is on every frame, not just the first: the UI never has to
+        # remember which agent a run started with to label a later event.
+        for frame in frames[:4]:
+            assert frame["run_id"] == run_id
+            assert frame["agent_id"] == "fake"
+        assert frames[0]["data"] == {"text": "hi"}
+        assert frames[1]["data"] == {"n": 1}
+        assert frames[3]["data"] == {"status": "done"}
+        assert frames[4] == {
             "type": "response",
             "id": "r1",
             "ok": True,
             "result": {"status": "done", "echo": "hi"},
             "error": "",
         }
+    finally:
+        await sidecar.close()
+
+
+async def test_run_start_threads_the_conversation_id_to_the_agent() -> None:
+    agent = _FakeAgent()
+    registry = AgentRegistry()
+    registry.register(agent)
+    sidecar = await _start(SaniCoreApp(registry))
+    try:
+        sidecar.send(
+            _request("r1", "run.start", {"agent_id": "fake", "text": "a", "thread_id": "c-77"})
+        )
+        await sidecar.recv_response("r1")
+        assert agent.threads == ["c-77"]
+        # A second turn on the same conversation must reuse the same thread.
+        sidecar.send(
+            _request("r2", "run.start", {"agent_id": "fake", "text": "b", "thread_id": "c-77"})
+        )
+        await sidecar.recv_response("r2")
+        assert agent.threads == ["c-77", "c-77"]
+        # Omitting it is a one-shot thread, never another conversation's.
+        sidecar.send(_request("r3", "run.start", {"agent_id": "fake", "text": "c"}))
+        await sidecar.recv_response("r3")
+        assert agent.threads == ["c-77", "c-77", ""]
+    finally:
+        await sidecar.close()
+
+
+async def test_run_start_rejects_non_string_thread_id_and_keeps_session() -> None:
+    registry = AgentRegistry()
+    registry.register(_FakeAgent())
+    sidecar = await _start(SaniCoreApp(registry))
+    try:
+        sidecar.send(_request("r1", "run.start", {"agent_id": "fake", "text": "a", "thread_id": 7}))
+        frame = await sidecar.recv()
+        assert frame["ok"] is False
+        assert "thread_id" in frame["error"]
+        sidecar.send(_request("2", "agents.list"))
+        assert (await sidecar.recv())["ok"] is True
     finally:
         await sidecar.close()
 
@@ -292,14 +371,11 @@ async def test_concurrency_cap_rejects_extra_run() -> None:
         sidecar.send(_request("r1", "run.start", {"agent_id": "gated", "text": "a"}))
         await asyncio.wait_for(gated.started.wait(), _TIMEOUT)
         sidecar.send(_request("r2", "run.start", {"agent_id": "gated", "text": "b"}))
-        rejected = await sidecar.recv()
-        assert rejected["type"] == "response"
-        assert rejected["id"] == "r2"
+        rejected = await sidecar.recv_response("r2")
         assert rejected["ok"] is False
         assert "limit" in rejected["error"]
         gated.release.set()
-        done = await sidecar.recv()
-        assert done["id"] == "r1"
+        done = await sidecar.recv_response("r1")
         assert done["ok"] is True
     finally:
         await sidecar.close()
@@ -312,15 +388,18 @@ async def test_run_cancel_stops_slow_agent_and_reports_cancelled() -> None:
     sidecar = await _start(SaniCoreApp(registry))
     try:
         sidecar.send(_request("r1", "run.start", {"agent_id": "slow", "text": "x"}))
-        started = await sidecar.recv()
-        assert started["kind"] == "step"
-        sidecar.send(_request("r2", "run.cancel", {"run_id": started["run_id"]}))
+        opened = [await sidecar.recv() for _ in range(2)]
+        assert [frame["kind"] for frame in opened] == ["agent.started", "step"]
+        run_id = opened[0]["run_id"]
+        sidecar.send(_request("r2", "run.cancel", {"run_id": run_id}))
         frames = [await sidecar.recv() for _ in range(3)]
         acks = [f for f in frames if f["type"] == "response" and f["id"] == "r2"]
-        cancelled = [f for f in frames if f["type"] == "event" and f["kind"] == "cancelled"]
+        cancelled = [f for f in frames if f["type"] == "event" and f["kind"] == "agent.cancelled"]
         finals = [f for f in frames if f["type"] == "response" and f["id"] == "r1"]
         assert len(acks) == 1 and acks[0]["ok"] is True
-        assert len(cancelled) == 1 and cancelled[0]["run_id"] == started["run_id"]
+        assert len(cancelled) == 1
+        assert cancelled[0]["run_id"] == run_id
+        assert cancelled[0]["agent_id"] == "slow"
         assert len(finals) == 1
         assert finals[0]["ok"] is True
         assert finals[0]["result"] == {"status": "cancelled"}
@@ -352,14 +431,19 @@ async def test_agent_failure_yields_error_response_and_session_survives() -> Non
     sidecar = await _start(SaniCoreApp(registry))
     try:
         sidecar.send(_request("r1", "run.start", {"agent_id": "boom", "text": "x"}))
-        frame = await sidecar.recv()
-        assert frame["type"] == "response"
-        assert frame["id"] == "r1"
-        assert frame["ok"] is False
-        assert "boom" in frame["error"]
+        started, failed, response = [await sidecar.recv() for _ in range(3)]
+        assert started["kind"] == "agent.started"
+        # A failure names the agent that failed, so the UI can stop animating
+        # the right avatar instead of leaving it stuck in "working".
+        assert failed["kind"] == "agent.failed"
+        assert failed["agent_id"] == "boom"
+        assert "boom" in failed["data"]["error"]
+        assert response["type"] == "response"
+        assert response["ok"] is False
+        assert "boom" in response["error"]
         sidecar.send(_request("r2", "run.start", {"agent_id": "fake", "text": "x"}))
-        assert (await sidecar.recv())["kind"] == "step"
-        assert (await sidecar.recv())["kind"] == "step"
+        kinds = [(await sidecar.recv())["kind"] for _ in range(4)]
+        assert kinds == ["agent.started", "step", "step", "agent.completed"]
         final = await sidecar.recv()
         assert final["type"] == "response"
         assert final["id"] == "r2"
@@ -392,6 +476,80 @@ async def test_non_object_frame_terminates_serve() -> None:
         await sidecar.close()
 
 
+async def test_host_named_run_id_is_used_verbatim_and_rejects_collisions() -> None:
+    gated = _GatedAgent()
+    registry = AgentRegistry()
+    registry.register(gated)
+    sidecar = await _start(SaniCoreApp(registry))
+    try:
+        sidecar.send(
+            _request("r1", "run.start", {"agent_id": "gated", "text": "hi", "run_id": "run-7"})
+        )
+        started = await sidecar.recv()
+        # The host named it, so it can cancel this exact run without waiting
+        # for a frame that tells it the id.
+        assert started["run_id"] == "run-7"
+        assert started["kind"] == "agent.started"
+        await asyncio.wait_for(gated.started.wait(), _TIMEOUT)
+        sidecar.send(
+            _request("r2", "run.start", {"agent_id": "gated", "text": "hi", "run_id": "run-7"})
+        )
+        clash = await sidecar.recv_response("r2")
+        assert clash["ok"] is False
+        assert "run id in use" in clash["error"]
+        gated.release.set()
+        assert (await sidecar.recv_response("r1"))["ok"] is True, "live run untouched"
+        sidecar.send(_request("r3", "run.start", {"agent_id": "gated", "text": "x", "run_id": 5}))
+        bad = await sidecar.recv_response("r3")
+        assert bad["ok"] is False
+        assert "run_id" in bad["error"]
+    finally:
+        await sidecar.close()
+
+
+async def test_run_cancel_rejects_non_string_run_id() -> None:
+    sidecar = await _start(SaniCoreApp(AgentRegistry()))
+    try:
+        sidecar.send(_request("r1", "run.cancel", {"run_id": 7}))
+        frame = await sidecar.recv()
+        assert frame["ok"] is False
+        assert "run_id" in frame["error"]
+    finally:
+        await sidecar.close()
+
+
 async def test_invalid_concurrency_limit_is_rejected() -> None:
     with pytest.raises(ValueError, match="max_concurrent_runs"):
         SaniCoreApp(AgentRegistry(), max_concurrent_runs=0)
+
+
+async def test_invalid_wall_clock_is_rejected() -> None:
+    with pytest.raises(ValueError, match="run_wall_clock_seconds"):
+        SaniCoreApp(AgentRegistry(), run_wall_clock_seconds=0)
+
+
+async def test_run_wall_clock_terminates_a_hung_agent() -> None:
+    agent = _StallingAgent()
+    registry = AgentRegistry()
+    registry.register(agent)
+    sidecar = await _start(SaniCoreApp(registry, run_wall_clock_seconds=0.05))
+    try:
+        sidecar.send(_request("r1", "run.start", {"agent_id": "stall", "text": "x"}))
+        started = await sidecar.recv()
+        assert started["kind"] == "agent.started"
+        failed = await sidecar.recv()
+        # The client learns which agent died, and the slot frees: a single-owner
+        # desktop host must never wait out a wedged run.
+        assert failed["kind"] == "agent.failed"
+        assert failed["agent_id"] == "stall"
+        assert "wall-clock" in failed["data"]["error"]
+        response = await sidecar.recv()
+        assert response["type"] == "response"
+        assert response["ok"] is False
+        assert "wall-clock" in response["error"]
+        assert agent.cancel_calls == 1
+        # The session and its run table survive: the next turn still works.
+        sidecar.send(_request("2", "agents.list"))
+        assert (await sidecar.recv())["ok"] is True
+    finally:
+        await sidecar.close()

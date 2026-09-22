@@ -55,12 +55,13 @@ pub fn set_esc_active(app: &AppHandle, active: bool) {
     let esc: Shortcut = "Escape".parse().expect("escape shortcut");
     if active {
         let _handle = app.clone();
-        if gs.on_shortcut(esc, move |app, _s, event| {
-            if event.state == ShortcutState::Pressed {
-                app_state::handle_escape(app);
-            }
-        })
-        .is_ok()
+        if gs
+            .on_shortcut(esc, move |app, _s, event| {
+                if event.state == ShortcutState::Pressed {
+                    app_state::handle_escape(app);
+                }
+            })
+            .is_ok()
         {
             *registered = true;
         }

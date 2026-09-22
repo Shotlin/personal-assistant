@@ -25,6 +25,19 @@ pub struct StoredMessage {
     pub text: String,
     pub created_at: i64,
     pub run_id: Option<String>,
+    /// Which registered agent produced an assistant message. NULL on user
+    /// messages and on history written before attribution existed -- that is
+    /// rendered as a neutral Sani, never guessed at.
+    pub agent_id: Option<String>,
+    pub agent_name: Option<String>,
+}
+
+/// Provenance recorded alongside one stored message.
+#[derive(Clone, Default)]
+pub struct Attribution<'a> {
+    pub run_id: Option<&'a str>,
+    pub agent_id: Option<&'a str>,
+    pub agent_name: Option<&'a str>,
 }
 
 pub struct History {
@@ -32,6 +45,24 @@ pub struct History {
 }
 
 pub type SharedHistory = Arc<History>;
+
+/// Add a column to `messages` only if it is missing, so reopening an existing
+/// database is a no-op and never rewrites or drops rows.
+fn ensure_column(conn: &Connection, name: &str, declaration: &str) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("SELECT 1 FROM pragma_table_info('messages') WHERE name = ?1")
+        .map_err(|e| e.to_string())?;
+    let present: bool = stmt.exists([name]).map_err(|e| e.to_string())?;
+    if !present {
+        conn.execute(
+            &format!("ALTER TABLE messages ADD COLUMN {name} {declaration}"),
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+        log::info!("[history] migrated: added messages.{name}");
+    }
+    Ok(())
+}
 
 impl History {
     pub fn open(db_path: PathBuf) -> Result<Self, String> {
@@ -53,13 +84,22 @@ impl History {
                  role            TEXT NOT NULL,
                  text            TEXT NOT NULL,
                  created_at      INTEGER NOT NULL,
-                 run_id          TEXT
+                 run_id          TEXT,
+                 agent_id        TEXT,
+                 agent_name      TEXT
              );
              CREATE INDEX IF NOT EXISTS messages_conversation_idx
                  ON messages (conversation_id, created_at);",
         )
         .map_err(|e| e.to_string())?;
-        Ok(Self { conn: Mutex::new(conn) })
+        // Databases created before multi-agent attribution lack these columns.
+        // Adding them in place keeps every existing row valid: an old assistant
+        // message simply has no agent and renders under the neutral Sani mark.
+        ensure_column(&conn, "agent_id", "TEXT")?;
+        ensure_column(&conn, "agent_name", "TEXT")?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub fn create_conversation(&self, id: &str, title: &str, now: i64) -> Result<(), String> {
@@ -87,7 +127,8 @@ impl History {
                 })
             })
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     }
 
     pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>, String> {
@@ -130,8 +171,11 @@ impl History {
 
     pub fn delete_conversation(&self, id: &str) -> Result<(), String> {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM messages WHERE conversation_id = ?1", params![id])
-            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM messages WHERE conversation_id = ?1",
+            params![id],
+        )
+        .map_err(|e| e.to_string())?;
         conn.execute("DELETE FROM conversations WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
@@ -144,13 +188,22 @@ impl History {
         role: &str,
         text: &str,
         now: i64,
-        run_id: Option<&str>,
+        attribution: &Attribution<'_>,
     ) -> Result<(), String> {
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT INTO messages (id, conversation_id, role, text, created_at, run_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, conversation_id, role, text, now, run_id],
+            "INSERT INTO messages (id, conversation_id, role, text, created_at, run_id, agent_id, agent_name)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                id,
+                conversation_id,
+                role,
+                text,
+                now,
+                attribution.run_id,
+                attribution.agent_id,
+                attribution.agent_name
+            ],
         )
         .map_err(|e| e.to_string())?;
         Ok(())
@@ -160,7 +213,8 @@ impl History {
         let conn = self.conn.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT id, conversation_id, role, text, created_at, run_id FROM messages
+                "SELECT id, conversation_id, role, text, created_at, run_id, agent_id, agent_name
+                 FROM messages
                  WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC",
             )
             .map_err(|e| e.to_string())?;
@@ -173,10 +227,13 @@ impl History {
                     text: row.get(3)?,
                     created_at: row.get(4)?,
                     run_id: row.get(5)?,
+                    agent_id: row.get(6)?,
+                    agent_name: row.get(7)?,
                 })
             })
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     }
 }
 

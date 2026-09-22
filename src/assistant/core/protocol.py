@@ -16,6 +16,19 @@ import orjson
 
 MAX_FRAME_BYTES = 1024 * 1024
 
+# Identity is structural: the app loop stamps `agent_id` on every event frame
+# from the registry descriptor, so an agent never has to name itself and the
+# frontend never infers one from display text. Agents emit only WORK_KINDS.
+AGENT_STARTED = "agent.started"
+AGENT_PROGRESS = "agent.progress"
+AGENT_TOKEN = "agent.token"
+AGENT_HANDOFF = "agent.handoff"
+AGENT_COMPLETED = "agent.completed"
+AGENT_CANCELLED = "agent.cancelled"
+AGENT_FAILED = "agent.failed"
+
+WORK_KINDS = frozenset({AGENT_PROGRESS, AGENT_TOKEN, AGENT_HANDOFF})
+
 
 class ProtocolError(Exception):
     """A frame violated the wire contract: oversize, truncated, or not JSON."""
@@ -90,11 +103,18 @@ class Response:
 @dataclass(frozen=True, slots=True)
 class Event:
     run_id: str
+    agent_id: str
     kind: str
     data: dict[str, Any]
 
     def to_frame(self) -> dict[str, Any]:
-        return {"type": "event", "run_id": self.run_id, "kind": self.kind, "data": self.data}
+        return {
+            "type": "event",
+            "run_id": self.run_id,
+            "agent_id": self.agent_id,
+            "kind": self.kind,
+            "data": self.data,
+        }
 
 
 def response_from_request(request: Request, result: Any) -> Response:

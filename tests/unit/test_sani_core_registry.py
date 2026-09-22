@@ -24,6 +24,7 @@ class _StubAgent:
         self,
         text: str,
         *,
+        thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
     ) -> dict[str, Any]:

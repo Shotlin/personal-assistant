@@ -25,7 +25,6 @@ import {
   type Conversation,
   type UiState,
 } from "../lib/tauri";
-import { ACTIVE_AGENT, OTHER_AGENTS } from "../lib/agents";
 import Message from "../components/Message";
 import ActivityTimeline from "../components/ActivityTimeline";
 import HistoryDrawer from "../components/HistoryDrawer";
@@ -45,7 +44,6 @@ const STATE_TEXT: Record<UiState, string> = {
 /** Terminal outcome of an agent run — never reported as success by accident (FIX-03). */
 const OUTCOME_TEXT: Record<string, string> = {
   cancelled: "Stopped — this run was cancelled. Any partial answer is kept above.",
-  interrupted: "Interrupted — the stream ended before the answer finished. Partial text is kept.",
   failed: "The agent could not finish this run.",
 };
 
@@ -262,30 +260,6 @@ export default function PanelApp() {
               )}
             </>
           )}
-        </div>
-
-        {/* Footer: which agent is answering, and what else can be switched to */}
-        <div className="panel-footer">
-          <div className="footer-col">
-            <div className="footer-label">Active Agent</div>
-            <div className="agent-chip">
-              <span className="dot" style={{ color: "var(--success)" }} />
-              <span className="agent-chip-title">{ACTIVE_AGENT.name}</span>
-            </div>
-          </div>
-          <div className="footer-col footer-switch">
-            <div className="footer-label">Switch Agent</div>
-            <div className="agent-chips">
-              {OTHER_AGENTS.map((a) => (
-                <button key={a.id} className="agent-chip-mini" title={a.blurb}>
-                  {a.name}
-                </button>
-              ))}
-              {OTHER_AGENTS.length === 0 && (
-                <span className="agent-none">Only {ACTIVE_AGENT.name} is connected</span>
-              )}
-            </div>
-          </div>
         </div>
 
         {drawer === "history" && (

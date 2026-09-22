@@ -49,7 +49,6 @@ impl UiState {
 
 struct RunGuard {
     message_id: String,
-    cancelled: Arc<AtomicBool>,
 }
 
 pub struct SaniState {
@@ -132,15 +131,6 @@ fn set_state(app: &AppHandle, next: UiState) {
     }
 }
 
-pub fn is_cancelled(app: &AppHandle, message_id: &str) -> bool {
-    let state = app.state::<SaniState>();
-    let guard = state.run.lock();
-    guard
-        .as_ref()
-        .map(|r| r.message_id == message_id && r.cancelled.load(Ordering::Relaxed))
-        .unwrap_or(false)
-}
-
 fn emit_mic_permission(app: &AppHandle, state: &str) {
     let _ = app.emit("sani://mic-permission", state);
 }
@@ -215,7 +205,9 @@ pub fn start_listening(app: &AppHandle) {
                     // Still undetermined: the prompt was never answered. Say so
                     // instead of blaming System Settings for a denial.
                     MicPermission::NotDetermined => {
-                        log::warn!("[mic] authorization prompt went unanswered; staying honest about it");
+                        log::warn!(
+                            "[mic] authorization prompt went unanswered; staying honest about it"
+                        );
                         emit_mic_permission(&app2, "not_determined");
                         let _ = app2.emit(
                             "sani://mic-error",
@@ -451,7 +443,11 @@ pub fn on_stt_note(app: &AppHandle, ev: &crate::speech::SttEvent) {
     let _ = app;
     match ev.reason.as_str() {
         "segment" => {
-            log::info!("[stt] segment completed chars={} segments={}", ev.chars, ev.segments)
+            log::info!(
+                "[stt] segment completed chars={} segments={}",
+                ev.chars,
+                ev.segments
+            )
         }
         "possible_end" => log::info!(
             "[turn] possible end silence_ms={} gen={} segments={}",
@@ -472,17 +468,21 @@ pub fn on_stt_note(app: &AppHandle, ev: &crate::speech::SttEvent) {
             ev.silence_ms,
             ev.message
         ),
-        "suppressed-filler" => log::info!(
-            "[turn] suppressed filler-only candidate chars={}",
-            ev.chars
-        ),
-        "vad-unavailable" => log::warn!("[stt] VAD unavailable — endpointing on RMS: {}", ev.message),
+        "suppressed-filler" => {
+            log::info!("[turn] suppressed filler-only candidate chars={}", ev.chars)
+        }
+        "vad-unavailable" => {
+            log::warn!("[stt] VAD unavailable — endpointing on RMS: {}", ev.message)
+        }
         "rms-rescue" => log::warn!(
             "[turn] committed without VAD speech evidence (low-confidence VAD) chars={}",
             ev.chars
         ),
         "flush-empty" => log::info!("[turn] flush requested with nothing pending"),
-        "unknown-cmd" => log::warn!("[stt] sidecar received an unknown control command: {}", ev.message),
+        "unknown-cmd" => log::warn!(
+            "[stt] sidecar received an unknown control command: {}",
+            ev.message
+        ),
         "deprecated-flag" => log::debug!("[stt] deprecated sidecar flag: {}", ev.message),
         other => log::debug!("[stt] note reason={other} message={}", ev.message),
     }
@@ -534,7 +534,11 @@ pub fn on_final(app: &AppHandle, text: String) {
         // `begin_turn_if_current` can return without changing anything, and
         // nothing else ever leaves Finalizing — so this is the only escape from
         // a permanently stuck Finalizing state.
-        let still_ours = app_handle.state::<SaniState>().turn_gen.load(Ordering::Relaxed) == my_gen;
+        let still_ours = app_handle
+            .state::<SaniState>()
+            .turn_gen
+            .load(Ordering::Relaxed)
+            == my_gen;
         if still_ours && current_state(&app_handle) == UiState::Finalizing {
             log::error!("[turn] stuck in Finalizing; forcing error");
             set_state(&app_handle, UiState::Error);
@@ -552,7 +556,10 @@ fn begin_turn_if_current(app: &AppHandle, gen: u64, final_text: String) {
         return;
     }
     if current_state(app) != UiState::Finalizing {
-        log::warn!("[turn] finalization skipped state={}", current_state(app).as_str());
+        log::warn!(
+            "[turn] finalization skipped state={}",
+            current_state(app).as_str()
+        );
         return;
     }
     begin_turn(app, final_text);
@@ -562,12 +569,23 @@ fn ensure_active_conversation(app: &AppHandle) -> String {
     let state = app.state::<SaniState>();
     let mut settings_guard = state.settings.write();
     let existing = settings_guard.active_conversation_id.clone();
-    if !existing.is_empty() && state.history.get_conversation(&existing).ok().flatten().is_some() {
+    if !existing.is_empty()
+        && state
+            .history
+            .get_conversation(&existing)
+            .ok()
+            .flatten()
+            .is_some()
+    {
         return existing;
     }
     let id = Uuid::new_v4().to_string();
     let now = now_ms();
-    if state.history.create_conversation(&id, "New conversation", now).is_err() {
+    if state
+        .history
+        .create_conversation(&id, "New conversation", now)
+        .is_err()
+    {
         return existing;
     }
     settings_guard.active_conversation_id = id.clone();
@@ -586,11 +604,18 @@ fn begin_turn(app: &AppHandle, final_text: String) {
     let message_id = Uuid::new_v4().to_string();
     let now = now_ms();
     let _ = state.history.append_message(
-        &message_id, &conversation_id, "user", &final_text, now, None,
+        &message_id,
+        &conversation_id,
+        "user",
+        &final_text,
+        now,
+        &history::Attribution::default(),
     );
-    let _ = state
-        .history
-        .rename_conversation(&conversation_id, &history::title_from_text(&final_text), now);
+    let _ = state.history.rename_conversation(
+        &conversation_id,
+        &history::title_from_text(&final_text),
+        now,
+    );
     let _ = state.history.touch_conversation(&conversation_id, now);
     let _ = app.emit(
         "sani://message",
@@ -601,7 +626,6 @@ fn begin_turn(app: &AppHandle, final_text: String) {
     *state.assistant_message_id.lock() = String::new();
     *state.run.lock() = Some(RunGuard {
         message_id: message_id.clone(),
-        cancelled: Arc::new(AtomicBool::new(false)),
     });
 
     log::info!("begin turn: conversation={conversation_id} message={message_id}");
@@ -610,16 +634,43 @@ fn begin_turn(app: &AppHandle, final_text: String) {
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        crate::agent::stream_chat(app_handle, message_id, final_text).await;
+        // The registry decides who takes the turn; the host only asks.
+        let (agent_id, agent_name) = match crate::runtime::resolve_agent(&app_handle).await {
+            Some(pair) => pair,
+            None => {
+                agent_finished(
+                    &app_handle,
+                    &message_id,
+                    "",
+                    "",
+                    false,
+                    "failed",
+                    "The assistant runtime has no agents available.".to_string(),
+                    "",
+                    "",
+                );
+                return;
+            }
+        };
+        log::info!("turn routed to agent={agent_id}");
+        crate::runtime::stream_turn(
+            app_handle,
+            message_id,
+            agent_id,
+            agent_name,
+            final_text,
+            conversation_id,
+        )
+        .await;
     });
 }
 
-/// Terminal path of one agent run (from agent.rs).
+/// Terminal path of one agent run (from `runtime::stream_turn`).
 ///
-/// `status` is one of: "completed", "cancelled", "interrupted", "failed".
-/// Only a normal completed protocol path is a success (FIX-03); partial text
-/// is preserved either way, but an interrupted/cancelled run is never reported
-/// as a clean success.
+/// `status` is one of: "completed", "cancelled", "failed". Only a normal
+/// completed run is a success (FIX-03); partial text is preserved either way,
+/// but an interrupted or cancelled run is never reported as a clean success.
+/// `agent_id`/`agent_name` are what make the stored answer attributable.
 pub fn agent_finished(
     app: &AppHandle,
     message_id: &str,
@@ -628,6 +679,8 @@ pub fn agent_finished(
     ok: bool,
     status: &str,
     error: String,
+    agent_id: &str,
+    agent_name: &str,
 ) {
     let state = app.state::<SaniState>();
 
@@ -646,18 +699,37 @@ pub fn agent_finished(
     }
     *state.run.lock() = None;
 
+    let run_opt = if run_id.is_empty() {
+        None
+    } else {
+        Some(run_id)
+    };
+    let agent_opt = if agent_id.is_empty() {
+        None
+    } else {
+        Some(agent_id)
+    };
+    let name_opt = if agent_name.is_empty() {
+        None
+    } else {
+        Some(agent_name)
+    };
     if !text.trim().is_empty() {
         let assistant_id = Uuid::new_v4().to_string();
         let conversation_id = state.settings.read().active_conversation_id.clone();
         let now = now_ms();
-        let run_opt = if run_id.is_empty() { None } else { Some(run_id) };
+        let attribution = history::Attribution {
+            run_id: run_opt,
+            agent_id: agent_opt,
+            agent_name: name_opt,
+        };
         let _ = state.history.append_message(
             &assistant_id,
             &conversation_id,
             "assistant",
             text,
             now,
-            run_opt,
+            &attribution,
         );
         let _ = state.history.touch_conversation(&conversation_id, now);
         *state.assistant_message_id.lock() = assistant_id;
@@ -670,11 +742,13 @@ pub fn agent_finished(
             "ok": ok,
             "status": status,
             "error": error,
+            "agent_id": agent_id,
+            "agent_name": agent_name,
         }),
     );
     // Length, never content: the transcript stays in the local history store.
     log::info!(
-        "turn finished: message={message_id} run={run_id} status={status} chars={}",
+        "turn finished: message={message_id} run={run_id} agent={agent_id} status={status} chars={}",
         text.chars().count()
     );
     let next = match status {
@@ -691,10 +765,12 @@ pub fn handle_escape(app: &AppHandle) {
         // Esc always means "forget what I said", never "send it".
         UiState::Listening | UiState::Finalizing | UiState::Preparing => cancel_listening(app),
         UiState::Working => {
-            let state = app.state::<SaniState>();
-            let guard_lock = state.run.lock();
-            if let Some(guard) = guard_lock.as_ref() {
-                guard.cancelled.store(true, Ordering::Relaxed);
+            // The run is already in flight inside the sidecar, so stopping it
+            // means asking the live run control -- a local flag would only
+            // make the UI look stopped while the computer kept moving.
+            if !crate::sani_core::cancel_current_run(app) {
+                log::warn!("[turn] Esc during Working but no live run to cancel");
+                set_state(app, UiState::Idle);
             }
         }
         UiState::Idle | UiState::Error => {
@@ -732,18 +808,6 @@ pub fn spawn_level_ticker(app: AppHandle) {
     });
 }
 
-/// Periodic agent health probe.
-pub fn spawn_health_probe(app: AppHandle) {
-    std::thread::spawn(move || {
-        loop {
-            let online = {
-                let handle = app.clone();
-                tauri::async_runtime::block_on(async move {
-                    crate::agent::health(&handle).await
-                })
-            };
-            let _ = app.emit("sani://agent-status", online);
-            std::thread::sleep(Duration::from_secs(20));
-        }
-    });
-}
+// Runtime liveness is supervised by `sani_core::spawn_supervisor`: the
+// assistant is Sani's own child process now, so there is nothing to poll over
+// HTTP.

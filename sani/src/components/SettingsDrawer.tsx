@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  agentHealth,
   getSettings,
   listMics,
   saveSettings,
@@ -133,54 +132,7 @@ export default function SettingsDrawer({ onClose }: SettingsDrawerProps) {
             {capturing ? "Press keys…" : hotkeyDraft}
           </button>
         </div>
-
-        <div className="settings-group">Agent</div>
-        <div className="settings-row">
-          <span>Local agent status</span>
-          <span className="settings-inline">
-            <AgentStatusDot />
-          </span>
-        </div>
-        <label className="settings-row">
-          <span>Local endpoint</span>
-          <input
-            className="text-input"
-            defaultValue={settings.agent_base_url}
-            onBlur={(e) => {
-              if (e.target.value.trim() && e.target.value !== settings.agent_base_url) {
-                void patch({ agent_base_url: e.target.value.trim() });
-              }
-            }}
-          />
-        </label>
-        <button
-          className="mini-btn"
-          onClick={async () => {
-            await agentHealth();
-            flashSaved();
-          }}
-        >
-          Reconnect
-        </button>
-        {!settings.has_agent_key && (
-          <div className="settings-note">
-            No gateway key found. Set SANI_AGENT_API_KEY or place a .env with
-            AGENT_GATEWAY_API_KEY near the app.
-          </div>
-        )}
       </div>
     </div>
-  );
-}
-
-function AgentStatusDot() {
-  const [online, setOnline] = useState<boolean | null>(null);
-  useEffect(() => {
-    void agentHealth().then(setOnline);
-  }, []);
-  return (
-    <span className={online === null ? "wait" : online ? "ok" : "err"}>
-      {online === null ? "Checking…" : online ? "Online" : "Offline"}
-    </span>
   );
 }

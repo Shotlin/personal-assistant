@@ -17,20 +17,19 @@ import asyncio
 import contextlib
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from pathlib import Path
 from typing import Any
 
 from assistant.agent.context import RunBudget
 from assistant.core.desktop import system_status
+from assistant.core.protocol import AGENT_PROGRESS, AGENT_TOKEN
 from assistant.core.registry import AgentDescriptor, AgentRegistry
+from assistant.core.runtime import SaniRuntime
 from assistant.runtime.session import DesktopSessionManager, McpToolDesktopDriver
 from assistant.settings import Settings
 from assistant.velo.agent import VeloAgent
 from assistant.velo.cua_adapter import VeloCuaAdapter, allowed_apps_from_manifest
 from assistant.velo.jev import JevDecisionEngine, text_candidates_from_objective
-from assistant.velo.types import VeloLimits, VeloObjective
-
-_SKILLS_ROOT = Path(__file__).resolve().parents[1] / "skills"
+from assistant.velo.types import VeloLimits, VeloObjective, VeloResult, VeloStatus
 
 
 def _default_velo_context(
@@ -103,6 +102,7 @@ class VeloAgentEntry:
         self,
         text: str,
         *,
+        thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
     ) -> dict[str, Any]:
@@ -123,7 +123,9 @@ class VeloAgentEntry:
                 result = await agent.run(
                     VeloObjective(text=text, text_candidates=text_candidates_from_objective(text)),
                     cancel_check=lambda: cancel_check() or self._cancel_requested,
-                    on_progress=lambda line: events.put_nowait(("progress", {"line": line})),
+                    on_progress=lambda line: events.put_nowait(
+                        (AGENT_PROGRESS, {"message": line})
+                    ),
                 )
         finally:
             self._active_cancel = None
@@ -133,8 +135,31 @@ class VeloAgentEntry:
         return {
             "status": result.status.value,
             "reason": result.reason,
+            "response": velo_response(result),
             "metrics": result.metrics.as_dict(),
         }
+
+
+#: What the user sees when Velo's structured outcome reaches the transcript.
+#: Derived from the terminal status only -- never a guess about the desktop.
+_VELO_FAILURE_LABELS: dict[VeloStatus, str] = {
+    VeloStatus.ASK_USER: "I need you to decide:",
+    VeloStatus.STOPPED: "Stopped.",
+    VeloStatus.FAILED: "I couldn't finish that.",
+}
+
+
+def velo_response(result: VeloResult) -> str:
+    """A one-line, honest answer for a completed Velo run.
+
+    Velo reports status/reason/metrics, not prose, so the transcript would
+    otherwise have nothing to attribute to it.
+    """
+    reason = result.reason.strip()
+    if result.status is VeloStatus.DONE:
+        return reason or "Done."
+    label = _VELO_FAILURE_LABELS.get(result.status, "Stopped.")
+    return f"{label} {reason}".strip()
 
 
 class DeepAgentEntry:
@@ -148,12 +173,13 @@ class DeepAgentEntry:
     ) -> None:
         self._settings = settings
         self._builder = agent_builder
-        self._agent: Any = None
         self._build_lock = asyncio.Lock()
         self._cancelled = False
-        # Owns the memory-resources stack after the first default build;
-        # held open for the process lifetime (see _build_default).
-        self._stack: contextlib.AsyncExitStack | None = None
+        # The runtime owns the memory + CUA + agent handles; it is opened once
+        # and held for the process lifetime, and the entry holds the only
+        # reference so nothing is garbage-collected mid-run.
+        self._runtime: SaniRuntime | None = None
+        self._runtime_cm: Any = None
 
     @property
     def descriptor(self) -> AgentDescriptor:
@@ -166,76 +192,113 @@ class DeepAgentEntry:
         # task cancellation (the app already task.cancel()s the run).
         self._cancelled = True
 
-    async def _ensure_agent(self) -> Any:
+    async def _ensure_runtime(self) -> SaniRuntime:
         async with self._build_lock:
-            if self._agent is not None:
-                return self._agent
+            if self._runtime is not None:
+                return self._runtime
             if self._builder is not None:
-                self._agent = await self._builder()
-                return self._agent
-            self._agent = await self._build_default()
-            return self._agent
-
-    async def _build_default(self) -> Any:
-        from assistant.agent.build import build_agent
-        from assistant.memory.local import open_local_memory_resources
-        from assistant.memory.postgres import open_memory_resources
-        from assistant.models import build_chat_model
-
-        # The memory-resources stack is intentionally kept open for the
-        # process lifetime: sani-core owns it, and the registry entry holds
-        # the only reference so it is never garbage-collected mid-run.
-        stack = contextlib.AsyncExitStack()
-        try:
-            if self._settings.memory_backend == "sqlite":
-                resources: Any = await stack.enter_async_context(
-                    open_local_memory_resources(self._settings.sani_db_path)
-                )
-            else:
-                resources = await stack.enter_async_context(
-                    open_memory_resources(self._settings.database_url)
-                )
-            model = build_chat_model(self._settings)
-            bundle = build_agent(
-                model=model,
-                checkpointer=resources.saver,
-                store=resources.store,
-                skills_root=_SKILLS_ROOT,
-            )
-        except BaseException:
-            await stack.aclose()
-            raise
-        self._stack = stack
-        return bundle.agent
+                # An injected agent carries its own transport; no runtime is
+                # opened, so tests never touch the driver or a provider.
+                self._runtime = SaniRuntime.open_with_agent(await self._builder(), self._settings)
+                return self._runtime
+            self._runtime_cm = SaniRuntime.open(self._settings)
+            try:
+                self._runtime = await self._runtime_cm.__aenter__()
+            except BaseException:
+                self._runtime_cm = None
+                raise
+            return self._runtime
 
     async def run(
         self,
         text: str,
         *,
+        thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
     ) -> dict[str, Any]:
         self._cancelled = False
-        await on_event("started", {"agent": "deep"})
-        agent = await self._ensure_agent()
-        from langchain_core.messages import HumanMessage
+        runtime = await self._ensure_runtime()
+        from langchain_core.messages import AIMessage, HumanMessage
 
         from assistant.agent.context import AgentContext
         from assistant.memory.namespaces import thread_id_for_sani
 
-        thread_id = thread_id_for_sani(f"core-{uuid.uuid4().hex[:8]}")
-        result = await agent.ainvoke(
-            {"messages": [HumanMessage(text)]},
-            {"configurable": {"thread_id": thread_id}},
-            context=AgentContext(user_id="sani-local", chat_id=thread_id),
-        )
+        # The host's conversation id IS the agent thread, so turn two of a chat
+        # resumes the memory of turn one. Without one, this stays a one-shot
+        # thread rather than silently borrowing another conversation's memory.
+        conversation = thread_id.strip() or f"core-{uuid.uuid4().hex[:8]}"
+        thread = thread_id_for_sani(conversation)
+
+        # The answer is whatever the model actually streamed, minus any message
+        # that turned out to be a tool-call preamble. Tracking it here (rather
+        # than re-reading the final graph state) guarantees the persisted text
+        # is exactly the text the user watched arrive.
+        partials: dict[str, list[str]] = {}
+        order: list[str] = []
+        tool_backed: set[str] = set()
+        announced_tools: set[str] = set()
+
+        async with runtime.run_scope(f"core-{uuid.uuid4().hex[:8]}") as budget:
+            async for event in runtime.agent.astream(
+                {"messages": [HumanMessage(text)]},
+                {"configurable": {"thread_id": thread}},
+                context=AgentContext(user_id="sani-local", chat_id=thread),
+                stream_mode="messages",
+            ):
+                if cancel_check() or self._cancelled:
+                    raise asyncio.CancelledError
+                message = event[0] if isinstance(event, tuple) and event else event
+                # isinstance, not `message.type == "ai"`: a streamed
+                # AIMessageChunk reports its type as "AIMessageChunk", so the
+                # attribute test that works on finished messages silently
+                # matches nothing on the stream.
+                if not isinstance(message, AIMessage):
+                    continue
+                message_id = str(getattr(message, "id", "") or "")
+                for call in getattr(message, "tool_call_chunks", None) or ():
+                    name = str(call.get("name") or "")
+                    if not name:
+                        continue
+                    tool_backed.add(message_id)
+                    if name not in announced_tools:
+                        announced_tools.add(name)
+                        await on_event(AGENT_PROGRESS, {"message": f"Using {name}"})
+                delta = _message_text(message)
+                if not delta:
+                    continue
+                if message_id not in partials:
+                    partials[message_id] = []
+                    order.append(message_id)
+                partials[message_id].append(delta)
+                await on_event(AGENT_TOKEN, {"text": delta})
+
         response = ""
-        for message in reversed(result["messages"]):
-            if getattr(message, "type", "") == "ai" and not getattr(message, "tool_calls", None):
-                text_value = getattr(message, "text", None)
-                response = str(text_value() if callable(text_value) else message.content or "")
-                break
-        return {"status": "done", "thread_id": thread_id, "response": response}
+        for message_id in reversed(order):
+            if message_id in tool_backed:
+                continue
+            response = "".join(partials[message_id])
+            break
+        return {
+            "status": "done",
+            "thread_id": thread,
+            "response": response,
+            "cua_actions_used": budget.used,
+        }
+
+
+def _message_text(message: Any) -> str:
+    """Plain text of a message or stream chunk, tolerating content blocks."""
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            str(block.get("text", ""))
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return "" if content is None else str(content)
 
 
 def build_default_registry(settings: Settings) -> AgentRegistry:

@@ -55,23 +55,32 @@ src/assistant/
   tools/            Cua MCP connection, allowlist, result normalization
   skills/           Read-only SKILL.md procedures
   observability/    JSON logging with secret redaction
-  api/, main.py     LEGACY FastAPI gateway — still the live voice path
-                    until the host finishes switching to sani-core IPC;
-                    remove at cutover (do not extend it)
+  api/, main.py     DEAD since the sani-core cutover: the host no longer
+                    speaks HTTP. Retained only for the Postgres-era
+                    integration tests; nothing in the shipping path uses it
 config/             cua-capabilities.yaml (bounded manifest), logging.yaml
 scripts/            run_velo.py, verify_cua.py, gateway-era dev scripts
 docs/               Sani storage-migration map
 tests/              unit / integration / e2e / velo — Sani + core coverage
 ```
 
-## Legacy boundary (temporary)
+## Runtime path (post-cutover)
 
-`src/assistant/api/` + `src/assistant/main.py` + `agent.rs`/`activity.rs`
-HTTP are the OLD path (Sani → localhost:8787). The NEW path
-(`sani_core.rs` ↔ `assistant.core`) exists and is tested. Until the host's
-voice flow moves onto it: don't delete the gateway, don't add features to
-it either. Postgres (`memory/postgres.py`, `runtime/runs.py`, `DATABASE_URL`)
-is a dev-only compatibility backend; the shipping backend is SQLite
+Voice and typed turns both go: `app_state::begin_turn` →
+`runtime::stream_turn` → `sani_core::run_turn` → framed `run.start` →
+`assistant.core`. The host spawns and supervises the sidecar at startup and
+builds its environment (Keychain credentials, embedded SQLite, absolute CUA
+manifest path) — there is no localhost server anywhere in the shipping path,
+and `agent_base_url` / gateway-key settings are gone.
+
+Every event frame carries `agent_id`; `agent.started/progress/token/
+handoff/completed/cancelled/failed` are the contract. Agent identity comes
+from the sidecar's `AgentRegistry` (`agents.list` → `core_agents`), never from
+a frontend roster.
+
+`src/assistant/api/` + `src/assistant/main.py` are now unused by the app, and
+Postgres (`memory/postgres.py`, `runtime/runs.py`, `DATABASE_URL`) is a
+dev-only compatibility backend for them; the shipping backend is SQLite
 (`MEMORY_BACKEND=sqlite` + `SANI_DATA_DIR`).
 
 ## Conventions

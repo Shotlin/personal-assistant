@@ -1,20 +1,21 @@
-//! Sani — local desktop voice shell for the Personal Assistant Deep Agent.
+//! Sani — local desktop assistant: voice and text in, reasoning and computer
+//! control out.
 //!
 //! Global hotkey -> mic pill overlay -> live Moonshine streaming STT ->
-//! final transcript (sent exactly once) -> existing gateway (SSE) ->
-//! right-side conversation + activity panel. No TTS, no wake word, no
-//! login, no second agent implementation.
+//! final transcript (sent exactly once) -> sani-core sidecar over private
+//! framed-JSON IPC -> right-side conversation + activity panel. The typed
+//! composer takes the identical path. No TTS, no wake word, no login, and no
+//! second agent implementation.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod activity;
-mod agent;
 mod app_state;
 mod audio;
 mod history;
 mod hotkey;
 mod onboarding;
 mod permissions;
+mod runtime;
 mod sani_core;
 mod settings;
 mod setup;
@@ -27,7 +28,7 @@ use parking_lot::RwLock;
 use serde::Serialize;
 use std::io::Write;
 use std::sync::atomic::Ordering;
-use tauri::{Manager, Emitter, Listener};
+use tauri::{Emitter, Listener, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use app_state::SaniState;
@@ -76,11 +77,15 @@ fn main() {
             // prove the UI actually came up rather than showing empty glass.
             {
                 let h = handle.clone();
-                app.listen("sani://pill-ui-ready", move |_| app_state::mark_ui_ready(&h, "pill"));
+                app.listen("sani://pill-ui-ready", move |_| {
+                    app_state::mark_ui_ready(&h, "pill")
+                });
             }
             {
                 let h = handle.clone();
-                app.listen("sani://panel-ui-ready", move |_| app_state::mark_ui_ready(&h, "panel"));
+                app.listen("sani://panel-ui-ready", move |_| {
+                    app_state::mark_ui_ready(&h, "panel")
+                });
             }
             // Any JS-side failure is mirrored into the Rust log: a UI problem
             // must be visible in the terminal, not only behind transparent glass.
@@ -91,13 +96,14 @@ fn main() {
                     message: String,
                 }
                 match serde_json::from_str::<UiError>(payload.payload()) {
-                    Ok(err) => log::error!("[ui-boot] {} webview error: {}", err.label, err.message),
+                    Ok(err) => {
+                        log::error!("[ui-boot] {} webview error: {}", err.label, err.message)
+                    }
                     Err(_) => log::error!("[ui-boot] webview error: {}", payload.payload()),
                 }
             });
 
             app_state::spawn_level_ticker(handle.clone());
-            app_state::spawn_health_probe(handle.clone());
 
             if onboarding_needed {
                 // First run: a dedicated, focused setup window stands in for the
@@ -139,13 +145,13 @@ fn main() {
             select_conversation,
             delete_conversation,
             panel_ready,
-            agent_health,
             mic_permission_state,
             request_mic_permission,
             open_mic_settings,
             sani_core::core_start,
             sani_core::core_stop,
             sani_core::core_agents,
+            sani_core::core_status,
             sani_core::core_run,
             sani_core::core_cancel,
             sani_core::core_ping,
@@ -203,6 +209,9 @@ pub fn enter_normal_mode(app: &tauri::AppHandle) -> Result<(), Box<dyn std::erro
     setup_tray(app)?;
     let hotkey_str = app_state::settings(app).read().hotkey.clone();
     hotkey::register_user_shortcut(app, &hotkey_str).map_err(|e| format!("{e}"))?;
+    // The assistant runtime is Sani's own child process, started here rather
+    // than on demand: the first turn must not pay for spawning it.
+    sani_core::start_at_startup(app);
     spawn_cold_launch_reveal(app.clone());
     Ok(())
 }
@@ -319,15 +328,13 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .tooltip("Sani")
         .build(app)?;
-    tray.on_menu_event(|app, event| {
-        match event.id().as_ref() {
-            "listen" => app_state::toggle_listening(app),
-            "panel" => {
-                let _ = windows::show_panel(app);
-            }
-            "quit" => app.exit(0),
-            _ => {}
+    tray.on_menu_event(|app, event| match event.id().as_ref() {
+        "listen" => app_state::toggle_listening(app),
+        "panel" => {
+            let _ = windows::show_panel(app);
         }
+        "quit" => app.exit(0),
+        _ => {}
     });
     Ok(())
 }
@@ -352,7 +359,10 @@ fn get_state(app: tauri::AppHandle) -> AppStateOut {
         let state = app.state::<SaniState>();
         let stt = state.speech.lock();
         stt_ready = stt.as_ref().map(|s| s.is_ready()).unwrap_or(false);
-        stt_model = stt.as_ref().map(|s| s.model.read().clone()).unwrap_or_default();
+        stt_model = stt
+            .as_ref()
+            .map(|s| s.model.read().clone())
+            .unwrap_or_default();
         let partial_guard = state.partial.lock();
         partial = partial_guard.clone();
     }
@@ -370,12 +380,14 @@ fn get_state(app: tauri::AppHandle) -> AppStateOut {
 struct SettingsOut {
     hotkey: String,
     mic_device: String,
-    agent_base_url: String,
-    has_agent_key: bool,
     launch_at_login: bool,
     theme: String,
     stt_model: String,
     stt_ready: bool,
+    /// "auto" or a registered agent id. The endpoint, gateway key and local
+    /// port are gone from this surface on purpose: a normal user never
+    /// configures them, and the runtime is Sani's own child process.
+    agent_mode: String,
 }
 
 #[tauri::command]
@@ -391,12 +403,11 @@ fn get_settings(app: tauri::AppHandle) -> SettingsOut {
     SettingsOut {
         hotkey: s.hotkey,
         mic_device: s.mic_device,
-        agent_base_url: s.agent_base_url,
-        has_agent_key: !s.agent_api_key.trim().is_empty(),
         launch_at_login: s.launch_at_login,
         theme: s.theme,
         stt_model: s.stt_model,
         stt_ready,
+        agent_mode: s.agent_mode,
     }
 }
 
@@ -405,9 +416,9 @@ fn save_settings_cmd(
     app: tauri::AppHandle,
     hotkey: Option<String>,
     mic_device: Option<String>,
-    agent_base_url: Option<String>,
     launch_at_login: Option<bool>,
     theme: Option<String>,
+    agent_mode: Option<String>,
 ) -> Result<(), String> {
     let changed_mic;
     {
@@ -425,17 +436,23 @@ fn save_settings_cmd(
         } else {
             changed_mic = false;
         }
-        if let Some(url) = &agent_base_url {
-            s.agent_base_url = url.trim_end_matches('/').to_string();
-        }
         if let Some(login) = launch_at_login {
             s.launch_at_login = login;
             use tauri_plugin_autostart::ManagerExt;
             let autostart = app.autolaunch();
-            let _ = if login { autostart.enable() } else { autostart.disable() };
+            let _ = if login {
+                autostart.enable()
+            } else {
+                autostart.disable()
+            };
         }
         if let Some(theme) = &theme {
             s.theme = theme.clone();
+        }
+        if let Some(mode) = &agent_mode {
+            // Accepted verbatim: the registry, not this field, decides which
+            // ids exist, and an unknown id resolves to automatic at dispatch.
+            s.agent_mode = mode.clone();
         }
         settings::save(&app, &s)?;
     }
@@ -549,18 +566,16 @@ fn delete_conversation(app: tauri::AppHandle, conversation_id: String) -> Result
 /// Panel window is ready: push the full conversation snapshot.
 #[tauri::command]
 fn panel_ready(app: tauri::AppHandle) {
-    let conversation_id = app_state::settings(&app).read().active_conversation_id.clone();
+    let conversation_id = app_state::settings(&app)
+        .read()
+        .active_conversation_id
+        .clone();
     if conversation_id.is_empty() {
         return;
     }
     if let Ok(messages) = app_state::history(&app).messages(&conversation_id) {
         let _ = tauri::Emitter::emit(&app, "sani://history-loaded", messages);
     }
-}
-
-#[tauri::command]
-async fn agent_health(app: tauri::AppHandle) -> bool {
-    agent::health(&app).await
 }
 
 /// Current macOS microphone authorization state (never triggers a prompt).
@@ -574,7 +589,10 @@ fn mic_permission_state() -> String {
 /// user's decision (the prompt is answered asynchronously).
 #[tauri::command]
 fn request_mic_permission() -> String {
-    if matches!(permissions::status(), permissions::MicPermission::NotDetermined) {
+    if matches!(
+        permissions::status(),
+        permissions::MicPermission::NotDetermined
+    ) {
         permissions::request();
     }
     permissions::status().as_str().to_string()

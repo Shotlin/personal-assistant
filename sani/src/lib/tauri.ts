@@ -2,6 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 
 export type UiState = "idle" | "preparing" | "listening" | "finalizing" | "working" | "error";
+
+/** Which registered agent produced a message; null on user messages and on
+ *  history written before attribution existed. */
 export interface ChatMessage {
   id: string;
   conversation_id?: string;
@@ -9,6 +12,8 @@ export interface ChatMessage {
   text: string;
   created_at: number;
   run_id?: string | null;
+  agent_id?: string | null;
+  agent_name?: string | null;
 }
 
 export interface Conversation {
@@ -21,8 +26,9 @@ export interface Conversation {
 export interface ActivityEvent {
   sequence: number;
   run_id: string;
+  agent_id?: string;
   event_type: string;
-  timestamp: string;
+  timestamp: number;
   label: string;
   status: string;
   tool?: string;
@@ -34,15 +40,42 @@ export interface AgentChunk {
   message_id: string;
   kind: "text" | "status";
   delta: string;
+  agent_id?: string;
 }
 
 export interface AgentDone {
   message_id: string;
   run_id: string;
   ok: boolean;
-  /** "completed" | "cancelled" | "interrupted" | "failed" (FIX-03). */
+  /** "completed" | "cancelled" | "failed" (FIX-03). */
   status: string;
   error: string;
+  agent_id: string;
+  agent_name: string;
+}
+
+export interface AgentStart {
+  message_id: string;
+  run_id: string;
+  agent_id: string;
+  agent_name: string;
+}
+
+/** An agent descriptor as the Sani Core registry reports it. The frontend may
+ *  cache this, but it must never invent who exists. */
+export interface AgentDescriptor {
+  id: string;
+  name: string;
+  capabilities: string[];
+}
+
+/** One raw sani-core event frame, relayed verbatim from the sidecar. */
+export interface CoreEvent {
+  type: "event";
+  run_id: string;
+  agent_id: string;
+  kind: string;
+  data: Record<string, unknown>;
 }
 
 /** macOS microphone authorization state (RC-04). */
@@ -56,12 +89,12 @@ export type MicPermission =
 export interface SettingsShape {
   hotkey: string;
   mic_device: string;
-  agent_base_url: string;
-  has_agent_key: boolean;
   launch_at_login: boolean;
   theme: string;
   stt_model: string;
   stt_ready: boolean;
+  /** "auto" or a registered agent id. */
+  agent_mode: string;
 }
 
 // ---------------------------------------------------------------- events
@@ -78,8 +111,8 @@ export const onAgentChunk = (cb: (c: AgentChunk) => void) =>
   listen<AgentChunk>("sani://agent-chunk", (e) => cb(e.payload));
 export const onAgentDone = (cb: (d: AgentDone) => void) =>
   listen<AgentDone>("sani://agent-done", (e) => cb(e.payload));
-export const onAgentStart = (cb: (s: { message_id: string; run_id: string }) => void) =>
-  listen<{ message_id: string; run_id: string }>("sani://agent-start", (e) => cb(e.payload));
+export const onAgentStart = (cb: (s: AgentStart) => void) =>
+  listen<AgentStart>("sani://agent-start", (e) => cb(e.payload));
 export const onActivity = (cb: (a: ActivityEvent) => void) =>
   listen<ActivityEvent>("sani://activity", (e) => cb(e.payload));
 export const onHistoryLoaded = (cb: (m: ChatMessage[]) => void) =>
@@ -97,8 +130,12 @@ export const onMicError = (cb: (s: string) => void) =>
   listen<string>("sani://mic-error", (e) => cb(e.payload));
 export const onMicPermission = (cb: (s: MicPermission) => void) =>
   listen<MicPermission>("sani://mic-permission", (e) => cb(e.payload));
+/** Whether the assistant runtime (Sani's own sidecar) is reachable. */
 export const onAgentStatus = (cb: (online: boolean) => void) =>
   listen<boolean>("sani://agent-status", (e) => cb(e.payload));
+/** Every raw sani-core event frame, for agent-attributed UI. */
+export const onCoreEvent = (cb: (e: CoreEvent) => void) =>
+  listen<CoreEvent>("sani://core-event", (e) => cb(e.payload));
 
 // -------------------------------------------------------------- commands
 
@@ -107,9 +144,9 @@ export const getSettings = () => invoke<SettingsShape>("get_settings");
 export const saveSettings = (patch: {
   hotkey?: string;
   mic_device?: string;
-  agent_base_url?: string;
   launch_at_login?: boolean;
   theme?: string;
+  agent_mode?: string;
 }) => invoke<void>("save_settings_cmd", patch);
 export const listMics = () => invoke<string[]>("list_mics");
 export const startListening = () => invoke<void>("start_listening_cmd");
@@ -124,7 +161,12 @@ export const selectConversation = (conversationId: string) =>
 export const deleteConversation = (conversationId: string) =>
   invoke<void>("delete_conversation", { conversationId });
 export const panelReady = () => invoke<void>("panel_ready");
-export const agentHealth = () => invoke<boolean>("agent_health");
+
+/** The live agent registry. This is the only source of who exists. */
+export const coreAgents = () =>
+  invoke<{ agents: AgentDescriptor[] }>("core_agents").then((r) => r.agents);
+/** The sidecar's own subsystem report, for Diagnostics. */
+export const coreStatus = () => invoke<Record<string, unknown>>("core_status");
 
 /** Hide the panel without destroying it (RC-02). Reopen is instant. */
 export const hidePanel = () => invoke<void>("hide_panel");

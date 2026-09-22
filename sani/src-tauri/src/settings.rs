@@ -1,18 +1,20 @@
-//! Sani settings: persisted JSON plus first-run discovery of the local
-//! gateway key from the sibling personal-assistant checkout.
+//! Sani settings: persisted JSON for the application's own preferences.
 //!
-//! There is no login: Sani is a local client. The gateway key is a secret and
-//! is NOT stored in the plaintext settings file. It is resolved from (in
-//! order) the macOS Keychain, a private 0600 app-support file, then a one-time
-//! bootstrap discovery (`SANI_AGENT_API_KEY` env var or a repo `.env`) which is
-//! persisted back to the Keychain so a Finder-launched installed app — with no
-//! shell environment — still connects deterministically (RC-06).
+//! There is no login and no endpoint to configure: the assistant runtime is
+//! Sani's own child process. Provider credentials are *never* stored here —
+//! they live in the OS credential store and are read by `secret_read` below
+//! (onboarding for provider keys, `sani_core` to build the sidecar's
+//! environment).
+//!
+//! A settings.json written by an older build may still carry the localhost
+//! gateway's base URL and key. Unknown fields are ignored on load and dropped
+//! on the next save, so upgrading is automatic and never destructive.
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -22,12 +24,6 @@ pub struct Settings {
     pub hotkey: String,
     #[serde(default)]
     pub mic_device: String,
-    #[serde(default = "default_agent_base_url")]
-    pub agent_base_url: String,
-    /// Resolved at load time from the Keychain/private file. Never written to
-    /// the plaintext settings file when secure persistence succeeds.
-    #[serde(default)]
-    pub agent_api_key: String,
     #[serde(default)]
     pub launch_at_login: bool,
     #[serde(default = "default_theme")]
@@ -57,6 +53,15 @@ pub struct Settings {
     pub velo_provider: String,
     #[serde(default = "default_velo_model")]
     pub velo_model: String,
+    /// Which agent takes a turn: "auto" for smart routing, or a registered
+    /// agent id from the sani-core registry. The registry, not this field,
+    /// decides which ids are real.
+    #[serde(default = "default_agent_mode")]
+    pub agent_mode: String,
+}
+
+fn default_agent_mode() -> String {
+    "auto".into()
 }
 
 fn default_reasoning_provider() -> String {
@@ -71,9 +76,6 @@ fn default_velo_model() -> String {
 
 fn default_hotkey() -> String {
     "Alt+Space".into()
-}
-fn default_agent_base_url() -> String {
-    "http://127.0.0.1:8787".into()
 }
 fn default_theme() -> String {
     "dark".into()
@@ -112,13 +114,10 @@ pub fn settings_path(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 pub fn load(app: &tauri::AppHandle) -> Settings {
-    let mut settings = settings_path(app)
+    settings_path(app)
         .and_then(|path| fs::read_to_string(path).ok())
         .and_then(|raw| serde_json::from_str::<Settings>(&raw).ok())
-        .unwrap_or_default();
-
-    settings.agent_api_key = resolve_secret(app, &settings);
-    settings
+        .unwrap_or_default()
 }
 
 pub fn save(app: &tauri::AppHandle, settings: &Settings) -> Result<(), String> {
@@ -127,25 +126,12 @@ pub fn save(app: &tauri::AppHandle, settings: &Settings) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
-    // Persist the secret securely and keep it out of the plaintext file. If
-    // secure persistence fails, fall back to leaving it in the JSON rather than
-    // losing the key entirely.
-    let mut to_write = settings.clone();
-    if !settings.agent_api_key.trim().is_empty() {
-        if persist_secret(app, &settings.agent_api_key).starts_with("stored") {
-            to_write.agent_api_key = String::new();
-        }
-    } else {
-        to_write.agent_api_key = String::new();
-    }
-
-    let raw = serde_json::to_string_pretty(&to_write).map_err(|e| e.to_string())?;
+    let raw = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
     fs::write(&path, raw).map_err(|e| e.to_string())
 }
 
 // ------------------------------------------------------------------- secret
 
-const KEYCHAIN_SERVICE: &str = "sani-agent-key";
 const KEYCHAIN_ACCOUNT: &str = "app.sani.local";
 
 /// Read a generic secret from the Keychain by service name. Used by onboarding
@@ -153,7 +139,14 @@ const KEYCHAIN_ACCOUNT: &str = "app.sani.local";
 /// plaintext settings file, the database, memory, or logs.
 pub fn secret_read(service: &str) -> Option<String> {
     let out = std::process::Command::new("security")
-        .args(["find-generic-password", "-s", service, "-a", KEYCHAIN_ACCOUNT, "-w"])
+        .args([
+            "find-generic-password",
+            "-s",
+            service,
+            "-a",
+            KEYCHAIN_ACCOUNT,
+            "-w",
+        ])
         .output()
         .ok()?;
     if out.status.success() {
@@ -170,7 +163,16 @@ pub fn secret_write(service: &str, key: &str) -> bool {
     // -A so the installed app (a different code identity than the CLI) can read
     // it back without a prompt; the value is passed on stdin, never in argv.
     let mut child = match std::process::Command::new("security")
-        .args(["add-generic-password", "-A", "-U", "-s", service, "-a", KEYCHAIN_ACCOUNT, "-w"])
+        .args([
+            "add-generic-password",
+            "-A",
+            "-U",
+            "-s",
+            service,
+            "-a",
+            KEYCHAIN_ACCOUNT,
+            "-w",
+        ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -214,157 +216,16 @@ pub fn secret_write(service: &str, key: &str) -> bool {
 #[allow(dead_code)] // used by credential reset / repair
 pub fn secret_delete(service: &str) -> bool {
     std::process::Command::new("security")
-        .args(["delete-generic-password", "-s", service, "-a", KEYCHAIN_ACCOUNT])
+        .args([
+            "delete-generic-password",
+            "-s",
+            service,
+            "-a",
+            KEYCHAIN_ACCOUNT,
+        ])
         .output()
         .map(|out| out.status.success())
         .unwrap_or(false)
-}
-
-/// Resolve the gateway key without any user-facing login. Keychain first, then
-/// the private file, then a one-time bootstrap discovery that is persisted for
-/// future (Finder) launches.
-fn resolve_secret(app: &tauri::AppHandle, settings: &Settings) -> String {
-    // Log where the key came from, never the key itself.
-    if let Some(key) = keychain_read().filter(|k| !k.trim().is_empty()) {
-        log::info!("gateway key resolved from the macOS Keychain");
-        return key;
-    }
-    if let Some(key) = secret_file_read(app).filter(|k| !k.trim().is_empty()) {
-        log::info!("gateway key resolved from the private app-support file");
-        promote_to_keychain(&key);
-        return key;
-    }
-    // Bootstrap: dev builds and first run discover from env / repo .env, then
-    // persist so the installed app never needs a shell environment.
-    let discovered = discover_gateway_key(app);
-    if !discovered.trim().is_empty() {
-        let where_stored = persist_secret(app, &discovered);
-        log::info!("gateway key discovered and persisted for next launch ({where_stored})");
-        return discovered;
-    }
-    // Legacy: a key already sitting in the plaintext settings file.
-    if !settings.agent_api_key.trim().is_empty() {
-        log::info!("gateway key resolved from the settings file");
-        promote_to_keychain(&settings.agent_api_key);
-        return settings.agent_api_key.clone();
-    }
-    log::warn!("no gateway key configured: Sani cannot authenticate with the Personal Assistant");
-    String::new()
-}
-
-/// Retry the Keychain on every launch until it takes: an earlier failure can be
-/// transient (locked keychain, non-GUI session), and the Keychain is preferred
-/// over the 0600 file. Only the outcome is logged, never the value.
-fn promote_to_keychain(key: &str) {
-    if keychain_write(key) {
-        log::info!("gateway key upgraded to the macOS Keychain");
-    }
-}
-
-/// Store the secret in the Keychain (preferred); fall back to a 0600 file.
-/// Returns where it actually landed, for logging — never the value itself.
-fn persist_secret(app: &tauri::AppHandle, key: &str) -> &'static str {
-    if keychain_write(key) {
-        return "stored in the macOS Keychain";
-    }
-    if secret_file_write(app, key) {
-        return "stored in the private 0600 app-support file";
-    }
-    "not persisted; it will be rediscovered next launch"
-}
-
-fn keychain_read() -> Option<String> {
-    secret_read(KEYCHAIN_SERVICE)
-}
-
-fn keychain_write(key: &str) -> bool {
-    secret_write(KEYCHAIN_SERVICE, key)
-}
-
-fn secret_file_path(app: &tauri::AppHandle) -> Option<PathBuf> {
-    app.path()
-        .app_config_dir()
-        .ok()
-        .map(|dir| dir.join("agent_key"))
-}
-
-fn secret_file_read(app: &tauri::AppHandle) -> Option<String> {
-    let path = secret_file_path(app)?;
-    let raw = fs::read_to_string(path).ok()?;
-    let value = raw.trim().to_string();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
-}
-
-fn secret_file_write(app: &tauri::AppHandle, key: &str) -> bool {
-    let Some(path) = secret_file_path(app) else { return false };
-    if let Some(parent) = path.parent() {
-        if fs::create_dir_all(parent).is_err() {
-            return false;
-        }
-    }
-    if fs::write(&path, key.trim()).is_err() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
-    }
-    true
-}
-
-/// Find the local gateway key without any user-facing login.
-pub fn discover_gateway_key(app: &tauri::AppHandle) -> String {
-    if let Ok(key) = std::env::var("SANI_AGENT_API_KEY") {
-        let key = key.trim().to_string();
-        if !key.is_empty() {
-            return key;
-        }
-    }
-    // Walk up from the executable (dev: target/debug) and from the config
-    // dir looking for a .env that carries AGENT_GATEWAY_API_KEY.
-    let mut starts: Vec<PathBuf> = vec![];
-    if let Ok(exe) = std::env::current_exe() {
-        for dir in exe.ancestors().skip(1).take(8) {
-            starts.push(dir.to_path_buf());
-        }
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        for dir in cwd.ancestors().take(8) {
-            starts.push(dir.to_path_buf());
-        }
-    }
-    if let Ok(config) = app.path().app_config_dir() {
-        for dir in config.ancestors().take(4) {
-            starts.push(dir.to_path_buf());
-        }
-    }
-    for dir in starts {
-        let env_file = dir.join(".env");
-        if let Some(key) = read_key_from_env_file(&env_file) {
-            log::info!("gateway key discovered from {}", env_file.display());
-            return key;
-        }
-    }
-    String::new()
-}
-
-fn read_key_from_env_file(path: &Path) -> Option<String> {
-    let raw = fs::read_to_string(path).ok()?;
-    for line in raw.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix("AGENT_GATEWAY_API_KEY=") {
-            let value = rest.trim().trim_matches('"').trim_matches('\'').to_string();
-            if !value.is_empty() && value != "change-me" {
-                return Some(value);
-            }
-        }
-    }
-    None
 }
 
 /// Locate the STT sidecar Python interpreter (dev fallback only; packaged

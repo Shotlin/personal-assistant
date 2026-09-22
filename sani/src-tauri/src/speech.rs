@@ -145,7 +145,12 @@ fn packaged_sidecar() -> Option<std::path::PathBuf> {
 /// diagnostic describing what was found, or an error the setup UI can show.
 pub fn locate_for_setup(app: &AppHandle) -> Result<String, String> {
     if let Some(bin) = packaged_sidecar() {
-        return Ok(format!("voice engine available ({})", bin.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()));
+        return Ok(format!(
+            "voice engine available ({})",
+            bin.file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default()
+        ));
     }
     let settings = crate::app_state::settings(app).read().clone();
     if crate::settings::stt_python_path(app, &settings).is_some()
@@ -189,7 +194,11 @@ pub fn start(app: AppHandle, model: &str, turn_end_ms: u32) -> Result<Arc<Speech
             let python = stt_python_path(&app, &crate::app_state::settings(&app).read().clone())
                 .ok_or("STT_NOT_SET_UP")?;
             let script = crate::settings::stt_script_path(&app).ok_or("STT_SCRIPT_MISSING")?;
-            log::info!("STT sidecar (dev venv): {} {}", python.display(), script.display());
+            log::info!(
+                "STT sidecar (dev venv): {} {}",
+                python.display(),
+                script.display()
+            );
             (python, vec![script.to_string_lossy().to_string()])
         }
     };
@@ -243,7 +252,11 @@ pub fn start(app: AppHandle, model: &str, turn_end_ms: u32) -> Result<Arc<Speech
                     log::info!(
                         "stt sidecar ready (model={} vad={})",
                         event.model,
-                        if event.vad_model.is_empty() { "unknown" } else { &event.vad_model }
+                        if event.vad_model.is_empty() {
+                            "unknown"
+                        } else {
+                            &event.vad_model
+                        }
                     );
                     ready.store(true, Ordering::Relaxed);
                     let _ = app.emit("sani://stt-status", "ready");

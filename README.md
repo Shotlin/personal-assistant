@@ -52,9 +52,9 @@ development. Local persistence is selected with `MEMORY_BACKEND=sqlite` +
 ## Legacy note
 
 The former Open WebUI / Agent Designer / Docker-PostgreSQL server product
-was removed (see git history). The FastAPI gateway
-(`src/assistant/main.py`, `src/assistant/api/`) is retained **only** as
-the still-live voice/text path until the Sani host finishes switching to
-sani-core IPC (`sani_core.rs`); it will be removed at that cutover along
-with the Postgres dev backend. See `docs/sani-storage-migration.md` for
-the storage map.
+was removed (see git history). The Sani host now speaks **only** sani-core
+IPC: the Tauri app spawns and supervises the sidecar itself, and both voice
+and typed turns go through a framed `run.start`. The old FastAPI gateway
+(`src/assistant/main.py`, `src/assistant/api/`) is no longer used by the app
+and is retained only while the Postgres-era integration tests still reference
+it. See `docs/sani-storage-migration.md` for the storage map.

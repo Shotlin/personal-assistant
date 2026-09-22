@@ -24,15 +24,16 @@ const EVENT_ICON: Record<string, string> = {
   info: "·",
 };
 
-function clock(ts: string): string {
+function clock(ts: number): string {
+  if (!ts) return "";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString(undefined, { hour12: false });
 }
 
 /**
- * Real observable activity rows (from the gateway's safe run-event stream)
- * plus the deterministic gateway status line while streaming.
+ * Observable activity rows from the sani-core event stream, each carrying the
+ * id of the agent it came from.
  */
 export default function ActivityTimeline({ events, status, working }: ActivityTimelineProps) {
   return (

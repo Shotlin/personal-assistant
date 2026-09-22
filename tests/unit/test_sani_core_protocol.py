@@ -150,9 +150,12 @@ def test_message_frames_have_stable_shapes() -> None:
         "result": None,
         "error": "boom",
     }
-    assert Event(run_id="abc", kind="step", data={"n": 1}).to_frame() == {
+    assert Event(
+        run_id="abc", agent_id="deep", kind="step", data={"n": 1}
+    ).to_frame() == {
         "type": "event",
         "run_id": "abc",
+        "agent_id": "deep",
         "kind": "step",
         "data": {"n": 1},
     }

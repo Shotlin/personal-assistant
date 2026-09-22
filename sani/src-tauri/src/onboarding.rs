@@ -59,7 +59,9 @@ fn snapshot_state(app: &AppHandle) -> SetupSnapshot {
                 ComponentView {
                     step: c.key(),
                     friendly: c.friendly(),
-                    status: r.map(|r| r.status).unwrap_or(setup::ComponentStatus::Pending),
+                    status: r
+                        .map(|r| r.status)
+                        .unwrap_or(setup::ComponentStatus::Pending),
                     detail: r.map(|r| r.detail.clone()).unwrap_or_default(),
                     error: r.and_then(|r| r.error.clone()),
                 }
@@ -96,7 +98,10 @@ pub fn set_onboarding_stage(app: AppHandle, stage: String) -> Result<StageOut, S
     let mut state = mgr.state.lock();
     state.current_stage = stage;
     state.updated_at = crate::app_state::now_ms();
-    let out = StageOut { percent: state.percent(), local_setup_complete: state.local_setup_complete() };
+    let out = StageOut {
+        percent: state.percent(),
+        local_setup_complete: state.local_setup_complete(),
+    };
     // persist through the setup module's owned writer.
     setup::persist_state(&app, &state);
     Ok(out)
@@ -205,7 +210,11 @@ pub struct StoreResult {
 /// Store a provider key in the OS credential store. Empty clears it. The value
 /// is never returned or logged.
 #[tauri::command]
-pub fn store_provider_key(app: AppHandle, provider: String, key: String) -> Result<StoreResult, String> {
+pub fn store_provider_key(
+    app: AppHandle,
+    provider: String,
+    key: String,
+) -> Result<StoreResult, String> {
     let service = provider_service(&provider)?;
     let trimmed = key.trim();
     let stored = if trimmed.is_empty() {
@@ -260,11 +269,12 @@ async fn check_openrouter(key: &str) -> KeyStatus {
         Ok(resp) => {
             let status = resp.status();
             if status.is_success() {
-                let label = resp
-                    .json::<Value>()
-                    .await
-                    .ok()
-                    .and_then(|v| v.get("data").and_then(|d| d.get("label")).and_then(Value::as_str).map(String::from));
+                let label = resp.json::<Value>().await.ok().and_then(|v| {
+                    v.get("data")
+                        .and_then(|d| d.get("label"))
+                        .and_then(Value::as_str)
+                        .map(String::from)
+                });
                 KeyStatus::Connected { label }
             } else if status.as_u16() == 401 || status.as_u16() == 403 {
                 KeyStatus::Invalid
@@ -312,15 +322,24 @@ pub async fn list_openrouter_models(key: Option<String>) -> Vec<ModelOption> {
     if let Some(key) = key.filter(|k| !k.trim().is_empty()) {
         req = req.bearer_auth(key.trim());
     }
-    let Ok(resp) = req.send().await else { return Vec::new() };
-    let Ok(body) = resp.json::<Value>().await else { return Vec::new() };
-    let Some(data) = body.get("data").and_then(Value::as_array) else { return Vec::new() };
+    let Ok(resp) = req.send().await else {
+        return Vec::new();
+    };
+    let Ok(body) = resp.json::<Value>().await else {
+        return Vec::new();
+    };
+    let Some(data) = body.get("data").and_then(Value::as_array) else {
+        return Vec::new();
+    };
     let mut models: Vec<ModelOption> = data
         .iter()
         .filter_map(|m| {
             let id = m.get("id").and_then(Value::as_str)?;
             let name = m.get("name").and_then(Value::as_str).unwrap_or(id);
-            Some(ModelOption { id: id.to_string(), name: name.to_string() })
+            Some(ModelOption {
+                id: id.to_string(),
+                name: name.to_string(),
+            })
         })
         .collect();
     models.sort_by(|a, b| a.name.cmp(&b.name));
@@ -355,13 +374,17 @@ pub fn open_permission_settings(pane: String) {
 /// Kick the Accessibility prompt (adds Sani to the list so the toggle exists).
 #[tauri::command]
 pub fn request_accessibility() -> String {
-    system_permissions::accessibility_prompt().as_str().to_string()
+    system_permissions::accessibility_prompt()
+        .as_str()
+        .to_string()
 }
 
 /// Kick the Screen Recording prompt.
 #[tauri::command]
 pub fn request_screen_recording() -> String {
-    system_permissions::screen_recording_request().as_str().to_string()
+    system_permissions::screen_recording_request()
+        .as_str()
+        .to_string()
 }
 
 /// Relaunch Sani so a just-granted Screen Recording permission takes effect.
@@ -405,23 +428,60 @@ pub struct FinalHealth {
 #[tauri::command]
 pub fn final_health(app: AppHandle) -> FinalHealth {
     let snapshot = setup::snapshot(&app);
-    let done = |c: setup::Component| snapshot.components.get(&c).map(|r| r.status.is_done()).unwrap_or(false);
+    let done = |c: setup::Component| {
+        snapshot
+            .components
+            .get(&c)
+            .map(|r| r.status.is_done())
+            .unwrap_or(false)
+    };
     let mic = permissions::status().is_granted();
-    let access = system_permissions::accessibility().is_granted() || system_permissions::screen_recording().is_granted();
-    let creds = settings::secret_read(OPENROUTER_KEY_SERVICE).is_some() || settings::secret_read(TYPESAFE_KEY_SERVICE).is_some();
+    let access = system_permissions::accessibility().is_granted()
+        || system_permissions::screen_recording().is_granted();
+    let creds = settings::secret_read(OPENROUTER_KEY_SERVICE).is_some()
+        || settings::secret_read(TYPESAFE_KEY_SERVICE).is_some();
 
     let checks = vec![
-        HealthCheck { label: "Local storage", ok: done(setup::Component::AppData) && done(setup::Component::Database), note: String::new() },
-        HealthCheck { label: "AI runtime", ok: done(setup::Component::Core), note: String::new() },
-        HealthCheck { label: "Voice", ok: done(setup::Component::SttRuntime), note: if done(setup::Component::SttModel) { String::new() } else { "downloads on first use".into() } },
-        HealthCheck { label: "Computer control", ok: done(setup::Component::Cua), note: String::new() },
-        HealthCheck { label: "Permissions", ok: mic && access, note: String::new() },
-        HealthCheck { label: "Models", ok: creds, note: String::new() },
+        HealthCheck {
+            label: "Local storage",
+            ok: done(setup::Component::AppData) && done(setup::Component::Database),
+            note: String::new(),
+        },
+        HealthCheck {
+            label: "AI runtime",
+            ok: done(setup::Component::Core),
+            note: String::new(),
+        },
+        HealthCheck {
+            label: "Voice",
+            ok: done(setup::Component::SttRuntime),
+            note: if done(setup::Component::SttModel) {
+                String::new()
+            } else {
+                "downloads on first use".into()
+            },
+        },
+        HealthCheck {
+            label: "Computer control",
+            ok: done(setup::Component::Cua),
+            note: String::new(),
+        },
+        HealthCheck {
+            label: "Permissions",
+            ok: mic && access,
+            note: String::new(),
+        },
+        HealthCheck {
+            label: "Models",
+            ok: creds,
+            note: String::new(),
+        },
     ];
     // Offline only matters for the network-backed "Models" check.
-    let local_healthy = checks
-        .iter()
-        .filter(|c| c.label != "Models")
-        .all(|c| c.ok);
-    FinalHealth { local_healthy, network_only_issue: !creds, checks }
+    let local_healthy = checks.iter().filter(|c| c.label != "Models").all(|c| c.ok);
+    FinalHealth {
+        local_healthy,
+        network_only_issue: !creds,
+        checks,
+    }
 }

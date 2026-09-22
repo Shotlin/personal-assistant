@@ -15,7 +15,9 @@ pub trait AudioSink: Send + Clone {
 
 impl AudioSink for std::sync::mpsc::Sender<AudioChunk> {
     fn push(&self, samples: &[f32]) {
-        let _ = self.send(AudioChunk { samples: samples.to_vec() });
+        let _ = self.send(AudioChunk {
+            samples: samples.to_vec(),
+        });
     }
 }
 
@@ -118,17 +120,23 @@ pub fn start_capture(
                 let residue = residue.clone();
                 let gate = gate_thread.clone();
                 let levels_cb = levels_thread.clone();
-                device_thread
-                    .build_input_stream(
-                        &supported.into(),
-                        move |data: &[$dtype], _: &cpal::InputCallbackInfo| {
-                            let mono: Vec<f32> =
-                                data.iter().map(|&s| $conv(s)).collect();
-                            feed(&mono, channels, native_rate, &gate, &residue, &levels_cb, &sink);
-                        },
-                        move |err| log::warn!("audio capture error: {err}"),
-                        None,
-                    )
+                device_thread.build_input_stream(
+                    &supported.into(),
+                    move |data: &[$dtype], _: &cpal::InputCallbackInfo| {
+                        let mono: Vec<f32> = data.iter().map(|&s| $conv(s)).collect();
+                        feed(
+                            &mono,
+                            channels,
+                            native_rate,
+                            &gate,
+                            &residue,
+                            &levels_cb,
+                            &sink,
+                        );
+                    },
+                    move |err| log::warn!("audio capture error: {err}"),
+                    None,
+                )
             }};
         }
 
@@ -160,9 +168,7 @@ pub fn start_capture(
         }
     });
 
-    log::info!(
-        "capture opened: device={device_label:?} rate={native_rate} ch={channels}"
-    );
+    log::info!("capture opened: device={device_label:?} rate={native_rate} ch={channels}");
     Ok(AudioHandle {
         device_name: device_label,
         sample_rate: 16_000,

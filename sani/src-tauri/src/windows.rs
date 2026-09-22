@@ -7,9 +7,9 @@
 //! window defensively if it is unexpectedly gone, so a hide/close path can
 //! never leave Sani unable to reveal itself again.
 
+use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
-use tauri::webview::PageLoadEvent;
 
 pub const PILL_LABEL: &str = "pill";
 pub const PANEL_LABEL: &str = "panel";
@@ -142,13 +142,21 @@ fn maybe_open_devtools(window: &tauri::WebviewWindow) {
 /// Deterministic page-load evidence for both windows: proves index.html /
 /// panel.html and their bundled assets actually reached the webview, so a
 /// blank glass rectangle can be diagnosed instead of guessed at.
-fn log_page_load(label: &str, window: &tauri::WebviewWindow, payload: &tauri::webview::PageLoadPayload) {
+fn log_page_load(
+    label: &str,
+    window: &tauri::WebviewWindow,
+    payload: &tauri::webview::PageLoadPayload,
+) {
     match payload.event() {
         PageLoadEvent::Started => {
             log::info!("[ui-boot] {label}: page load started url={}", payload.url());
         }
         PageLoadEvent::Finished => {
-            log::info!("[ui-boot] {label}: page load FINISHED url={} (label={})", payload.url(), window.label());
+            log::info!(
+                "[ui-boot] {label}: page load FINISHED url={} (label={})",
+                payload.url(),
+                window.label()
+            );
         }
     }
 }
@@ -199,7 +207,11 @@ impl MonitorBox {
 }
 
 fn monitor_under_cursor(app: &AppHandle) -> MonitorBox {
-    let default = MonitorBox { position: (0, 0), size: (1440, 900), scale: 1.0 };
+    let default = MonitorBox {
+        position: (0, 0),
+        size: (1440, 900),
+        scale: 1.0,
+    };
     let cursor = app.cursor_position().ok();
     let monitors = app.available_monitors().unwrap_or_default();
     let chosen: Option<tauri::Monitor> = monitors
@@ -237,7 +249,9 @@ pub fn show_pill(app: &AppHandle) -> tauri::Result<()> {
         build_pill(app)?;
         apply_materials(app);
     }
-    let Some(pill) = app.get_webview_window(PILL_LABEL) else { return Ok(()) };
+    let Some(pill) = app.get_webview_window(PILL_LABEL) else {
+        return Ok(());
+    };
     let mon = monitor_under_cursor(app);
     let (mlw, mlh) = mon.logical_size();
     let pill_height = PILL_SIZE.1;
@@ -245,7 +259,10 @@ pub fn show_pill(app: &AppHandle) -> tauri::Result<()> {
     // PILL_GLASS_RADIUS, which clips the vibrancy layer.
     let pill_width = (mlw * 0.47).clamp(PILL_MIN_WIDTH, PILL_MAX_WIDTH);
     pill.set_size(mon.physical_size(pill_width, pill_height))?;
-    pill.set_position(mon.place((mlw - pill_width) / 2.0, mlh - PILL_BOTTOM_MARGIN - pill_height))?;
+    pill.set_position(mon.place(
+        (mlw - pill_width) / 2.0,
+        mlh - PILL_BOTTOM_MARGIN - pill_height,
+    ))?;
     pill.show()?;
     Ok(())
 }
@@ -257,7 +274,9 @@ pub fn show_panel(app: &AppHandle) -> tauri::Result<()> {
         build_panel(app)?;
         apply_materials(app);
     }
-    let Some(panel) = app.get_webview_window(PANEL_LABEL) else { return Ok(()) };
+    let Some(panel) = app.get_webview_window(PANEL_LABEL) else {
+        return Ok(());
+    };
     let mon = monitor_under_cursor(app);
     let (mlw, mlh) = mon.logical_size();
     // Responsive: the panel tracks the display instead of staying a fixed
