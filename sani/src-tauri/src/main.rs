@@ -13,11 +13,14 @@ mod app_state;
 mod audio;
 mod history;
 mod hotkey;
+mod onboarding;
 mod permissions;
 mod sani_core;
 mod settings;
+mod setup;
 mod snapshot;
 mod speech;
+mod system_permissions;
 mod windows;
 
 use parking_lot::RwLock;
@@ -42,11 +45,6 @@ fn main() {
             let handle = app.handle().clone();
             init_logging(log_dir(&handle));
 
-            // No dock icon: Sani is an overlay, reachable via hotkey/tray and
-            // (on macOS) the app-reopen event handled in run() below.
-            #[cfg(target_os = "macos")]
-            let _ = handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
-
             let app_settings = settings::load(&handle);
             let launch_at_login = app_settings.launch_at_login;
             let autostart = handle.autolaunch();
@@ -63,17 +61,15 @@ fn main() {
                 .join("sani-history.db");
             let history = history::History::open(db_path)?;
 
-            let hotkey_str = app_settings.hotkey.clone();
             handle.manage(SaniState::new(
                 std::sync::Arc::new(RwLock::new(app_settings)),
                 std::sync::Arc::new(history),
             ));
 
-            windows::create_all(&handle)?;
-            windows::apply_materials(&handle);
-            setup_tray(&handle)?;
-            hotkey::register_user_shortcut(&handle, &hotkey_str)
-                .map_err(|e| format!("{e}"))?;
+            // Load the persisted setup state before deciding what to show.
+            let setup_shared = setup::init(&handle);
+            let onboarding_needed = !setup_shared.state.lock().onboarding_complete;
+            system_permissions::init_screen_recording_baseline();
 
             // Frontend startup evidence (RC-03): React emits these once each
             // window's tree mounts. Recorded so the reveal/watchdog below can
@@ -102,11 +98,22 @@ fn main() {
 
             app_state::spawn_level_ticker(handle.clone());
             app_state::spawn_health_probe(handle.clone());
-            spawn_cold_launch_reveal(handle.clone());
+
+            if onboarding_needed {
+                // First run: a dedicated, focused setup window stands in for the
+                // normal accessory overlay until onboarding completes.
+                #[cfg(target_os = "macos")]
+                let _ = handle.set_activation_policy(tauri::ActivationPolicy::Regular);
+                windows::show_onboarding(&handle)?;
+                snapshot::spawn_onboarding_snapshot(&handle);
+                log::info!("[setup] first run — opened onboarding window");
+            } else {
+                enter_normal_mode(&handle)?;
+            }
 
             // Dev/verification affordance: SANI_AUTOSTART=1 begins listening
             // right after launch (equivalent to pressing the hotkey).
-            if std::env::var("SANI_AUTOSTART").as_deref() == Ok("1") {
+            if !onboarding_needed && std::env::var("SANI_AUTOSTART").as_deref() == Ok("1") {
                 let h = handle.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(1200));
@@ -142,25 +149,62 @@ fn main() {
             sani_core::core_run,
             sani_core::core_cancel,
             sani_core::core_ping,
+            onboarding::setup_state,
+            onboarding::run_setup,
+            onboarding::retry_setup_component,
+            onboarding::set_onboarding_stage,
+            onboarding::complete_onboarding,
+            onboarding::reset_onboarding,
+            onboarding::get_ai_config,
+            onboarding::save_ai_config,
+            onboarding::store_provider_key,
+            onboarding::validate_provider_key,
+            onboarding::list_openrouter_models,
+            onboarding::permission_snapshot,
+            onboarding::open_permission_settings,
+            onboarding::request_accessibility,
+            onboarding::request_screen_recording,
+            onboarding::restart_app,
+            onboarding::final_health,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Sani")
         .run(|app_handle, event| {
             // RC-01: opening Sani again while it already runs (Finder/Dock)
-            // must reveal the hidden overlays instead of doing nothing.
+            // must reveal the hidden overlays (or the setup window, while
+            // onboarding is incomplete) instead of doing nothing.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
-                log::info!("[ui-boot] macOS reopen — revealing overlays");
-                windows::show_overlays(app_handle);
-                let h = app_handle.clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(700));
-                    snapshot::snapshot_overlays(&h, "reopened");
-                });
+                if app_state::onboarding_incomplete(app_handle) {
+                    log::info!("[ui-boot] macOS reopen — re-showing onboarding window");
+                    let _ = windows::show_onboarding(app_handle);
+                } else {
+                    log::info!("[ui-boot] macOS reopen — revealing overlays");
+                    windows::show_overlays(app_handle);
+                    let h = app_handle.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(700));
+                        snapshot::snapshot_overlays(&h, "reopened");
+                    });
+                }
             }
             #[cfg(not(target_os = "macos"))]
             let _ = (app_handle, event);
         });
+}
+
+/// Bring up the normal Sani experience: accessory overlay windows, the tray,
+/// and the global hotkey. Runs at a normal launch and once onboarding completes.
+pub fn enter_normal_mode(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    windows::create_all(app)?;
+    windows::apply_materials(app);
+    setup_tray(app)?;
+    let hotkey_str = app_state::settings(app).read().hotkey.clone();
+    hotkey::register_user_shortcut(app, &hotkey_str).map_err(|e| format!("{e}"))?;
+    spawn_cold_launch_reveal(app.clone());
+    Ok(())
 }
 
 /// Where Sani writes its logs. Shared with the STT sidecar so the Python

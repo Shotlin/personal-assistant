@@ -15,6 +15,7 @@ export default defineConfig({
       input: {
         pill: resolve(__dirname, "index.html"),
         panel: resolve(__dirname, "panel.html"),
+        onboarding: resolve(__dirname, "onboarding.html"),
       },
     },
   },

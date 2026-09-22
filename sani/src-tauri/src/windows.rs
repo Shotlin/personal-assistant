@@ -13,6 +13,13 @@ use tauri::webview::PageLoadEvent;
 
 pub const PILL_LABEL: &str = "pill";
 pub const PANEL_LABEL: &str = "panel";
+pub const ONBOARDING_LABEL: &str = "onboarding";
+
+/// First-run setup window: a real, decorated desktop window (native titlebar +
+/// traffic lights), opaque near-black content — deliberately NOT the glassy,
+/// frameless overlay style used by the pill/panel.
+const ONBOARDING_WIDTH: f64 = 820.0;
+const ONBOARDING_HEIGHT: f64 = 600.0;
 
 const PILL_SIZE: (f64, f64) = (680.0, 96.0);
 const PILL_MIN_WIDTH: f64 = 560.0;
@@ -72,6 +79,46 @@ fn build_panel(app: &AppHandle) -> tauri::Result<()> {
         })
         .build()?;
     maybe_open_devtools(&window);
+    Ok(())
+}
+
+/// Build the first-run setup window (decorated, centered, opaque).
+fn build_onboarding(app: &AppHandle) -> tauri::Result<()> {
+    let window = WebviewWindowBuilder::new(
+        app,
+        ONBOARDING_LABEL,
+        WebviewUrl::App("onboarding.html".into()),
+    )
+    .title("Sani — Setup")
+    .inner_size(ONBOARDING_WIDTH, ONBOARDING_HEIGHT)
+    .min_inner_size(720.0, 520.0)
+    .decorations(true)
+    .transparent(false)
+    .always_on_top(false)
+    .skip_taskbar(false)
+    .resizable(true)
+    .shadow(true)
+    .center()
+    .focused(true)
+    .visible(true)
+    .on_page_load(|window, payload| {
+        log_page_load("onboarding", &window, &payload);
+    })
+    .build()?;
+    maybe_open_devtools(&window);
+    Ok(())
+}
+
+/// Create and show the setup window (cold first run, or when reopening Sani
+/// while setup is still incomplete).
+pub fn show_onboarding(app: &AppHandle) -> tauri::Result<()> {
+    if app.get_webview_window(ONBOARDING_LABEL).is_none() {
+        build_onboarding(app)?;
+    }
+    if let Some(window) = app.get_webview_window(ONBOARDING_LABEL) {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
     Ok(())
 }
 

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Sani overlay windows: events, invoking app commands, global shortcut plugin",
-  "windows": ["pill", "panel"],
+  "windows": ["pill", "panel", "onboarding"],
   "permissions": [
     "core:default",
     "core:event:allow-listen",

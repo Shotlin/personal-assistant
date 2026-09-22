@@ -1,0 +1,776 @@
+/* Sani first-run setup. Desktop-native, calm, restrained depth — deliberately
+   opaque (no glass, no marketing gradients). One accent (#5b9bff), used only
+   for the primary action, active progress, focus and small highlights.
+   Light/dark follow the OS; the user can override it in Preferences. */
+
+.onb-root {
+  --accent: #5b9bff;
+  --accent-ink: #ffffff;
+  --bg: #0c0c0d;
+  --elevated: #151517;
+  --secondary: #1b1b1e;
+  --text: #f5f5f5;
+  --text-secondary: rgba(255, 255, 255, 0.62);
+  --text-faint: rgba(255, 255, 255, 0.4);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --success: #37d487;
+  --warning: #e0a94e;
+  --error: #ff6a63;
+  --focus: rgba(91, 155, 255, 0.55);
+  --field-bg: #17171a;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+  --radius: 9px;
+
+  height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+.onb-root[data-theme="light"] {
+  --accent: #2f6fd0;
+  --accent-ink: #ffffff;
+  --bg: #fbfbfd;
+  --elevated: #ffffff;
+  --secondary: #f2f2f5;
+  --text: #14141a;
+  --text-secondary: rgba(0, 0, 0, 0.62);
+  --text-faint: rgba(0, 0, 0, 0.42);
+  --border: rgba(0, 0, 0, 0.09);
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --success: #1a9e5c;
+  --warning: #b5761b;
+  --error: #cf3f38;
+  --focus: rgba(47, 111, 208, 0.45);
+  --field-bg: #ffffff;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.02) inset, 0 8px 24px rgba(20, 20, 30, 0.08);
+}
+
+/* ------------------------------------------------------------------- shell */
+.onb-shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  margin: 0 auto;
+  max-width: 660px;
+  padding: 0 28px;
+}
+
+.onb-shell.is-hero {
+  grid-template-rows: 1fr;
+  align-items: center;
+}
+
+.onb-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  flex: none;
+  padding-top: 6px;
+}
+
+.onb-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.2px;
+}
+
+.onb-brand .mark {
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+}
+
+.onb-step-count {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.onb-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 0 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.onb-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0 22px;
+  border-top: 1px solid var(--border);
+}
+
+.onb-foot .spacer {
+  flex: 1;
+}
+
+/* ------------------------------------------------------------ typography */
+.onb-eyebrow {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--accent);
+  margin: 4px 0 10px;
+}
+
+.onb-h1 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+  margin: 0 0 10px;
+}
+
+.onb-h2 {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  margin: 0 0 4px;
+}
+
+.onb-sub {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.onb-help {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  margin: 6px 0 0;
+}
+
+.onb-section {
+  margin-top: 22px;
+}
+
+.onb-section-head {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+/* ---------------------------------------------------------------- buttons */
+.onb-btn {
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 550;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.16s ease, border-color 0.16s ease, opacity 0.16s ease,
+    transform 0.05s ease;
+}
+
+.onb-btn:active {
+  transform: translateY(0.5px);
+}
+
+.onb-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.onb-btn.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.onb-btn.primary:hover {
+  filter: brightness(1.06);
+}
+
+.onb-btn.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.onb-btn.secondary {
+  background: var(--secondary);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.onb-btn.secondary:hover {
+  background: var(--elevated);
+  border-color: var(--border-strong);
+}
+
+.onb-btn.link {
+  background: none;
+  color: var(--text-secondary);
+  height: auto;
+  padding: 4px 2px;
+  font-weight: 500;
+}
+
+.onb-btn.link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.onb-btn.small {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12.5px;
+}
+
+/* --------------------------------------------------------------- progress */
+.progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.progress-pct {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--secondary);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.step-list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.step-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 7px 8px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.step-row[data-state="running"] {
+  color: var(--text);
+  background: var(--elevated);
+}
+
+.step-row[data-state="complete"] {
+  color: var(--text);
+}
+
+.step-row[data-state="failed"] {
+  color: var(--text);
+}
+
+.step-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.step-icon.pending {
+  border: 1.5px solid var(--border-strong);
+}
+
+.step-icon.running {
+  color: var(--accent);
+}
+
+.step-icon.complete {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+}
+
+.step-icon.skipped {
+  color: var(--text-faint);
+  border: 1.5px dashed var(--border-strong);
+}
+
+.step-icon.failed {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+}
+
+.step-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.step-note {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.step-retry {
+  font-size: 12.5px;
+  color: var(--accent);
+  font-weight: 550;
+}
+
+.step-retry:hover {
+  text-decoration: underline;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+}
+
+.progress-caption {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.progress-caption .sub {
+  color: var(--text-faint);
+}
+
+/* --------------------------------------------------------------- details */
+.details-toggle {
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.details-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.details-log {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ------------------------------------------------------------------ fields */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 14px 0;
+}
+
+.field-label {
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-secondary);
+}
+
+.input,
+.select {
+  height: 40px;
+  width: 100%;
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  padding: 0 12px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.input:focus-visible,
+.select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.input::placeholder {
+  color: var(--text-faint);
+}
+
+.select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+.input-affix {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-affix .input {
+  padding-right: 110px;
+}
+
+.affix {
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.affix.ok {
+  color: var(--success);
+}
+
+.affix.err {
+  color: var(--error);
+}
+
+.affix.wait {
+  color: var(--text-faint);
+}
+
+/* provider card */
+.card {
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 2px);
+  padding: 16px;
+  margin-top: 14px;
+  box-shadow: var(--shadow);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-title {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.card-desc {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 550;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  border: 1px solid color-mix(in srgb, var(--success) 28%, transparent);
+}
+
+/* segmented control */
+.segmented {
+  display: inline-flex;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px;
+  gap: 3px;
+}
+
+.segmented button {
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-secondary);
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 6px;
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* toggle switch */
+.switch {
+  width: 42px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--secondary);
+  border: 1px solid var(--border-strong);
+  position: relative;
+  transition: background 0.18s ease;
+  flex: none;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.switch[aria-checked="true"] {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.switch[aria-checked="true"]::after {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+.pref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.pref-row:last-child {
+  border-bottom: none;
+}
+
+.pref-text {
+  min-width: 0;
+}
+
+.pref-title {
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.pref-sub {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+/* keyboard hint */
+kbd {
+  font-family: var(--font);
+  font-size: 11.5px;
+  background: var(--secondary);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 2px 6px;
+  color: var(--text-secondary);
+}
+
+/* permission rows reuse step look */
+.perm-status {
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.perm-status.granted {
+  color: var(--success);
+}
+
+/* final checks */
+.check-list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ready hero */
+.ready-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  margin-bottom: 18px;
+  animation: pop 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.hero-block {
+  text-align: left;
+}
+
+/* welcome brand big mark */
+.welcome-mark {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+  margin-bottom: 22px;
+}
+
+/* searchable model selector */
+.combo {
+  position: relative;
+}
+
+.combo-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.combo-opt {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  cursor: default;
+}
+
+.combo-opt:hover {
+  background: var(--secondary);
+}
+
+.combo-opt[data-selected="true"] {
+  color: var(--accent);
+}
+
+.combo-name {
+  font-size: 13.5px;
+}
+
+.combo-id {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 55%;
+}
+
+.combo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 9px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.combo-use {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--accent);
+}
+
+.fade-in {
+  animation: fade 0.24s ease both;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in,
+  .ready-mark {
+    animation: none;
+  }
+  .spinner {
+    animation-duration: 1.6s;
+  }
+}

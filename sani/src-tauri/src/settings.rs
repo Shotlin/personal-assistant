@@ -44,6 +44,29 @@ pub struct Settings {
     /// Id of the conversation Sani resumes on launch.
     #[serde(default)]
     pub active_conversation_id: String,
+    /// Reasoning (Deep Agent) provider + model. Non-secret; the credential lives
+    /// in the Keychain, never here.
+    #[serde(default = "default_reasoning_provider")]
+    pub reasoning_provider: String,
+    #[serde(default)]
+    pub reasoning_model: String,
+    /// Quick computer-control (Velo / JEV) provider + model. When the provider
+    /// is OpenRouter the same Keychain credential as the reasoning model is
+    /// reused — it is never asked for twice.
+    #[serde(default = "default_velo_provider")]
+    pub velo_provider: String,
+    #[serde(default = "default_velo_model")]
+    pub velo_model: String,
+}
+
+fn default_reasoning_provider() -> String {
+    "openrouter".into()
+}
+fn default_velo_provider() -> String {
+    "openrouter".into()
+}
+fn default_velo_model() -> String {
+    "jev-latest".into()
 }
 
 fn default_hotkey() -> String {
@@ -125,6 +148,78 @@ pub fn save(app: &tauri::AppHandle, settings: &Settings) -> Result<(), String> {
 const KEYCHAIN_SERVICE: &str = "sani-agent-key";
 const KEYCHAIN_ACCOUNT: &str = "app.sani.local";
 
+/// Read a generic secret from the Keychain by service name. Used by onboarding
+/// for provider credentials (OpenRouter, TypeSafe) so API keys never touch the
+/// plaintext settings file, the database, memory, or logs.
+pub fn secret_read(service: &str) -> Option<String> {
+    let out = std::process::Command::new("security")
+        .args(["find-generic-password", "-s", service, "-a", KEYCHAIN_ACCOUNT, "-w"])
+        .output()
+        .ok()?;
+    if out.status.success() {
+        let value = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !value.is_empty() {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// Store a generic secret. Secret goes to the child's stdin, never argv.
+pub fn secret_write(service: &str, key: &str) -> bool {
+    // -A so the installed app (a different code identity than the CLI) can read
+    // it back without a prompt; the value is passed on stdin, never in argv.
+    let mut child = match std::process::Command::new("security")
+        .args(["add-generic-password", "-A", "-U", "-s", service, "-a", KEYCHAIN_ACCOUNT, "-w"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(err) => {
+            log::debug!("keychain write unavailable ({service}): {err}");
+            return false;
+        }
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        // `-w` with no value reads twice for confirmation, so send it twice.
+        if stdin
+            .write_all(format!("{key}\n{key}\n").as_bytes())
+            .and_then(|_| stdin.flush())
+            .is_err()
+        {
+            let _ = child.kill();
+            return false;
+        }
+    }
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        Err(_) => return false,
+    };
+    if !output.status.success() {
+        let why = String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .filter(|l| !l.starts_with("password data for new item"))
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("keychain write failed")
+            .to_string();
+        log::debug!("keychain write rejected ({service}): {why}");
+        return false;
+    }
+    true
+}
+
+/// Remove a generic secret (safe when it does not exist).
+#[allow(dead_code)] // used by credential reset / repair
+pub fn secret_delete(service: &str) -> bool {
+    std::process::Command::new("security")
+        .args(["delete-generic-password", "-s", service, "-a", KEYCHAIN_ACCOUNT])
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
 /// Resolve the gateway key without any user-facing login. Keychain first, then
 /// the private file, then a one-time bootstrap discovery that is persisted for
 /// future (Finder) launches.
@@ -179,81 +274,11 @@ fn persist_secret(app: &tauri::AppHandle, key: &str) -> &'static str {
 }
 
 fn keychain_read() -> Option<String> {
-    let out = std::process::Command::new("security")
-        .args([
-            "find-generic-password",
-            "-s",
-            KEYCHAIN_SERVICE,
-            "-a",
-            KEYCHAIN_ACCOUNT,
-            "-w",
-        ])
-        .output()
-        .ok()?;
-    if out.status.success() {
-        let value = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !value.is_empty() {
-            return Some(value);
-        }
-    }
-    None
+    secret_read(KEYCHAIN_SERVICE)
 }
 
 fn keychain_write(key: &str) -> bool {
-    // -A: allow any application to read without a prompt, so the installed app
-    // (a different code identity than the `security` CLI that wrote it) can
-    // still resolve the key on a Finder launch. Local-only MVP secret.
-    // The secret goes to the child's stdin — never argv, where it would show up
-    // in the process list.
-    let mut child = match std::process::Command::new("security")
-        .args([
-            "add-generic-password",
-            "-A",
-            "-U",
-            "-s",
-            KEYCHAIN_SERVICE,
-            "-a",
-            KEYCHAIN_ACCOUNT,
-            "-w",
-        ])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(err) => {
-            log::debug!("keychain write unavailable: {err}");
-            return false;
-        }
-    };
-    if let Some(mut stdin) = child.stdin.take() {
-        // `-w` with no value reads the secret twice from the terminal (confirm
-        // prompt), so a single line is rejected with "passwords don't match".
-        if stdin
-            .write_all(format!("{key}\n{key}\n").as_bytes())
-            .and_then(|_| stdin.flush())
-            .is_err()
-        {
-            let _ = child.kill();
-            return false;
-        }
-    }
-    let output = match child.wait_with_output() {
-        Ok(output) => output,
-        Err(_) => return false,
-    };
-    if !output.status.success() {
-        let why = String::from_utf8_lossy(&output.stderr)
-            .lines()
-            .filter(|l| !l.starts_with("password data for new item"))
-            .find(|l| !l.trim().is_empty())
-            .unwrap_or("keychain write failed")
-            .to_string();
-        log::debug!("keychain write rejected: {why}");
-        return false;
-    }
-    true
+    secret_write(KEYCHAIN_SERVICE, key)
 }
 
 fn secret_file_path(app: &tauri::AppHandle) -> Option<PathBuf> {

@@ -9,13 +9,13 @@ import { emit } from "@tauri-apps/api/event";
  * fallback and emits the UI-ready handshake the Rust side records as startup
  * evidence.
  */
-export function announceReady(which: "pill" | "panel"): void {
+export function announceReady(which: string): void {
   const fallback = document.getElementById("boot-fallback");
   if (fallback) fallback.style.display = "none";
   void emit(`sani://${which}-ui-ready`).catch(() => {});
 }
 
-function ReadySignal({ which }: { which: "pill" | "panel" }) {
+function ReadySignal({ which }: { which: string }) {
   useEffect(() => announceReady(which), [which]);
   return null;
 }
@@ -25,7 +25,7 @@ function ReadySignal({ which }: { which: "pill" | "panel" }) {
  * rejected promise and console.error is mirrored to the Rust log, which also
  * covers release builds where the WebView inspector is unavailable.
  */
-export function installErrorBridge(which: "pill" | "panel"): void {
+export function installErrorBridge(which: string): void {
   const report = (message: string) => {
     void emit("sani://ui-error", { label: which, message }).catch(() => {});
   };
@@ -43,7 +43,7 @@ export function installErrorBridge(which: "pill" | "panel"): void {
 }
 
 /** Mount one Sani window and prove it came up, or leave the visible fallback. */
-export function mountApp(node: ReactNode, which: "pill" | "panel"): void {
+export function mountApp(node: ReactNode, which: string): void {
   installErrorBridge(which);
   const container = document.getElementById("root");
   if (!container) {

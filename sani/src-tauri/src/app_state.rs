@@ -105,6 +105,11 @@ pub fn history(app: &AppHandle) -> SharedHistory {
     app.state::<SaniState>().history.clone()
 }
 
+/// True while first-run onboarding has not been marked complete.
+pub fn onboarding_incomplete(app: &AppHandle) -> bool {
+    !crate::setup::snapshot(app).onboarding_complete
+}
+
 pub fn current_state(app: &AppHandle) -> UiState {
     *app.state::<SaniState>().state.lock()
 }
@@ -248,9 +253,16 @@ fn begin_capture(app: &AppHandle) {
 
     // Speech engine: load once, keep warm. Because the process is reused across
     // turns, `--turn-end-ms` is fixed at spawn — changing it needs a restart.
+    // If a previously-spawned engine has since exited (crash/kill/EOF), respawn
+    // it here; otherwise a dead handle would leave every later listen stuck in
+    // Preparing with no partials ever arriving.
     let model = state.settings.read().stt_model.clone();
     let turn_end_ms = settings::stt_turn_end_ms(&state.settings.read());
-    if state.speech.lock().is_none() {
+    let needs_start = match state.speech.lock().as_ref() {
+        None => true,
+        Some(handle) => !handle.is_alive(),
+    };
+    if needs_start {
         match speech::start(app.clone(), &model, turn_end_ms) {
             Ok(handle) => *state.speech.lock() = Some(handle),
             Err(err) => {

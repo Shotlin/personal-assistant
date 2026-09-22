@@ -55,6 +55,11 @@ pub struct SpeechHandle {
     child: Mutex<Child>,
     stdin: Mutex<Option<ChildStdin>>,
     alive: Arc<AtomicBool>,
+    /// Set once the sidecar's stdout closes — the process exited (crash, kill,
+    /// or EOF). `ready` cannot express this: it is false both before the model
+    /// loads *and* after death, so a dead engine would look merely "not ready"
+    /// and never be respawned.
+    exited: Arc<AtomicBool>,
     pub ready: Arc<AtomicBool>,
     pub model: RwLock<String>,
 }
@@ -62,6 +67,12 @@ pub struct SpeechHandle {
 impl SpeechHandle {
     pub fn is_ready(&self) -> bool {
         self.ready.load(Ordering::Relaxed)
+    }
+
+    /// False once the sidecar process has gone away, so the caller knows to
+    /// respawn rather than reuse a dead handle.
+    pub fn is_alive(&self) -> bool {
+        !self.exited.load(Ordering::Relaxed)
     }
 
     pub fn push_audio(&self, samples: &[f32]) {
@@ -130,6 +141,21 @@ fn packaged_sidecar() -> Option<std::path::PathBuf> {
     None
 }
 
+/// Locate the voice engine for first-run setup *without* starting it. Returns a
+/// diagnostic describing what was found, or an error the setup UI can show.
+pub fn locate_for_setup(app: &AppHandle) -> Result<String, String> {
+    if let Some(bin) = packaged_sidecar() {
+        return Ok(format!("voice engine available ({})", bin.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()));
+    }
+    let settings = crate::app_state::settings(app).read().clone();
+    if crate::settings::stt_python_path(app, &settings).is_some()
+        && crate::settings::stt_script_path(app).is_some()
+    {
+        return Ok("voice engine available (local runtime)".to_string());
+    }
+    Err("voice engine component missing".to_string())
+}
+
 /// Sidecar stderr goes to its own log file beside `sani.log`.
 ///
 /// `Stdio::null()` made this feature undebuggable: `moonshine_voice` swallows
@@ -190,11 +216,13 @@ pub fn start(app: AppHandle, model: &str, turn_end_ms: u32) -> Result<Arc<Speech
 
     let alive = Arc::new(AtomicBool::new(true));
     let ready = Arc::new(AtomicBool::new(false));
+    let exited = Arc::new(AtomicBool::new(false));
 
     let handle = Arc::new(SpeechHandle {
         child: Mutex::new(child),
         stdin: Mutex::new(Some(stdin)),
         alive: alive.clone(),
+        exited: exited.clone(),
         ready: ready.clone(),
         model: RwLock::new(model.to_string()),
     });
@@ -245,6 +273,10 @@ pub fn start(app: AppHandle, model: &str, turn_end_ms: u32) -> Result<Arc<Speech
                 other => log::debug!("[stt] unhandled sidecar event kind={other}"),
             }
         }
+        // stdout closed: the sidecar process is gone. Mark it dead so the next
+        // listen respawns rather than reusing this handle and hanging in
+        // Preparing forever. `alive` is false only on an intentional stop().
+        exited.store(true, Ordering::Relaxed);
         ready.store(false, Ordering::Relaxed);
         if alive.load(Ordering::Relaxed) {
             let _ = app.emit("sani://stt-status", "stopped");

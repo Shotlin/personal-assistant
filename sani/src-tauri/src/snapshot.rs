@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
-use crate::windows::{PANEL_LABEL, PILL_LABEL};
+use crate::windows::{ONBOARDING_LABEL, PANEL_LABEL, PILL_LABEL};
 
 pub fn dir() -> Option<PathBuf> {
     std::env::var("SANI_SNAPSHOT_DIR")
@@ -18,21 +18,44 @@ pub fn dir() -> Option<PathBuf> {
 
 /// Render both overlays' current web content, tagged (e.g. "listening").
 pub fn snapshot_overlays(app: &AppHandle, tag: &str) {
+    for label in [PILL_LABEL, PANEL_LABEL] {
+        snapshot_window(app, label, tag);
+    }
+}
+
+/// Capture one window's web content to `<dir>/<label>-<tag>.png`. The app
+/// renders its own WKWebView, so this needs no Screen Recording permission —
+/// which is what lets us actually look at the onboarding window.
+pub fn snapshot_window(app: &AppHandle, label: &str, tag: &str) {
     let Some(dir) = dir() else { return };
     let _ = std::fs::create_dir_all(&dir);
-    for label in [PILL_LABEL, PANEL_LABEL] {
-        let Some(window) = app.get_webview_window(label) else { continue };
-        let path = dir.join(format!("{label}-{tag}.png"));
-        if !window.is_visible().unwrap_or(false) {
-            log::debug!("[snapshot] {label} not visible; skipped");
-            continue;
-        }
-        let target = path.to_string_lossy().to_string();
-        let _ = window.with_webview(move |webview| {
-            capture(&webview, &target);
-        });
-        log::info!("[snapshot] {label} -> {}", path.display());
+    let Some(window) = app.get_webview_window(label) else { return };
+    let path = dir.join(format!("{label}-{tag}.png"));
+    if !window.is_visible().unwrap_or(false) {
+        log::debug!("[snapshot] {label} not visible; skipped");
+        return;
     }
+    let target = path.to_string_lossy().to_string();
+    let _ = window.with_webview(move |webview| {
+        capture(&webview, &target);
+    });
+    log::info!("[snapshot] {label} -> {}", path.display());
+}
+
+/// Snapshot the onboarding window after it has had time to paint (verification).
+/// A cold `tauri dev` start can take several seconds before React mounts, so
+/// capture a few frames rather than betting on one timing.
+pub fn spawn_onboarding_snapshot(app: &AppHandle) {
+    if dir().is_none() {
+        return;
+    }
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        for (ms, tag) in [(2500u64, "welcome"), (5000, "welcome2"), (8000, "welcome3")] {
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            snapshot_window(&handle, ONBOARDING_LABEL, tag);
+        }
+    });
 }
 
 #[cfg(target_os = "macos")]
