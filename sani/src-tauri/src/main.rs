@@ -147,6 +147,7 @@ fn main() {
             select_conversation,
             delete_conversation,
             panel_ready,
+            main_ready,
             mic_permission_state,
             request_mic_permission,
             open_mic_settings,
@@ -582,6 +583,11 @@ fn panel_ready(app: tauri::AppHandle) {
     if let Ok(messages) = app_state::history(&app).messages(&conversation_id) {
         let _ = tauri::Emitter::emit(&app, "sani://history-loaded", messages);
     }
+}
+
+#[tauri::command]
+fn main_ready(app: tauri::AppHandle) {
+    panel_ready(app);
 }
 
 /// Current macOS microphone authorization state (never triggers a prompt).

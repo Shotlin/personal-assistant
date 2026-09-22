@@ -13,6 +13,7 @@ export default defineConfig({
     target: "es2021",
     rollupOptions: {
       input: {
+        main: resolve(__dirname, "app.html"),
         pill: resolve(__dirname, "index.html"),
         panel: resolve(__dirname, "panel.html"),
         onboarding: resolve(__dirname, "onboarding.html"),

@@ -118,8 +118,8 @@ export const onActivity = (cb: (a: ActivityEvent) => void) =>
 export const onHistoryLoaded = (cb: (m: ChatMessage[]) => void) =>
   listen<ChatMessage[]>("sani://history-loaded", (e) => cb(e.payload));
 export const onMessage = (
-  cb: (m: { id: string; role: string; text: string; created_at: number }) => void,
-) => listen("sani://message", (e) => cb(e.payload as never));
+  cb: (m: ChatMessage) => void,
+) => listen<ChatMessage>("sani://message", (e) => cb(e.payload));
 export const onConversationChanged = (cb: (id: string) => void) =>
   listen<string>("sani://conversation-changed", (e) => cb(e.payload));
 export const onSttStatus = (cb: (s: unknown) => void) =>
@@ -161,6 +161,7 @@ export const selectConversation = (conversationId: string) =>
 export const deleteConversation = (conversationId: string) =>
   invoke<void>("delete_conversation", { conversationId });
 export const panelReady = () => invoke<void>("panel_ready");
+export const mainReady = () => invoke<void>("main_ready");
 
 /** The live agent registry. This is the only source of who exists. */
 export const coreAgents = () =>
