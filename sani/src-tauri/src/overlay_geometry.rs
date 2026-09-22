@@ -25,11 +25,19 @@ pub const PANEL_MAX_HEIGHT: f64 = 680.0;
 
 /// Position and size of one overlay. Ratios are normalized against the usable
 /// work area; `width`/`height` are logical points, never physical pixels.
+///
+/// Every field has a serde default on purpose: a half-written `overlay_layout`
+/// must fall back to defaults inside the resolver instead of failing to parse
+/// and discarding the rest of the settings file.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct OverlayFrame {
+    #[serde(default)]
     pub x_ratio: f64,
+    #[serde(default)]
     pub y_ratio: f64,
+    #[serde(default)]
     pub width: f64,
+    #[serde(default)]
     pub height: f64,
 }
 

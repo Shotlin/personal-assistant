@@ -18,9 +18,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
 
+use crate::overlay_geometry::{default_panel_frame, default_pill_frame, OverlayFrame, OverlayLayout};
 use crate::window_geometry::NormalWindowBounds;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct MainWindowSettings {
     #[serde(default)]
     pub display_id: String,
@@ -34,6 +35,48 @@ pub struct MainWindowSettings {
     pub height: f64,
     #[serde(default)]
     pub maximized: bool,
+}
+
+/// Committed Voice Pill / Conversation Panel placement.
+///
+/// Positions are normalized against a usable work area; sizes are logical
+/// points. A missing frame falls back to the Phase 1 default rather than
+/// failing to parse, so a hand-edited or half-written `overlay_layout` can
+/// never take the rest of the settings file down with it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OverlayLayoutSettings {
+    #[serde(default)]
+    pub display_affinity: String,
+    #[serde(default = "default_pill_frame")]
+    pub pill: OverlayFrame,
+    #[serde(default = "default_panel_frame")]
+    pub panel: OverlayFrame,
+}
+
+impl Default for OverlayLayoutSettings {
+    fn default() -> Self {
+        Self::from(OverlayLayout::default())
+    }
+}
+
+impl From<OverlayLayout> for OverlayLayoutSettings {
+    fn from(layout: OverlayLayout) -> Self {
+        Self {
+            display_affinity: layout.display_affinity,
+            pill: layout.pill,
+            panel: layout.panel,
+        }
+    }
+}
+
+impl From<OverlayLayoutSettings> for OverlayLayout {
+    fn from(saved: OverlayLayoutSettings) -> Self {
+        Self {
+            display_affinity: saved.display_affinity,
+            pill: saved.pill,
+            panel: saved.panel,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +124,10 @@ pub struct Settings {
     /// usable work area; maximized state never overwrites these bounds.
     #[serde(default)]
     pub main_window: Option<MainWindowSettings>,
+    /// Committed overlay placement. `None` on every settings file written
+    /// before the layout editor existed, which resolves to the defaults.
+    #[serde(default)]
+    pub overlay_layout: Option<OverlayLayoutSettings>,
 }
 
 fn default_agent_mode() -> String {
@@ -141,6 +188,20 @@ pub fn update_main_window_maximized(settings: &mut Settings, maximized: bool) {
         .main_window
         .get_or_insert_with(MainWindowSettings::default)
         .maximized = maximized;
+}
+
+/// The committed overlay layout, or the Phase 1 defaults when nothing has been
+/// saved yet. Overlay placement is wholly independent of `main_window`.
+pub fn load_overlay_layout(settings: &Settings) -> OverlayLayout {
+    settings
+        .overlay_layout
+        .clone()
+        .map(OverlayLayout::from)
+        .unwrap_or_default()
+}
+
+pub fn update_overlay_layout(settings: &mut Settings, layout: OverlayLayout) {
+    settings.overlay_layout = Some(layout.into());
 }
 
 impl Default for Settings {
@@ -344,6 +405,7 @@ pub fn stt_script_path(app: &tauri::AppHandle) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::overlay_geometry::{default_pill_frame, OverlayFrame, OverlayLayout};
     use crate::window_geometry::NormalWindowBounds;
 
     #[test]
@@ -373,5 +435,74 @@ mod tests {
         assert_eq!(saved.width, 1040.0);
         assert_eq!(saved.height, 700.0);
         assert!(saved.maximized);
+    }
+
+    #[test]
+    fn old_settings_without_overlay_layout_still_load() {
+        assert!(Settings::default().overlay_layout.is_none());
+
+        let settings: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(settings.overlay_layout.is_none());
+        assert_eq!(load_overlay_layout(&settings), OverlayLayout::default());
+    }
+
+    #[test]
+    fn overlay_layout_defaults_survive_a_partial_document() {
+        let settings: Settings =
+            serde_json::from_str(r#"{"overlay_layout":{"display_affinity":"built-in"}}"#).unwrap();
+        let layout = load_overlay_layout(&settings);
+
+        assert_eq!(layout.display_affinity, "built-in");
+        assert_eq!(layout.pill, default_pill_frame());
+    }
+
+    #[test]
+    fn overlay_layout_round_trips_through_json() {
+        let layout = OverlayLayout {
+            display_affinity: "built-in".into(),
+            pill: OverlayFrame {
+                x_ratio: 0.3,
+                y_ratio: 0.8,
+                width: 640.0,
+                height: 96.0,
+            },
+            panel: OverlayFrame {
+                x_ratio: 0.6,
+                y_ratio: 0.02,
+                width: 520.0,
+                height: 600.0,
+            },
+        };
+        let mut settings = Settings::default();
+        update_overlay_layout(&mut settings, layout.clone());
+
+        let raw = serde_json::to_string(&settings).unwrap();
+        let reloaded: Settings = serde_json::from_str(&raw).unwrap();
+
+        assert_eq!(load_overlay_layout(&reloaded), layout);
+    }
+
+    #[test]
+    fn saving_overlay_layout_never_changes_main_window() {
+        let mut settings = Settings::default();
+        update_normal_main_window(
+            &mut settings,
+            "built-in".into(),
+            NormalWindowBounds {
+                x: 100.0,
+                y: 80.0,
+                width: 1040.0,
+                height: 700.0,
+            },
+        );
+        update_main_window_maximized(&mut settings, true);
+        let before = settings.main_window.clone();
+
+        update_overlay_layout(&mut settings, OverlayLayout::default());
+
+        assert_eq!(settings.main_window, before);
+        let raw = serde_json::to_string(&settings).unwrap();
+        let reloaded: Settings = serde_json::from_str(&raw).unwrap();
+        assert_eq!(reloaded.main_window, before);
     }
 }
