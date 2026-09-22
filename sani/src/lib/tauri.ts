@@ -97,6 +97,74 @@ export interface SettingsShape {
   agent_mode: string;
 }
 
+// ------------------------------------------------------- overlay layout editor
+
+/** Normalized top-left position plus a logical-point size. The mixed units are
+ *  deliberate: position follows a work area that changes shape, while a 520pt
+ *  panel stays 520pt on any display. Never physical pixels. */
+export interface OverlayFrame {
+  x_ratio: number;
+  y_ratio: number;
+  width: number;
+  height: number;
+}
+
+export interface OverlayLayout {
+  /** Empty means "no preference", which native resolves to the main window's display. */
+  display_affinity: string;
+  pill: OverlayFrame;
+  panel: OverlayFrame;
+}
+
+/** Logical points relative to the top-left of a usable work area. */
+export interface LogicalRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** One display as native sees it: the whole screen, and the usable work area
+ *  inside it. The gap between them is the real menu bar/notch and Dock. */
+export interface DisplaySnapshot {
+  id: string;
+  is_primary: boolean;
+  is_main_window_display: boolean;
+  scale_factor: number;
+  screen_width: number;
+  screen_height: number;
+  work_x: number;
+  work_y: number;
+  work_width: number;
+  work_height: number;
+}
+
+/** The ranges native enforces, so the editor constrains handles to the same numbers. */
+export interface OverlayLimits {
+  pill_min_width: number;
+  pill_max_width: number;
+  pill_height: number;
+  panel_min_width: number;
+  panel_max_width: number;
+  panel_min_height: number;
+  panel_max_height: number;
+}
+
+export interface OverlayEditorState {
+  /** null when native has no display snapshot: Preview and Save must be disabled. */
+  active_display: string | null;
+  displays: DisplaySnapshot[];
+  committed: OverlayLayout;
+  /** The provisional layout currently applied to the real overlays, if previewing. */
+  draft: OverlayLayout | null;
+  /** What native actually resolved — authoritative, never the raw draft. */
+  pill: LogicalRect;
+  panel: LogicalRect;
+  adjustments: string[];
+  preview_active: boolean;
+  limits: OverlayLimits;
+}
+
 // ---------------------------------------------------------------- events
 
 export const onState = (cb: (s: UiState) => void) =>
@@ -181,8 +249,22 @@ export const onUiCommand = (cb: (command: UiCommand) => void) =>
   listen<UiCommand>("sani://ui-command", (e) => cb(e.payload));
 
 /** Current macOS microphone authorization state; never triggers a prompt. */
-export const micPermissionState = () => invoke<MicPermission>("mic_permission_state");
-/** Kick the system prompt when undetermined; poll micPermissionState for the answer. */
+export const micPermissionState = () => invoke<MicPermission>("mic_permission_state");/** Kick the system prompt when undetermined; poll micPermissionState for the answer. */
 export const requestMicPermission = () => invoke<MicPermission>("request_mic_permission");
 /** System Settings › Privacy & Security › Microphone. */
 export const openMicSettings = () => invoke<void>("open_mic_settings");
+
+// --------------------------------------------------- overlay layout commands
+
+/** Display metadata, committed layout, and the frames native resolved. */
+export const overlayEditorState = () => invoke<OverlayEditorState>("overlay_editor_state");
+/** Apply a draft to the real overlays. Process-local: never writes settings. */
+export const previewOverlayLayout = (draft: OverlayLayout) =>
+  invoke<OverlayEditorState>("preview_overlay_layout", { draft });
+/** Persist a validated draft, apply it, and restore prior overlay visibility. */
+export const saveOverlayLayout = (draft: OverlayLayout) =>
+  invoke<OverlayEditorState>("save_overlay_layout", { draft });
+/** Back to committed placement and the exact visibility captured before preview. */
+export const cancelOverlayPreview = () => invoke<OverlayEditorState>("cancel_overlay_preview");
+/** The native defaults Reset puts into the draft. Writes nothing, moves nothing. */
+export const resetOverlayDraft = () => invoke<OverlayLayout>("reset_overlay_draft");

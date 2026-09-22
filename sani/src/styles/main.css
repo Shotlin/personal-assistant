@@ -1,1 +1,272 @@
-html,body,#root{background:var(--bg-solid);overflow:hidden}#boot-fallback{height:100vh;display:grid;place-items:center;color:var(--text-secondary)}.main-app-shell{height:100vh;display:flex;background:var(--bg-solid);min-width:0}.main-sidebar{width:236px;flex:none;padding:24px 14px 16px;border-right:1px solid var(--hairline);display:flex;flex-direction:column;background:#17171a}.brand{font-size:20px;font-weight:700;padding:0 12px 24px}.nav-items{display:grid;gap:4px}.nav-item{display:flex;align-items:center;gap:10px;text-align:left;border-radius:9px;padding:10px 12px;color:var(--text-secondary);font-size:14px}.nav-item:hover,.nav-item.selected{background:var(--surface-strong);color:var(--text)}.nav-mark{color:var(--success)}.sidebar-footer{margin-top:auto;color:var(--text-dim);font-size:12px;padding:10px 12px}.main-conversation,.section-boundary{min-width:0;flex:1;display:flex;flex-direction:column;padding:32px clamp(24px,5vw,72px)}.conversation-header{display:flex;justify-content:space-between;align-items:start;border-bottom:1px solid var(--hairline);padding-bottom:20px}.conversation-header h1,.section-boundary h1{margin:0;font-size:24px}.conversation-header p,.section-boundary p{color:var(--text-secondary);margin:6px 0 0}.state-chip{font-size:12px;border:1px solid var(--border-soft);border-radius:999px;padding:6px 10px;color:var(--text-secondary)}.message-list{flex:1;overflow:auto;padding:24px 0;max-width:860px;width:100%;margin:0 auto}.main-message{padding:16px 0;border-bottom:1px solid var(--hairline)}.main-message p{white-space:pre-wrap;line-height:1.55;margin:8px 0 0;user-select:text}.message-meta{display:flex;gap:10px;font-size:13px;color:var(--text-secondary)}.message-meta time{margin-left:auto}.muted{opacity:.72}.empty-history{color:var(--text-dim);text-align:center;padding:80px 20px}.desktop-composer{max-width:860px;width:100%;margin:0 auto;border:1px solid var(--border-soft);border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;color:var(--text-secondary)}.desktop-composer button{color:var(--text-dim)}.section-boundary{max-width:760px}.section-boundary p{max-width:560px;line-height:1.6}@media(max-width:980px){.main-sidebar{width:64px;padding:20px 8px}.brand{padding:0 8px 20px;font-size:0}.brand::after{content:"S";font-size:20px}.nav-item{justify-content:center;padding:11px}.nav-item span:last-child,.sidebar-footer{display:none}.main-conversation,.section-boundary{padding:28px 24px}} 
+html,body,#root{background:var(--bg-solid);overflow:hidden}#boot-fallback{height:100vh;display:grid;place-items:center;color:var(--text-secondary)}.main-app-shell{height:100vh;display:flex;background:var(--bg-solid);min-width:0}.main-sidebar{width:236px;flex:none;padding:24px 14px 16px;border-right:1px solid var(--hairline);display:flex;flex-direction:column;background:#17171a}.brand{font-size:20px;font-weight:700;padding:0 12px 24px}.nav-items{display:grid;gap:4px}.nav-item{display:flex;align-items:center;gap:10px;text-align:left;border-radius:9px;padding:10px 12px;color:var(--text-secondary);font-size:14px}.nav-item:hover,.nav-item.selected{background:var(--surface-strong);color:var(--text)}.nav-mark{color:var(--success)}.sidebar-footer{margin-top:auto;color:var(--text-dim);font-size:12px;padding:10px 12px}.main-conversation,.section-boundary{min-width:0;flex:1;display:flex;flex-direction:column;padding:32px clamp(24px,5vw,72px)}.conversation-header{display:flex;justify-content:space-between;align-items:start;border-bottom:1px solid var(--hairline);padding-bottom:20px}.conversation-header h1,.section-boundary h1{margin:0;font-size:24px}.conversation-header p,.section-boundary p{color:var(--text-secondary);margin:6px 0 0}.state-chip{font-size:12px;border:1px solid var(--border-soft);border-radius:999px;padding:6px 10px;color:var(--text-secondary)}.message-list{flex:1;overflow:auto;padding:24px 0;max-width:860px;width:100%;margin:0 auto}.main-message{padding:16px 0;border-bottom:1px solid var(--hairline)}.main-message p{white-space:pre-wrap;line-height:1.55;margin:8px 0 0;user-select:text}.message-meta{display:flex;gap:10px;font-size:13px;color:var(--text-secondary)}.message-meta time{margin-left:auto}.muted{opacity:.72}.empty-history{color:var(--text-dim);text-align:center;padding:80px 20px}.desktop-composer{max-width:860px;width:100%;margin:0 auto;border:1px solid var(--border-soft);border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;color:var(--text-secondary)}.desktop-composer button{color:var(--text-dim)}.section-boundary{max-width:760px}.section-boundary p{max-width:560px;line-height:1.6}@media(max-width:980px){.main-sidebar{width:64px;padding:20px 8px}.brand{padding:0 8px 20px;font-size:0}.brand::after{content:"S";font-size:20px}.nav-item{justify-content:center;padding:11px}.nav-item span:last-child,.sidebar-footer{display:none}.main-conversation,.section-boundary{padding:28px 24px}}
+
+/* ---------------------------------------------------- overlay layout editor */
+
+.layout-editor {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 32px clamp(24px, 4vw, 56px);
+}
+
+.layout-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  padding-top: 24px;
+}
+
+/* Wide main window only: the controls sit beside the canvas. Below this the
+   canvas keeps the full content width, which is what keeps the shapes legible. */
+@media (min-width: 1200px) {
+  .layout-body {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 28px;
+  }
+}
+
+.layout-canvas-host {
+  min-width: 0;
+  width: 100%;
+}
+
+.layout-canvas {
+  position: relative;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: #0d0d10;
+  overflow: hidden;
+}
+
+:root[data-theme="light"] .layout-canvas {
+  background: #ececf1;
+}
+
+/* The menu bar/notch and Dock: genuinely unavailable, drawn from native insets. */
+.layout-excluded {
+  position: absolute;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.07) 0 6px,
+    rgba(255, 255, 255, 0.02) 6px 12px
+  );
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+:root[data-theme="light"] .layout-excluded {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(0, 0, 0, 0.09) 0 6px,
+    rgba(0, 0, 0, 0.03) 6px 12px
+  );
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.layout-work-area {
+  position: absolute;
+  outline: 1px dashed rgba(255, 255, 255, 0.14);
+  outline-offset: -1px;
+}
+
+:root[data-theme="light"] .layout-work-area {
+  outline-color: rgba(0, 0, 0, 0.16);
+}
+
+.layout-shape {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  overflow: hidden;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--edge-lit);
+  color: var(--text);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.layout-shape:active {
+  cursor: grabbing;
+}
+
+.layout-shape.pill {
+  border-radius: 999px;
+}
+
+.layout-shape.panel {
+  border-radius: 12px;
+  align-items: flex-start;
+  padding-top: 10px;
+}
+
+.layout-shape.selected {
+  border-color: rgba(91, 155, 255, 0.75);
+  box-shadow: 0 0 0 1px rgba(91, 155, 255, 0.35), var(--edge-lit);
+}
+
+.layout-shape:focus-visible {
+  outline: 2px solid var(--running);
+  outline-offset: 2px;
+}
+
+.layout-shape-name {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layout-readout {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* Constrained resize grips: the pill grows horizontally only, the panel both ways. */
+.layout-handle {
+  position: absolute;
+  background: transparent;
+}
+
+.layout-handle::after {
+  content: "";
+  position: absolute;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.layout-handle.side {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  cursor: ew-resize;
+}
+
+.layout-handle.side::after {
+  top: 50%;
+  right: 4px;
+  width: 3px;
+  height: 22px;
+  transform: translateY(-50%);
+}
+
+.layout-handle.bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 12px;
+  cursor: ns-resize;
+}
+
+.layout-handle.bottom::after {
+  left: 50%;
+  bottom: 4px;
+  width: 26px;
+  height: 3px;
+  transform: translateX(-50%);
+}
+
+.layout-shape:focus-visible .layout-handle::after,
+.layout-shape.selected .layout-handle::after {
+  background: rgba(91, 155, 255, 0.85);
+}
+
+.layout-controls {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+}
+
+.layout-hint,
+.layout-display,
+.layout-empty {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.layout-display {
+  color: var(--text-secondary);
+}
+
+.layout-display strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.layout-preview {
+  margin: 0;
+  padding: 8px 0 8px 10px;
+  border-left: 2px solid var(--running);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.layout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.layout-actions button {
+  padding: 9px 15px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.layout-actions button:hover:not(:disabled) {
+  background: var(--surface-strong);
+}
+
+.layout-actions button:focus-visible {
+  outline: 2px solid var(--running);
+  outline-offset: 2px;
+}
+
+.layout-actions button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.layout-actions .layout-primary {
+  background: rgba(91, 155, 255, 0.16);
+  border-color: rgba(91, 155, 255, 0.45);
+}
+
+.layout-notice {
+  margin: 0;
+  min-height: 20px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* Narrow main window: the canvas takes the full width and the controls drop below. */
+@media (max-width: 900px) {
+  .layout-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .layout-editor {
+    padding: 24px 20px;
+  }
+}
+
