@@ -14,6 +14,7 @@ mod audio;
 mod history;
 mod hotkey;
 mod permissions;
+mod sani_core;
 mod settings;
 mod snapshot;
 mod speech;
@@ -36,6 +37,7 @@ fn main() {
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(hotkey::HotkeyState::default())
+        .manage(sani_core::SaniCoreState::default())
         .setup(|app| {
             let handle = app.handle().clone();
             init_logging(log_dir(&handle));
@@ -134,6 +136,12 @@ fn main() {
             mic_permission_state,
             request_mic_permission,
             open_mic_settings,
+            sani_core::core_start,
+            sani_core::core_stop,
+            sani_core::core_agents,
+            sani_core::core_run,
+            sani_core::core_cancel,
+            sani_core::core_ping,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Sani")

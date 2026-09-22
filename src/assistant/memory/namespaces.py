@@ -45,6 +45,26 @@ def user_id_from_namespace(namespace: tuple[str, ...]) -> str | None:
     return None
 
 
+# --- Sani local identity (Sani master doc section 25) ---
+# The local desktop product drops the Open WebUI identity namespace. The
+# ``sani:`` ids are additive now so sani-core can adopt them from day one;
+# ``owui:`` ids keep resolving read-only for history until the gateway
+# retires (explicit migration in docs/sani-storage-migration.md).
+
+
+def thread_id_for_sani(conversation_id: str) -> str:
+    """Local Sani conversation thread id (``sani:<conversation_id>``)."""
+    return f"sani:{_require_non_empty(conversation_id, 'conversation_id')}"
+
+
+def split_sani_thread_id(thread_id: str) -> str | None:
+    """Return the conversation id for a valid ``sani:`` thread id, else None."""
+    prefix, sep, rest = thread_id.partition(":")
+    if sep and prefix == "sani" and rest:
+        return rest
+    return None
+
+
 # --- Designer agent scoping (R15/R21, plan P5) ---
 # Only the BOOTSTRAPPED Vion resolves legacy namespaces; every Designer
 # agent gets an agent-scoped thread that carries the execution epoch, so a

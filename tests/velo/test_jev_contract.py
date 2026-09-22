@@ -7,6 +7,7 @@ exactly as they will run, without network access.
 
 import re
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -333,9 +334,9 @@ async def test_engine_requires_a_jev_credential() -> None:
         JevDecisionEngine(api_key="")
 
 
-def _settings(**overrides: object) -> Settings:
+def _settings(**overrides: Any) -> Settings:
     """Settings valid apart from Velo fields (isolates Velo validation)."""
-    base: dict[str, object] = {
+    base: dict[str, Any] = {
         "app_env": "development",
         "model_provider": "generic_openai_compatible",
         "model_base_url": "http://127.0.0.1:1",
@@ -372,11 +373,11 @@ def test_provider_resolution_openrouter_keeps_explicit_model_pin() -> None:
     assert provider.model == "jev-1.13"
 
 
-def test_provider_resolution_prefers_direct_typeafe_when_both_present() -> None:
+def test_provider_resolution_prefers_openrouter_when_both_present() -> None:
     provider = resolve_jev_provider(
         _settings(typesafe_api_key="ts-key", openrouter_api_key="sk-or-test")
     )
-    assert provider.source == "typesafe_direct"
+    assert provider.source == "openrouter"
 
 
 def test_provider_resolution_manual_override_uses_any_credential() -> None:

@@ -111,9 +111,11 @@ class JevAnswers:
 
 
 #: OpenRouter serves the native System One contract (POST /api/v1/systemone,
-#: verified to route on 2026-09-22). The typesafe model route was not yet in
-#: the public catalog that day -- re-verify on first live use.
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+#: verified to route on 2026-09-22). The pinned client appends /v1/systemone
+#: to the base URL itself, so the OpenRouter root stops at /api -- otherwise
+#: the request double-prefixes /v1 (caught live). The typesafe model route
+#: was not yet in the public catalog that day -- re-verify on first live use.
+OPENROUTER_BASE_URL = "https://openrouter.ai/api"
 OPENROUTER_JEV_MODEL = "~typesafe/jev-latest"
 
 #: TypeSafe's direct model route and the default VELO_JEV_MODEL value.
@@ -133,12 +135,12 @@ class JevProvider:
 def resolve_jev_provider(settings: Settings) -> JevProvider:
     """Pick the JEV endpoint from settings (Sani one-key model).
 
-    Precedence: explicit ``VELO_TYPESAFE_BASE_URL`` override, then a direct
-    TypeSafe key (verified working), then the OpenRouter key. Exactly one
-    external credential is required -- the Sani product story uses
-    ``OPENROUTER_API_KEY`` alone for both the Deep Agent and JEV.
+    Precedence: explicit ``VELO_TYPESAFE_BASE_URL`` override, then the
+    OpenRouter key (the product story -- live-verified against
+    ``~typesafe/jev-latest``), then a direct TypeSafe key. Exactly one
+    external credential is required; a free-form LLM is never a fallback.
     """
-    key = settings.typesafe_api_key or settings.openrouter_api_key
+    key = settings.openrouter_api_key or settings.typesafe_api_key
     if settings.velo_typesafe_base_url:
         if not key:
             raise JevServiceError(
@@ -150,13 +152,6 @@ def resolve_jev_provider(settings: Settings) -> JevProvider:
             base_url=settings.velo_typesafe_base_url,
             model=settings.velo_jev_model,
             source="manual_override",
-        )
-    if settings.typesafe_api_key:
-        return JevProvider(
-            api_key=settings.typesafe_api_key,
-            base_url="",
-            model=settings.velo_jev_model,
-            source="typesafe_direct",
         )
     if settings.openrouter_api_key:
         # The default direct-route name is not a valid OpenRouter model id;
@@ -170,10 +165,17 @@ def resolve_jev_provider(settings: Settings) -> JevProvider:
             model=model,
             source="openrouter",
         )
+    if settings.typesafe_api_key:
+        return JevProvider(
+            api_key=settings.typesafe_api_key,
+            base_url="",
+            model=settings.velo_jev_model,
+            source="typesafe_direct",
+        )
     raise JevServiceError(
-        "No JEV credential configured: Velo requires TYPESAFE_API_KEY "
-        "(direct api.typesafe.ai) or OPENROUTER_API_KEY (OpenRouter "
-        "System One surface); a free-form LLM is never a fallback"
+        "No JEV credential configured: Velo requires OPENROUTER_API_KEY "
+        "(one-key Sani story) or TYPESAFE_API_KEY (direct api.typesafe.ai); "
+        "a free-form LLM is never a fallback"
     )
 
 

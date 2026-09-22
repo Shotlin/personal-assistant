@@ -21,10 +21,12 @@ from fastapi.responses import JSONResponse
 from assistant import __version__
 from assistant.agent.build import build_agent
 from assistant.api import chat_route, models_route, run_events_route
+from assistant.memory.local import open_local_memory_resources
 from assistant.memory.postgres import open_memory_resources
 from assistant.models import build_chat_model
 from assistant.observability.logging import setup_logging
 from assistant.runtime.runs import RunStore
+from assistant.runtime.runs_local import SQLiteRunStore
 from assistant.runtime.session import (
     DesktopSessionConfig,
     DesktopSessionManager,
@@ -35,6 +37,7 @@ from assistant.tools.cua import open_cua_connection
 from assistant.tools.registry import assemble_tool_inventory
 
 logger = logging.getLogger("assistant.main")
+
 
 def _null_cua_connection() -> AbstractAsyncContextManager[dict[str, Any]]:
     @asynccontextmanager
@@ -160,12 +163,22 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
         # Register each cleanup before the next fallible startup operation.
         # The same stack covers startup failure and ordinary shutdown.
         async with AsyncExitStack() as stack:
-            resources = await stack.enter_async_context(
-                open_memory_resources(settings.database_url)
-            )
+            # Sani master doc sections 2-5: "postgres" keeps the legacy
+            # gateway backend (rollback boundary); "sqlite" runs the Deep
+            # Agent checkpointer, long-term memory, AND run metadata on the
+            # one embedded sani.db -- no Docker, no PostgreSQL server.
+            if settings.memory_backend == "sqlite":
+                memory_resources_cm: Any = open_local_memory_resources(
+                    settings.sani_db_path
+                )
+                run_store_cm: Any = SQLiteRunStore.connect(settings.sani_db_path)
+            else:
+                memory_resources_cm = open_memory_resources(settings.database_url)
+                run_store_cm = RunStore.connect(settings.database_url)
+            resources: Any = await stack.enter_async_context(memory_resources_cm)
             app.state.store = resources.store
             app.state.saver = resources.saver
-            run_store = await RunStore.connect(settings.database_url)
+            run_store = await run_store_cm
             stack.push_async_callback(run_store.close)
             await run_store.setup()
             app.state.run_store = run_store
@@ -173,9 +186,7 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
             model = build_chat_model(settings)
             app.state.utility_model = model
             connection: Any = await stack.enter_async_context(
-                open_cua_connection(settings)
-                if settings.cua_enabled
-                else _null_cua_connection()
+                open_cua_connection(settings) if settings.cua_enabled else _null_cua_connection()
             )
             extra_tools = assemble_tool_inventory(list(getattr(connection, "tools", [])))
             app.state.cua_tools_by_name = dict(getattr(connection, "tools_by_name", {}))

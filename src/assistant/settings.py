@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     # Persistence
     database_url: str = "postgresql://assistant:assistant@127.0.0.1:5433/assistant"
 
+    # Sani local persistence (Sani master doc sections 2-5). "postgres" is
+    # the legacy gateway backend and the default; "sqlite" swaps the Deep
+    # Agent checkpointer + long-term memory to the embedded sani.db under
+    # sani_data_dir -- no server, no Docker (policy stays backend-agnostic).
+    memory_backend: str = "postgres"
+    sani_data_dir: str = ""
+
     # CUA (computer use)
     cua_enabled: bool = True
     cua_command: str = "cua-driver"
@@ -119,6 +126,13 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.app_env == "production"
 
+    @property
+    def sani_db_path(self) -> str:
+        """Path of the embedded Sani database (used by the sqlite backend)."""
+        from pathlib import Path
+
+        return str(Path(self.sani_data_dir).expanduser() / "sani.db")
+
     @model_validator(mode="after")
     def _validate(self) -> Settings:
         errors: list[str] = []
@@ -142,6 +156,16 @@ class Settings(BaseSettings):
             )
         if self.model_max_tokens < 200:
             errors.append(f"MODEL_MAX_TOKENS must be >= 200, got {self.model_max_tokens}")
+
+        if self.memory_backend not in {"postgres", "sqlite"}:
+            errors.append(
+                f"MEMORY_BACKEND must be 'postgres' or 'sqlite', got {self.memory_backend!r}"
+            )
+        elif self.memory_backend == "sqlite" and not self.sani_data_dir:
+            errors.append(
+                "MEMORY_BACKEND=sqlite requires SANI_DATA_DIR (the Sani "
+                "application-data directory that holds sani.db)"
+            )
         if self.status_quiet_seconds <= 0:
             errors.append(f"STATUS_QUIET_SECONDS must be > 0, got {self.status_quiet_seconds}")
 
