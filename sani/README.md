@@ -130,6 +130,54 @@ back to the primary MacBook display if a saved external display is absent, and
 only then reapplies maximization. Maximized work-area dimensions never replace
 the previous normal frame.
 
+### Overlay layout editor
+
+The **Layout** page places the voice pill and the conversation panel. It draws
+one native display snapshot, so the menu-bar/notch and Dock appear as striped,
+genuinely unavailable regions taken from `NSScreen.visibleFrame` rather than
+guessed insets. Shapes are dragged with the pointer, or focused and moved with
+arrow keys and resized with shift + arrow keys; the pill resizes horizontally
+only, because its height is a fixed supported value. Preview, Save, Cancel and
+Reset are explicit buttons.
+
+Positions persist as normalized ratios inside the usable work area while sizes
+persist as logical points, deliberately mixing units:
+
+```json
+"overlay_layout": {
+  "display_affinity": "1:Built-in Retina Display",
+  "pill":  { "x_ratio": 0.619, "y_ratio": 0.3446, "width": 560.0, "height": 96.0 },
+  "panel": { "x_ratio": 0.6599, "y_ratio": 0.4649, "width": 500.0, "height": 454.26 }
+}
+```
+
+So a panel that is 520 points on the built-in display is still 520 points on a
+larger one, and placement adapts when the work area changes shape. Native code
+is authoritative: it resolves the display in the order saved affinity → the
+display holding the main window → primary → first available, clamps sizes to
+the supported ranges (pill 560–760 pt at a fixed 96 pt height, panel 500–640 ×
+400–680 pt) and then to the current work area, and reports every clamp in plain
+language, which the editor shows instead of silently disagreeing with it.
+
+Preview is process-local and never writes settings. It captures the committed
+layout and the exact pill/panel visibility when it starts; Save persists the
+validated layout and restores that captured visibility, Cancel restores the
+committed layout and the same visibility, and closing the main window or
+quitting cancels an unfinished preview. An overlay the user opened during a
+preview (hotkey or tray) is never hidden again by Save or Cancel. Reset changes
+only the editor draft. No draft survives a restart, and settings files written
+before this feature load unchanged.
+
+Measured on a 1470×956 pt Retina display with a 33 pt menu bar and a 73 pt
+bottom Dock: with no `overlay_layout` present the first reveal produced the
+Phase 1 geometry (700×96 pill, 544×454 panel, confirmed as exactly 2× physical
+pixels in WebKit snapshots), and after a layout was saved from the page the pill
+and panel landed at the predicted bounds to within one point on every subsequent
+launch. Dragging below the supported minimums stopped at 560 pt and 500 pt,
+which is what the saved block above records. Not covered here: a Dock on the
+left or right (would require changing the machine's Dock position) and an
+external-display disconnect (no second display attached).
+
 ### Identity contract
 
 Sani sends neutral desktop lineage headers on every turn; the gateway maps
