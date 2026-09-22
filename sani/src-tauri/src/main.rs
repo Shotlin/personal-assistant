@@ -15,6 +15,7 @@ mod history;
 mod hotkey;
 mod macos_work_area;
 mod onboarding;
+mod overlay_geometry;
 mod permissions;
 mod runtime;
 mod sani_core;
