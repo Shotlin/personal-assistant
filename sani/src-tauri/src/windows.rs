@@ -11,6 +11,12 @@ use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
+use crate::window_geometry::{
+    resolve_restore, LogicalWorkArea, NormalWindowBounds, SavedMainWindow, INITIAL_MAIN_HEIGHT,
+    INITIAL_MAIN_WIDTH, MIN_MAIN_HEIGHT, MIN_MAIN_WIDTH,
+};
+
+pub const MAIN_LABEL: &str = "main";
 pub const PILL_LABEL: &str = "pill";
 pub const PANEL_LABEL: &str = "panel";
 pub const ONBOARDING_LABEL: &str = "onboarding";
@@ -20,6 +26,9 @@ pub const ONBOARDING_LABEL: &str = "onboarding";
 /// frameless overlay style used by the pill/panel.
 const ONBOARDING_WIDTH: f64 = 820.0;
 const ONBOARDING_HEIGHT: f64 = 600.0;
+
+const MAIN_WIDTH: f64 = INITIAL_MAIN_WIDTH;
+const MAIN_HEIGHT: f64 = INITIAL_MAIN_HEIGHT;
 
 const PILL_SIZE: (f64, f64) = (680.0, 96.0);
 const PILL_MIN_WIDTH: f64 = 560.0;
@@ -37,6 +46,30 @@ const SCREEN_MARGIN: f64 = 20.0;
 /// a square dark halo shows outside the rounded corners.
 const PILL_GLASS_RADIUS: f64 = 48.0;
 const PANEL_GLASS_RADIUS: f64 = 22.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClosePolicy {
+    Allow,
+    Hide,
+}
+
+pub fn close_policy_for_label(label: &str) -> ClosePolicy {
+    if label == MAIN_LABEL {
+        ClosePolicy::Hide
+    } else {
+        ClosePolicy::Allow
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WindowSnapshot {
+    pub maximized: bool,
+    pub normal: NormalWindowBounds,
+}
+
+pub fn normal_bounds_to_persist(snapshot: &WindowSnapshot) -> Option<NormalWindowBounds> {
+    (!snapshot.maximized).then_some(snapshot.normal)
+}
 
 /// Build the pill webview. Shared by cold-launch creation and the defensive
 /// recreate path in `show_pill`.
@@ -78,6 +111,42 @@ fn build_panel(app: &AppHandle) -> tauri::Result<()> {
             log_page_load("panel", &window, &payload);
         })
         .build()?;
+    maybe_open_devtools(&window);
+    Ok(())
+}
+
+/// Build the normal desktop application window. It stays hidden until its
+/// saved normal frame is safely resolved against a current work area.
+fn build_main(app: &AppHandle) -> tauri::Result<()> {
+    let window = WebviewWindowBuilder::new(app, MAIN_LABEL, WebviewUrl::App("app.html".into()))
+        .title("Sani")
+        .inner_size(MAIN_WIDTH, MAIN_HEIGHT)
+        .min_inner_size(MIN_MAIN_WIDTH, MIN_MAIN_HEIGHT)
+        .decorations(true)
+        .transparent(false)
+        .always_on_top(false)
+        .skip_taskbar(false)
+        .resizable(true)
+        .shadow(true)
+        .focused(false)
+        .visible(false)
+        .on_page_load(|window, payload| {
+            log_page_load("main", &window, &payload);
+        })
+        .build()?;
+    let app_for_events = app.clone();
+    let window_for_events = window.clone();
+    window.on_window_event(move |event| match event {
+        tauri::WindowEvent::CloseRequested { api, .. } => {
+            api.prevent_close();
+            persist_main_window(&app_for_events);
+            let _ = window_for_events.hide();
+        }
+        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. } => {
+            persist_main_window(&app_for_events);
+        }
+        _ => {}
+    });
     maybe_open_devtools(&window);
     Ok(())
 }
@@ -171,6 +240,14 @@ pub fn create_all(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+pub fn create_main(app: &AppHandle) -> tauri::Result<()> {
+    if app.get_webview_window(MAIN_LABEL).is_none() {
+        build_main(app)?;
+    }
+    Ok(())
+}
+
+#[derive(Clone)]
 struct MonitorBox {
     position: (i32, i32),
     size: (u32, u32),
@@ -239,6 +316,165 @@ fn monitor_under_cursor(app: &AppHandle) -> MonitorBox {
         },
         None => default,
     }
+}
+
+#[derive(Clone)]
+struct MainWorkArea {
+    logical: LogicalWorkArea,
+    monitor: MonitorBox,
+}
+
+fn monitor_id(monitor: &tauri::Monitor) -> String {
+    format!(
+        "{}:{}:{}x{}",
+        monitor.name().map_or("Display", |name| name),
+        monitor.position().x,
+        monitor.size().width,
+        monitor.size().height
+    )
+}
+
+fn main_work_areas(app: &AppHandle) -> Vec<MainWorkArea> {
+    let primary_position = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|monitor| (monitor.position().x, monitor.position().y));
+    let native = crate::macos_work_area::visible_work_areas();
+    app.available_monitors()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|monitor| {
+            let scale = monitor.scale_factor();
+            let native_frame = native.iter().find(|frame| {
+                (frame.backing_scale_factor - scale).abs() < 0.01
+                    && ((frame.screen_width * scale).round() as u32 == monitor.size().width)
+                    && ((frame.screen_height * scale).round() as u32 == monitor.size().height)
+            });
+            let (logical, id) = match native_frame {
+                Some(frame) => (
+                    crate::macos_work_area::logical_visible_area(
+                        frame.screen_frame(),
+                        frame.visible_frame(),
+                    ),
+                    frame.id.clone(),
+                ),
+                None => (
+                    LogicalWorkArea {
+                        id: monitor_id(&monitor),
+                        x: 0.0,
+                        y: 0.0,
+                        width: monitor.size().width as f64 / scale,
+                        height: monitor.size().height as f64 / scale,
+                        scale_factor: scale,
+                        is_primary: false,
+                    },
+                    monitor_id(&monitor),
+                ),
+            };
+            MainWorkArea {
+                logical: LogicalWorkArea {
+                    id,
+                    is_primary: primary_position == Some((monitor.position().x, monitor.position().y)),
+                    ..logical
+                },
+                monitor: MonitorBox {
+                    position: (monitor.position().x, monitor.position().y),
+                    size: (monitor.size().width, monitor.size().height),
+                    scale,
+                },
+            }
+        })
+        .collect()
+}
+
+fn saved_main_window(app: &AppHandle) -> Option<SavedMainWindow> {
+    app.state::<crate::app_state::SaniState>()
+        .settings
+        .read()
+        .main_window
+        .as_ref()
+        .map(|saved| SavedMainWindow {
+            display_id: saved.display_id.clone(),
+            normal: NormalWindowBounds {
+                x: saved.x,
+                y: saved.y,
+                width: saved.width,
+                height: saved.height,
+            },
+            maximized: saved.maximized,
+        })
+}
+
+/// Show/focus the main window using logical normal bounds first, then restore
+/// maximization. A missing display or stale bounds are resolved safely by the
+/// pure geometry layer before any native window call happens.
+pub fn show_main(app: &AppHandle) -> tauri::Result<()> {
+    create_main(app)?;
+    let Some(window) = app.get_webview_window(MAIN_LABEL) else {
+        return Ok(());
+    };
+    let work_areas = main_work_areas(app);
+    let logical_areas: Vec<_> = work_areas.iter().map(|area| area.logical.clone()).collect();
+    let resolved = resolve_restore(saved_main_window(app).as_ref(), &logical_areas);
+    let selected = work_areas
+        .iter()
+        .find(|area| area.logical.id == resolved.work_area.id)
+        .or_else(|| work_areas.iter().find(|area| area.logical.is_primary))
+        .or_else(|| work_areas.first());
+    if let Some(area) = selected {
+        let scale = area.monitor.scale;
+        let x = area.monitor.position.0 + ((area.logical.x + resolved.normal.x) * scale).round() as i32;
+        let y = area.monitor.position.1 + ((area.logical.y + resolved.normal.y) * scale).round() as i32;
+        window.set_size(area.monitor.physical_size(resolved.normal.width, resolved.normal.height))?;
+        window.set_position(PhysicalPosition::new(x, y))?;
+    }
+    if resolved.maximized {
+        window.maximize()?;
+    }
+    window.show()?;
+    window.set_focus()?;
+    Ok(())
+}
+
+pub fn hide_main(app: &AppHandle) {
+    persist_main_window(app);
+    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
+        let _ = window.hide();
+    }
+}
+
+pub fn persist_main_window(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN_LABEL) else { return };
+    let maximized = window.is_maximized().unwrap_or(false);
+    let settings_arc = crate::app_state::settings(app);
+    let mut settings = settings_arc.write();
+    if maximized {
+        crate::settings::update_main_window_maximized(&mut settings, true);
+    } else if let (Ok(position), Ok(size)) = (window.outer_position(), window.inner_size()) {
+        let areas = main_work_areas(app);
+        if let Some(area) = areas.iter().find(|area| {
+            let left = area.monitor.position.0;
+            let top = area.monitor.position.1;
+            let right = left + area.monitor.size.0 as i32;
+            let bottom = top + area.monitor.size.1 as i32;
+            position.x >= left && position.x < right && position.y >= top && position.y < bottom
+        }) {
+            let scale = area.monitor.scale;
+            crate::settings::update_normal_main_window(
+                &mut settings,
+                area.logical.id.clone(),
+                NormalWindowBounds {
+                    x: position.x as f64 / scale - area.monitor.position.0 as f64 / scale - area.logical.x,
+                    y: position.y as f64 / scale - area.monitor.position.1 as f64 / scale - area.logical.y,
+                    width: size.width as f64 / scale,
+                    height: size.height as f64 / scale,
+                },
+            );
+            crate::settings::update_main_window_maximized(&mut settings, false);
+        }
+    }
+    let _ = crate::settings::save(app, &settings);
 }
 
 pub fn show_pill(app: &AppHandle) -> tauri::Result<()> {
@@ -340,5 +576,32 @@ pub fn apply_materials(app: &AppHandle) {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::window_geometry::NormalWindowBounds;
+
+    #[test]
+    fn close_main_is_hide_not_quit_policy() {
+        assert_eq!(close_policy_for_label(MAIN_LABEL), ClosePolicy::Hide);
+        assert_eq!(close_policy_for_label(PILL_LABEL), ClosePolicy::Allow);
+    }
+
+    #[test]
+    fn normal_bounds_are_not_captured_while_maximized() {
+        let event = WindowSnapshot {
+            maximized: true,
+            normal: NormalWindowBounds {
+                x: 80.0,
+                y: 70.0,
+                width: 1100.0,
+                height: 740.0,
+            },
+        };
+
+        assert_eq!(normal_bounds_to_persist(&event), None);
     }
 }

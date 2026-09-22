@@ -187,13 +187,10 @@ fn main() {
                     log::info!("[ui-boot] macOS reopen — re-showing onboarding window");
                     let _ = windows::show_onboarding(app_handle);
                 } else {
-                    log::info!("[ui-boot] macOS reopen — revealing overlays");
-                    windows::show_overlays(app_handle);
-                    let h = app_handle.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(700));
-                        snapshot::snapshot_overlays(&h, "reopened");
-                    });
+                    log::info!("[ui-boot] macOS reopen — revealing main window");
+                    if let Err(error) = windows::show_main(app_handle) {
+                        log::error!("[ui-boot] main-window reopen failed: {error}");
+                    }
                 }
             }
             #[cfg(not(target_os = "macos"))]
@@ -201,11 +198,12 @@ fn main() {
         });
 }
 
-/// Bring up the normal Sani experience: accessory overlay windows, the tray,
-/// and the global hotkey. Runs at a normal launch and once onboarding completes.
+/// Bring up the normal Sani experience: a regular main window plus optional
+/// overlays, tray, and global hotkey. Runs at normal launch and onboarding completion.
 pub fn enter_normal_mode(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
-    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+    windows::create_main(app)?;
     windows::create_all(app)?;
     windows::apply_materials(app);
     setup_tray(app)?;
@@ -214,7 +212,7 @@ pub fn enter_normal_mode(app: &tauri::AppHandle) -> Result<(), Box<dyn std::erro
     // The assistant runtime is Sani's own child process, started here rather
     // than on demand: the first turn must not pay for spawning it.
     sani_core::start_at_startup(app);
-    spawn_cold_launch_reveal(app.clone());
+    windows::show_main(app)?;
     Ok(())
 }
 
@@ -320,10 +318,11 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
 
+    let open = MenuItem::with_id(app, "open", "Open Sani", true, None::<&str>)?;
     let listen = MenuItem::with_id(app, "listen", "Start Listening", true, None::<&str>)?;
     let panel = MenuItem::with_id(app, "panel", "Show Conversation", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Sani", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&listen, &panel, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &listen, &panel, &quit])?;
 
     let tray = TrayIconBuilder::with_id("sani-tray")
         .menu(&menu)
@@ -331,6 +330,11 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .tooltip("Sani")
         .build(app)?;
     tray.on_menu_event(|app, event| match event.id().as_ref() {
+        "open" => {
+            if let Err(error) = windows::show_main(app) {
+                log::error!("[tray] failed to show main window: {error}");
+            }
+        }
         "listen" => app_state::toggle_listening(app),
         "panel" => {
             let _ = windows::show_panel(app);
