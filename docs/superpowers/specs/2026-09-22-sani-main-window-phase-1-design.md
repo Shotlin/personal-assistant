@@ -60,7 +60,7 @@ The window uses standard Tauri logical sizing APIs for authored UI dimensions. T
 
 Phase 1 targets current macOS support (`minimumSystemVersion: 12.0`) on Apple Silicon and Intel MacBooks. The design supports 13-inch Air, 14-inch Pro, and 16-inch Pro layouts without depending on a particular native resolution. The responsive renderer treats 900 px as its narrow supported main-window width, collapses labels before horizontal overflow, and keeps Home’s message/composer column usable at the minimum size.
 
-The effective work area excludes the macOS menu-bar/notch region and Dock. The implementation uses Tauri’s available monitor/work-area API where available; if the platform API cannot provide a work area, it uses the monitor bounds with conservative top/bottom safety insets rather than placing controls under system UI. Window restoration never assumes the Dock is bottom-aligned.
+The effective work area excludes the macOS menu-bar/notch region and Dock on **every** edge. The implementation uses Tauri’s monitor/work-area API when it reports a real usable work area. If it does not, Phase 1 adds a small macOS-native helper backed by `NSScreen.visibleFrame` (with coordinates converted into Tauri’s desktop coordinate system) and uses that result for both display selection and restoration. The helper must correctly represent bottom, left, and right Dock placements as well as the menu bar/notch. A conservative top/bottom-only inset is not an acceptable fallback for macOS restoration.
 
 ## Persisted Window State
 
@@ -81,16 +81,18 @@ Add a backward-compatible `main_window` block to `settings.json`:
 
 `x`, `y`, `width`, and `height` are logical points relative to the selected display’s logical work-area origin, not physical desktop pixels. `display_id` is a stable identifier exposed by Tauri when available; the fallback identity combines monitor name and physical geometry only as a best-effort affinity hint. It is never trusted as a coordinate authority.
 
-Saving happens on relevant main-window move, resize, maximize/unmaximize, and close/hide events. Writes are debounced to avoid I/O while the user drags. A final synchronous save occurs before hiding the main window. Existing settings remain intact, and absent or malformed window state is treated as an unconfigured first launch.
+Normal bounds and maximized state are deliberately independent. Saving happens on relevant main-window move, resize, maximize/unmaximize, and close/hide events. Writes are debounced to avoid I/O while the user drags. A final synchronous save occurs before hiding the main window. Existing settings remain intact, and absent or malformed window state is treated as an unconfigured first launch.
+
+While the main window is maximized, persistence updates only `maximized: true`; it must not replace `x`, `y`, `width`, or `height` with maximized work-area dimensions. When the window is unmaximized, its returned normal frame becomes the new normal bounds and `maximized` becomes false. This preserves the user’s intentional ordinary window geometry across quit/relaunch.
 
 ## Display Resolution and Restoration Algorithm
 
 1. Enumerate current monitors and construct a `LogicalWorkArea` for each: identity, logical origin, logical width, and logical height.
 2. Select the saved display only if its identity resolves to a currently connected monitor; otherwise select `primary_monitor`, then the first available monitor.
-3. Start from the saved logical size, or 1180 × 760 if absent/invalid. Clamp it to the selected work area while maintaining the 900 × 620 minimum whenever the work area permits it. On genuinely constrained usable areas, fit the window within the work area rather than leave it off-screen.
-4. Start from the saved logical relative origin, or center the initial window. Clamp origin such that a meaningful visible portion of the titlebar and body remains inside the selected work area, with a small safety margin.
-5. Convert the resolved logical size/position through the selected monitor’s scale factor immediately before calling Tauri physical window APIs.
-6. Restore maximized state only after applying safe bounds. If the saved display is missing, preserve the user’s intent to maximize on the fallback display. Never call native fullscreen APIs during normal launch.
+3. Start from the saved **normal** logical size, or 1180 × 760 if absent/invalid. Clamp it to the selected work area while maintaining the 900 × 620 minimum whenever the work area permits it. On genuinely constrained usable areas, fit the window within the work area rather than leave it off-screen.
+4. Start from the saved **normal** logical relative origin, or center the initial window. Clamp origin such that the titlebar and meaningful body area remain inside the selected work area, with a small safety margin.
+5. Convert the resolved logical size/position through the selected monitor’s scale factor immediately before calling Tauri physical window APIs, and apply these normal bounds first.
+6. Only after normal bounds are applied, restore `maximized: true` if it was saved. If the saved display is missing, preserve the user’s intent to maximize on the fallback display. Never call native fullscreen APIs during normal launch.
 
 This covers resolution/scale changes, wake from sleep, disconnected external monitors, a changed Dock position, and stale saved data. It also means a prior external-display location resolves safely to the MacBook’s primary display when that monitor is gone.
 
@@ -140,7 +142,7 @@ The application shell uses semantic buttons/navigation, visible keyboard focus, 
 - Invalid, oversized, negative, and wholly off-screen bounds clamp visibly.
 - A missing saved display falls back to primary/current display.
 - Resolution, Retina scaling, and Dock-work-area changes preserve a visible window.
-- Maximized state restores after a valid fallback/clamp path and no path requests fullscreen.
+- Maximizing preserves persisted normal bounds; unmaximizing updates normal bounds; restore applies normal bounds before restoring maximized state; and no path requests fullscreen.
 - Settings migration accepts settings files without `main_window` and preserves all existing settings.
 
 ### Renderer checks
