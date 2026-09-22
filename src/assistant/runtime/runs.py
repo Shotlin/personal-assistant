@@ -157,7 +157,7 @@ class RunStore:
         The INSERT itself is the claim: the unique index on
         ``(user_id, agent_id, user_message_id)`` makes concurrent duplicate
         deliveries resolve to exactly one execution (legacy rows carry
-        ``agent_id = ''``, preserving pre-Designer semantics). Same text
+        ``agent_id = ''``, preserving the original empty-agent semantics). Same text
         with a new id is a new intentional command; same id with a
         conflicting digest is an identity collision and is rejected.
         """
@@ -173,8 +173,7 @@ class RunStore:
             ON CONFLICT DO NOTHING
             RETURNING run_id, status
             """,
-            (run_id, user_id, chat_id, user_message_id, request_digest,
-             agent_id, revision_id),
+            (run_id, user_id, chat_id, user_message_id, request_digest, agent_id, revision_id),
         )
         inserted = await cur.fetchone()
         if inserted is not None:
@@ -214,7 +213,9 @@ class RunStore:
             )
             if await retried.fetchone() is not None:
                 return ClaimResult(
-                    owned=True, run_id=existing_run_id, status="running",
+                    owned=True,
+                    run_id=existing_run_id,
+                    status="running",
                     reason="retry_after_terminal_failure",
                 )
         return ClaimResult(
@@ -281,9 +282,7 @@ class RunStore:
             row = await cur.fetchone()
         return int(row[0])
 
-    async def mark_action(
-        self, ledger_id: int, state: ActionState, evidence_ref: str = ""
-    ) -> None:
+    async def mark_action(self, ledger_id: int, state: ActionState, evidence_ref: str = "") -> None:
         await self._conn.execute(
             "UPDATE action_ledger SET state=%s, evidence_ref=%s, updated_at=now() "
             "WHERE ledger_id=%s",
@@ -311,9 +310,7 @@ class RunStore:
         ]
 
     async def actions_in_state(self, run_id: str, state: str) -> list[dict[str, Any]]:
-        return [
-            a for a in await self.run_actions(run_id) if str(a.get("state")) == state
-        ]
+        return [a for a in await self.run_actions(run_id) if str(a.get("state")) == state]
 
     async def run_activity(self, run_id: str) -> dict[str, Any] | None:
         """One safe activity snapshot for external run-event streaming.
@@ -403,9 +400,7 @@ class DesktopLease:
         return self._owner == owner
 
     async def release(self, owner: str) -> None:
-        await self._conn.execute(
-            "DELETE FROM desktop_lease WHERE id=1 AND owner=%s", (owner,)
-        )
+        await self._conn.execute("DELETE FROM desktop_lease WHERE id=1 AND owner=%s", (owner,))
         if self._owner == owner:
             self._owner = None
 
@@ -445,8 +440,6 @@ class RunActionLedger:
             args_digest=args_digest,
         )
 
-    async def observe(
-        self, ledger_id: int, outcome: ActionState, evidence_ref: str = ""
-    ) -> None:
+    async def observe(self, ledger_id: int, outcome: ActionState, evidence_ref: str = "") -> None:
         """Record the dispatch outcome; 'unknown' is the crash-window state."""
         await self._store.mark_action(ledger_id, outcome, evidence_ref)

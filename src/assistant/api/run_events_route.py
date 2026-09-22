@@ -6,9 +6,9 @@ the same data the gateway itself records (tool name, bounded target
 description, state, timestamps) -- never hidden chain-of-thought, prompts,
 credentials, tool arguments, or screenshots.
 
-The route is independent of Agent Designer: it reads the shared
+The route reads the shared
 ``run_registry``/``action_ledger`` tables through ``RunStore`` and needs no
-Designer services. Transport mirrors the Designer event stream: SSE with
+run metadata. Transport: SSE with
 heartbeats; a client disconnect never cancels the underlying run.
 """
 
@@ -122,9 +122,12 @@ async def run_activity_stream(
             run_started_emitted = True
             seq += 1
             yield _event(
-                seq, run_id, "run.started",
+                seq,
+                run_id,
+                "run.started",
                 timestamp=_iso(snapshot.get("created_at")),
-                label="Agent started", status="running",
+                label="Agent started",
+                status="running",
             )
 
         for action in snapshot.get("actions", []):
@@ -141,33 +144,49 @@ async def run_activity_stream(
             if previous is None and state in ("planned", "dispatched"):
                 seq += 1
                 yield _event(
-                    seq, run_id, "tool.started",
-                    timestamp=_iso(started_at), label=label,
-                    status="running", tool=tool,
+                    seq,
+                    run_id,
+                    "tool.started",
+                    timestamp=_iso(started_at),
+                    label=label,
+                    status="running",
+                    tool=tool,
                 )
                 continue
             if state == "confirmed":
                 seq += 1
                 yield _event(
-                    seq, run_id, "tool.completed",
-                    timestamp=_iso(updated_at), label=label,
-                    status="complete", tool=tool,
+                    seq,
+                    run_id,
+                    "tool.completed",
+                    timestamp=_iso(updated_at),
+                    label=label,
+                    status="complete",
+                    tool=tool,
                     duration_ms=_duration_ms(started_at, updated_at),
                 )
             elif state == "failed":
                 seq += 1
                 yield _event(
-                    seq, run_id, "tool.failed",
-                    timestamp=_iso(updated_at), label=label,
-                    status="failed", tool=tool,
+                    seq,
+                    run_id,
+                    "tool.failed",
+                    timestamp=_iso(updated_at),
+                    label=label,
+                    status="failed",
+                    tool=tool,
                     duration_ms=_duration_ms(started_at, updated_at),
                 )
             elif state == "unknown":
                 seq += 1
                 yield _event(
-                    seq, run_id, "tool.unknown",
-                    timestamp=_iso(updated_at), label=label,
-                    status="unknown", tool=tool,
+                    seq,
+                    run_id,
+                    "tool.unknown",
+                    timestamp=_iso(updated_at),
+                    label=label,
+                    status="unknown",
+                    tool=tool,
                     detail="Outcome could not be confirmed",
                 )
             elif previous is None:
@@ -176,9 +195,13 @@ async def run_activity_stream(
                 # on the next poll for its terminal event.
                 seq += 1
                 yield _event(
-                    seq, run_id, "tool.started",
-                    timestamp=_iso(started_at), label=label,
-                    status="running", tool=tool,
+                    seq,
+                    run_id,
+                    "tool.started",
+                    timestamp=_iso(started_at),
+                    label=label,
+                    status="running",
+                    tool=tool,
                 )
                 seen_action_states[step_id] = "planned"
 
@@ -188,11 +211,15 @@ async def run_activity_stream(
             terminal_emitted = True
             seq += 1
             yield _event(
-                seq, run_id, f"run.{status}",
+                seq,
+                run_id,
+                f"run.{status}",
                 timestamp=_iso(snapshot.get("updated_at")),
                 label=(
-                    "Completed" if status == "completed"
-                    else "Failed" if status == "failed"
+                    "Completed"
+                    if status == "completed"
+                    else "Failed"
+                    if status == "failed"
                     else "Cancelled"
                 ),
                 status="complete" if status == "completed" else status,
@@ -204,9 +231,12 @@ async def run_activity_stream(
             processing_emitted = True
             seq += 1
             yield _event(
-                seq, run_id, "agent.processing",
+                seq,
+                run_id,
+                "agent.processing",
                 timestamp=datetime.now(UTC).isoformat(),
-                label="Agent processing", status="running",
+                label="Agent processing",
+                status="running",
             )
 
         now = loop.time()
@@ -227,9 +257,7 @@ async def stream_run_events(run_id: str, request: Request, settings: SettingsDep
     """Safe observable activity for one run, as SSE. Requires the gateway key."""
     run_store = getattr(request.app.state, "run_store", None)
     if run_store is None:
-        raise GatewayError(
-            "provider_unavailable", "Run registry is not available on this gateway."
-        )
+        raise GatewayError("provider_unavailable", "Run registry is not available on this gateway.")
     # Existence check happens in the handler (not the generator) so an
     # unknown run is a clean 404 before any SSE headers are sent.
     if await run_store.run_activity(run_id) is None:

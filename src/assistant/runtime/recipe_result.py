@@ -16,14 +16,20 @@ def render_result(result: dict[str, object]) -> str:
         return f"I could not verify that {app_id} opened{suffix}."
     if kind == "calculator.evaluate.v1":
         if result.get("ok") is True and calculator_matches(
-            evidence, result.get("display_value"), result.get("expected_value"),
+            evidence,
+            result.get("display_value"),
+            result.get("expected_value"),
         ):
             return f"= {result['display_value']}"
         return f"I could not verify the calculator result{suffix}."
     if kind == "browser.search.v1":
         query = result.get("query")
-        if (result.get("ok") is True and isinstance(query, str) and query
-                and page_matches(evidence, query)):
+        if (
+            result.get("ok") is True
+            and isinstance(query, str)
+            and query
+            and page_matches(evidence, query)
+        ):
             return f"Searching the web for {query}."
         return f"I could not verify the search page loaded{suffix}."
     raise ValueError(f"Unknown recipe result kind: {kind!r}")

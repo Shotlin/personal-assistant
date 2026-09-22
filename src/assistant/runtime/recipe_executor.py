@@ -46,7 +46,10 @@ class Budget(Protocol):
 class ActionStore(Protocol):
     async def record_action(self, run_id: str, step_id: str, tool_name: str) -> int: ...
     async def mark_action(
-        self, ledger_id: int, state: ActionState, evidence_ref: str = "",
+        self,
+        ledger_id: int,
+        state: ActionState,
+        evidence_ref: str = "",
     ) -> None: ...
 
 
@@ -62,14 +65,17 @@ def _clean(value: object) -> object:
     if isinstance(value, dict):
         if value.get("type") in {"image", "image_url"}:
             return "[screenshot retained locally]"
-        return {str(k): _clean(v) for k, v in value.items()
-                if not any(term in str(k).lower() for term in
-                           ("base64", "screenshot", "image", "data"))}
+        return {
+            str(k): _clean(v)
+            for k, v in value.items()
+            if not any(term in str(k).lower() for term in ("base64", "screenshot", "image", "data"))
+        }
     if isinstance(value, list):
         return [_clean(item) for item in value]
     if isinstance(value, str):
-        return re.sub(r"(?:data:image/\S+|[A-Za-z0-9+/]{200,}={0,2})",
-                      "[image payload omitted]", value)[:4000]
+        return re.sub(
+            r"(?:data:image/\S+|[A-Za-z0-9+/]{200,}={0,2})", "[image payload omitted]", value
+        )[:4000]
     return value
 
 
@@ -98,20 +104,29 @@ def _outcome(raw: object) -> ToolOutcome:
     elif isinstance(raw, dict):
         outcome = ToolOutcome(
             str(raw.get("status", "failed" if raw.get("ok") is False else "ok")),
-            str(raw.get("effect", "not_applicable")), structured=raw,
+            str(raw.get("effect", "not_applicable")),
+            structured=raw,
         )
     else:
         outcome = normalize_mcp_result(raw)
     structured = _clean(outcome.structured)
-    return replace(outcome, images=[], text=str(_clean(outcome.text)),
-                   structured=structured if isinstance(structured, dict) else {})
+    return replace(
+        outcome,
+        images=[],
+        text=str(_clean(outcome.text)),
+        structured=structured if isinstance(structured, dict) else {},
+    )
 
 
 class RecipeExecutor:
     def __init__(
-        self, *, cua_tools_by_name: Mapping[str, BaseTool],
-        run_store: ActionStore | None = None, run_id: str | None = None,
-        budget: Budget | None = None, run: ActiveRun | None = None,
+        self,
+        *,
+        cua_tools_by_name: Mapping[str, BaseTool],
+        run_store: ActionStore | None = None,
+        run_id: str | None = None,
+        budget: Budget | None = None,
+        run: ActiveRun | None = None,
         action_ledger: RunActionLedger | None = None,
     ) -> None:
         self._tools = dict(cua_tools_by_name)
@@ -143,7 +158,9 @@ class RecipeExecutor:
             ledger_id = await self._ledger.plan(tool_name=name)
         elif self._store is not None and self._run_id is not None:
             ledger_id = await self._store.record_action(
-                self._run_id, step_id=f"{self._recipe}:{self._step}", tool_name=name,
+                self._run_id,
+                step_id=f"{self._recipe}:{self._step}",
+                tool_name=name,
             )
 
         async def mark(state: ActionState, evidence: str = "") -> None:
@@ -186,8 +203,11 @@ class RecipeExecutor:
             detail = str(exc).strip() or type(exc).__name__
             raise RecipeFailure(f"{name} failed: {detail[:300]}") from exc
         state: ActionState = (
-            "confirmed" if outcome.status == "ok" else
-            "unknown" if outcome.status == "unknown" else "failed"
+            "confirmed"
+            if outcome.status == "ok"
+            else "unknown"
+            if outcome.status == "unknown"
+            else "failed"
         )
         await mark(state, outcome.summary())
         return outcome
@@ -219,8 +239,7 @@ class RecipeExecutor:
         get_window_state requires pid+window_id in v0.28.2 (verified
         live), so it is only usable with a prior window listing.
         """
-        for name in ("get_desktop_state", "get_accessibility_tree",
-                     "get_window_state"):
+        for name in ("get_desktop_state", "get_accessibility_tree", "get_window_state"):
             if name in self._tools:
                 return await self._invoke(name, {})
         raise RecipeFailure("Required native tool unavailable: any observation tool")
@@ -242,8 +261,7 @@ class RecipeExecutor:
                     if not isinstance(app, dict):
                         continue
                     identity = (
-                        app.get("bundle_id") == target
-                        or str(app.get("name", "")).lower() == app_id
+                        app.get("bundle_id") == target or str(app.get("name", "")).lower() == app_id
                     )
                     if not identity:
                         continue
@@ -288,9 +306,7 @@ class RecipeExecutor:
         window_id = self._window_id_from(outcome)
         if window_id is None:
             return outcome
-        return await self._invoke(
-            "bring_to_front", {"pid": pid, "window_id": window_id}
-        )
+        return await self._invoke("bring_to_front", {"pid": pid, "window_id": window_id})
 
     @staticmethod
     def _pick_window_id(candidates: object) -> int | None:
@@ -303,11 +319,7 @@ class RecipeExecutor:
             return None
         usable: list[tuple[int, int]] = []  # (score, window_id)
         for candidate in candidates:
-            window_id = (
-                candidate.get("window_id")
-                if isinstance(candidate, dict)
-                else candidate
-            )
+            window_id = candidate.get("window_id") if isinstance(candidate, dict) else candidate
             if not isinstance(window_id, int) or window_id <= 0:
                 continue
             score = 0
@@ -340,8 +352,8 @@ class RecipeExecutor:
     async def read_display(self) -> ToolOutcome:
         # Evaluation is an explicit mutation, not hidden inside an observation.
         if "press_key" not in self._tools or not any(
-            name in self._tools for name in
-            ("get_window_state", "list_windows", "get_desktop_state")
+            name in self._tools
+            for name in ("get_window_state", "list_windows", "get_desktop_state")
         ):
             raise RecipeFailure("Required native tool unavailable: press_key and observation")
         outcome = await self._invoke("press_key", {"key": "Enter"})

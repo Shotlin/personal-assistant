@@ -1,295 +1,60 @@
-# Personal Assistant (Phase 1)
+# Sani — Local Desktop AI Assistant
 
-One reliable general-purpose personal assistant, reachable through **Open
-WebUI**, built on a **LangChain Deep Agent**, with durable **PostgreSQL**
-thread state and user-scoped long-term memory, a configurable model
-provider (OpenRouter first), and safe computer control through **Cua
-Driver** in bounded mode.
-
-This repository implements exactly Phase 1 of
-`PHASE_01_CORE_PERSONAL_ASSISTANT.md`. Phase 2 features (vector search,
-document ingestion, subagents, more apps) are out of scope.
-
-## Architecture
+Sani is a real, locally installed desktop application (Tauri 2 + React +
+Rust on macOS) that talks and types, reasons, and controls the computer:
 
 ```
-Open WebUI (docker)  ->  FastAPI gateway (native, OpenAI-compatible /v1)
-                            ->  one Deep Agent (LangChain)
-                                  ->  PostgreSQL (checkpoints + memory)
-                                  ->  Cua Driver MCP (native, bounded)
-                                  ->  ModelProviderFactory (OpenRouter /
-                                      generic OpenAI-compatible / OpenAI later)
+Sani.app (Tauri: voice UI, panel UI, global hotkey, settings)
+   │
+   ├── Local STT (Moonshine sidecar over stdio; mic audio never leaves the machine)
+   │
+   ├── sani-core (bundled Python sidecar; framed-JSON IPC over stdin/stdout)
+   │     ├── Deep Agent (LangChain reasoning + skills + memory)  → OpenRouter
+   │     ├── Velo (quick computer control: JEV decisions + CUA actions)  → OpenRouter JEV / local CUA
+   │     └── agent registry (deep, velo) + run lifecycle + cancellation
+   │
+   └── Local data: SQLite (sani.db) memory/checkpoints/run history,
+        skills, STT model cache, logs — under the platform app-data dir
 ```
 
-- **Open WebUI** is only the chat UI (v0.11.3, pinned).
-- The **gateway** exposes `/v1/models` and `/v1/chat/completions` with the
-  OpenAI error contract; it maps Open WebUI identity headers to a scoped
-  thread (`owui:<user_id>:<chat_id>`).
-- **One Deep Agent**: the general-purpose subagent is disabled (no `task`
-  tool) and the host-shell `execute` tool is excluded.
-- **CUA** runs bounded with a capability manifest; the application
-  additionally allowlists tools and budgets mutating actions (50 per run,
-  15-minute wall clock).
+One external credential: **`OPENROUTER_API_KEY`** (drives both the Deep
+Agent model and the JEV decision model). Everything else is local.
 
-## Layout
+## What ships
 
-```
-src/assistant/
-  api/         OpenAI-compatible gateway (auth, identity, turns, SSE)
-  agent/       Deep Agent assembly (system prompt, profile, build, context)
-  models/      provider factory (openrouter / generic_openai_compatible / openai)
-  memory/      Postgres checkpointer + store, namespaces, write policy
-  tools/       CUA MCP loading, application-side allowlist, action budget
-  skills/      read-only SKILL.md procedures (developer-authored)
-  observability/  JSON logging with secret redaction
-config/        logging.yaml, cua-capabilities.yaml
-scripts/       init_db.py, verify_cua.py, smoke_openwebui.py, run_agent_api.sh
-tests/         unit / integration / e2e
-```
-
-## Quick start
-
-Already have `.env` filled in once (see Setup below)? One command brings
-up containers, the DB schema, the Cua Driver check, and the gateway, then
-opens the chat UI:
-
-```bash
-./scripts/start.sh
-```
-
-Stop everything with `./scripts/stop.sh`. Safe to re-run either any time
-— see [CLAUDE.md](CLAUDE.md#run-it-one-command) for what each step does.
-The manual, step-by-step version of the same process is below, useful for
-first-time setup or debugging a single step in isolation.
-
-## Prerequisites
-
-- macOS 14+ (verified on macOS 26.2, Apple Silicon) with Docker Desktop running.
-- `uv` (manages Python 3.12 for you; no system Python needed).
-- An **OpenRouter API key** (or any OpenAI-compatible provider credentials).
-
-## Setup
-
-```bash
-# 1. Install exact locked dependencies (never re-resolves versions).
-uv sync --frozen
-
-# 2. Configure.
-cp .env.example .env
-#    then set at minimum:
-#      AGENT_GATEWAY_API_KEY=<generate a long random string>
-#      OPENROUTER_API_KEY=<your key>
-#      MODEL_NAME=<a cheap, tool-capable OpenRouter model id>
-#      CUA_CAPABILITY_MANIFEST_PATH=<absolute path to config/cua-capabilities.yaml>
-#      CUA_ENABLED=true   (leave false until Cua Driver is installed)
-
-# 3. Start PostgreSQL (and Open WebUI).
-docker compose up -d
-
-# 4. Initialize database schemas (idempotent).
-uv run python scripts/init_db.py
-```
-
-## Cua Driver (computer control)
-
-Pin: **cua-driver-rs v0.28.2** (deliberate selection, recorded 2026-09-17:
-the stable channel had moved past the spec's v0.28.1 reference when the
-driver was installed; the capability manifest below is validated against
-v0.28.2). Any future update must be recorded here and revalidated.
-
-```bash
-# Install (places CuaDriver.app in /Applications, symlink in ~/.local/bin).
-/bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"
-cua-driver --version          # must report the recorded pin (0.28.2)
-
-# Grant macOS permissions (System Settings -> Privacy & Security):
-#   - Accessibility        -> enable for CuaDriver.app
-#   - Screen Recording     -> enable for CuaDriver.app
-cua-driver permissions status
-
-# Bounded daemon (persistent; TCC attribution stays with CuaDriver.app):
-# Managed by the LaunchAgent installed 2026-09-18 — starts at login and
-# respawns the daemon after idle exit, so a gateway reconnect never
-# resurrects a standard-mode daemon without the capability manifest
-# (root cause of the recurring `permissions_pending` failures).
-#   ~/Library/LaunchAgents/com.trycua.cua_driver_daemon.plist
-#   launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.trycua.cua_driver_daemon.plist
-#   launchctl kickstart -k gui/501/com.trycua.cua_driver_daemon  # manual restart
-#   cua-driver status   # must show: permission mode: bounded (trusted_startup_configuration)
-#                       #             capability manifest: configured=true, approved_at_startup=true
-#
-# WARNING (this machine): `open -n -g -a CuaDriver --args serve ...` DROPS
-# the arguments — the daemon always came up in standard mode without the
-# manifest, re-triggering the TCC onboarding popup even with both toggles
-# already enabled. The LaunchAgent invokes the bundle executable directly
-# (/Applications/CuaDriver.app/Contents/MacOS/cua-driver serve ...), which
-# forwards argv correctly. Never rely on `open --args` here.
-
-# Verify from this repo (connectivity, filtering, allowed action):
-uv run python scripts/verify_cua.py --live
-```
-
-The manifest allowlists: Calculator, Google Chrome, Terminal.app (Claude
-Code), plus observation/screenshot/click/type/scroll/press-key/launch
-capabilities and approved browser origins. Everything else is refused
-natively; the application filter drops any tool outside the allowlist.
-
-## Running
-
-```bash
-# Native gateway (the Open WebUI containers reach it via host.docker.internal).
-./scripts/run_agent_api.sh          # listens on 127.0.0.1:8787
-
-# Smoke checks (gateway + UI + auth; see script docstring).
-uv run python scripts/smoke_openwebui.py
-```
-
-Shutdown order: stop the gateway (Ctrl-C) -> quit/stop the CuaDriver
-daemon -> `docker compose stop`.
-
-## Open WebUI connection
-
-- URL: `http://host.docker.internal:8787/v1`
-- API key: the `AGENT_GATEWAY_API_KEY` from `.env`
-- Model: `personal-assistant-v1`
-- The compose file enables user-info header forwarding
-  (`ENABLE_FORWARD_USER_INFO_HEADERS=true` -> `X-OpenWebUI-User-Id`,
-  `-Name`, `-Email`, `-Role`).
-- Turn-lineage headers (`X-OpenWebUI-Chat-Id`, `X-OpenWebUI-Message-Id`,
-  `X-OpenWebUI-User-Message-Id`, `X-OpenWebUI-User-Message-Parent-Id`,
-  `X-OpenWebUI-Task`) are **per-connection custom headers** stored in the
-  Open WebUI database in v0.11.3 (there is no environment variable for
-  them). Apply them with:
-
-  ```bash
-  uv run python scripts/configure_openwebui_connection.py \
-      --email <admin email> --password <admin password>
-  ```
-
-Verify by sending one chat message in the UI and checking the gateway
-run log: `run_started` must carry `identity_source: openwebui` plus
-`chat_id` and `user_message_id`.
-
-First run: create the Open WebUI admin account at `http://127.0.0.1:3000`,
-then open Admin Settings -> Connections and confirm the gateway
-connection exists (it is preconfigured via `OPENAI_API_BASE_URL`/`KEY`).
-
-## Switching model provider
-
-Change only `.env` (no code changes):
-
-```dotenv
-# OpenRouter (default)
-MODEL_PROVIDER=openrouter
-MODEL_NAME=<openrouter model id>
-OPENROUTER_API_KEY=<key>
-
-# Any OpenAI-compatible Chat Completions provider
-MODEL_PROVIDER=generic_openai_compatible
-MODEL_BASE_URL=https://provider.example/v1
-MODEL_API_KEY=<key>
-MODEL_NAME=<model id>
-
-# OpenAI (later, optional)
-MODEL_PROVIDER=openai
-MODEL_NAME=<model id>
-OPENAI_API_KEY=<key>
-```
-
-## Tests
-
-```bash
-docker compose up -d postgres      # integration/e2e tests need it
-uv run pytest                      # unit + integration + e2e (no live model/CUA)
-```
-
-Live checks (spend real tokens / need the driver). The one-command path
-once `.env` has the key and CuaDriver has TCC grants:
-
-```bash
-uv run python scripts/pick_model.py          # list cheap tool-capable models
-uv run python scripts/pick_model.py --set <model-id>   # set MODEL_NAME
-./scripts/go_live.sh                         # run every live check in order
-```
-
-Individual checks:
-
-```bash
-RUN_LIVE_MODEL=1 uv run pytest tests/integration/test_live_model.py
-RUN_LIVE_CUA=1 uv run pytest tests/e2e/test_cua_calculator.py
-uv run python scripts/verify_cua.py --live
-```
-
-## Diagnostics without secrets
-
-- Logs are single-line JSON on stderr with API keys/passwords/tokens
-  redacted (`[REDACTED]`).
-- Run records carry `run_id`, hashed user id, chat/thread ids, provider,
-  model, status, CUA tool names, and error codes — never prompt bodies,
-  screenshots, or keys.
-- For a clean diagnostic bundle: gateway log tail, `docker compose ps`,
-  `cua-driver permissions status`, and the pytest summary. Never share
-  `.env`.
-
-## Feature flags & rollback (Phase 1.1)
-
-All levers live in `.env`; change one, restart the gateway, no code edit.
-
-| Flag (env) | Default | Effect of `false` |
+| Piece | Where | Notes |
 | --- | --- | --- |
-| `COMPACT_PLANNER_ENABLED` | `false` | Every non-exact turn goes to the general agent exactly as before WP6 (compact same-model planning disabled). |
-| `ACTIVE_CURSOR_PERSISTENCE_ENABLED` | `true` | No desktop cursor sessions: runs execute without a visible cursor and the driver is never contacted for sessions. |
-| `STATUS_EVENTS_ENABLED` | `true` | No `[working]`/`[waiting]` SSE progress lines. |
-| `CUA_ENABLED` | `true` | No computer control at all: pure chat agent (requires restart; recipes unavailable). |
+| Desktop app | `sani/` (Tauri + React renderer + Rust host) | voice state machine, hotkey, settings, SQLite UI history |
+| sani-core IPC | `sani/src-tauri/src/sani_core.rs` ↔ `src/assistant/core/` | 4-byte length-prefixed JSON over stdio; no localhost web server in the new path |
+| STT sidecar | `sani/src-tauri/python/sani_stt.py` → bundled binary | Moonshine streaming + VAD/endpointing, fully local |
+| Velo | `src/assistant/velo/` | OBSERVE→DECIDE→ACT→VERIFY loop; JEV is a structured classifier, never a chat model; bounded steps/runtime/cancellation |
+| Deep Agent | `src/assistant/agent/` | LangChain deep agent, skills, secret-screened memory |
+| Memory | `src/assistant/memory/local.py` + `src/assistant/runtime/runs_local.py` | embedded SQLite (`sani.db`), WAL; secret-screening policy preserved |
+| CUA | `src/assistant/tools/` + `config/cua-capabilities.yaml` | bounded driver, capability manifest, per-run budgets |
 
-Rollback paths by layer:
+## Development
 
-- **Planner (WP6)** is off by default. To roll a live rollout back, set
-  `COMPACT_PLANNER_ENABLED=false` and restart — the exact-match recipe
-  route (WP5) is unaffected and keeps its zero-model behavior.
-- **Recipes (WP5)**: there is no flag for the exact-match route by design
-  (it makes zero model calls and writes durable ledger rows); to disable
-  it entirely, set `CUA_ENABLED=false`, which removes the tool inventory
-  and makes the router fail closed.
-- **Run registry / dedup (WP4)**: do not disable in production. To roll
-  the gateway back to a pre-WP4 build, checkout the earlier commit and
-  restart; the `run_registry`/`action_ledger` tables are additive and
-  safe to leave in place (setup() never deletes history).
-- **Cursor sessions (WP3)**: `ACTIVE_CURSOR_PERSISTENCE_ENABLED=false`.
+```bash
+uv sync                                   # Python side
+uv run pytest                             # full suite (no Docker needed for core tests)
+uv run python -m assistant.core          # run sani-core standalone over stdio
+uv run python scripts/run_velo.py "Open Chrome and search WhatsApp Web"
 
-Desktop verification requires the macOS permission grants (Accessibility,
-Screen Recording) for CuaDriver; while they are pending, desktop calls
-fail with an explicit `permissions_pending` message in the run registry
-and reply text — the gateway does not retry around a permissions gate.
+cd sani && npm install && npm run build   # renderer
+cd sani/src-tauri && cargo check && cargo test
+```
 
-## Troubleshooting
+Environment: copy `.env.example` to `.env` and set `OPENROUTER_API_KEY`
+(the one cloud credential), plus CUA settings for computer control during
+development. Local persistence is selected with `MEMORY_BACKEND=sqlite` +
+`SANI_DATA_DIR=...` (the packaged app sets this itself).
 
-| Symptom | First checks |
-| --- | --- |
-| Chat shows `Model "" was not found` | The gateway process is not running (Open WebUI's connection registry is empty). Start it: `./scripts/run_agent_api.sh` — then retry the chat. |
-| Gateway exits at startup | `.env` validation error printed (provider key, manifest path, CUA mode) |
-| `/readyz` returns 503 | `docker compose up -d postgres`; check `DATABASE_URL` |
-| Model picker empty in Open WebUI | gateway reachable from container? `docker compose exec open-webui curl -s http://host.docker.internal:8787/healthz` |
-| CUA tools missing at startup | driver installed? `cua-driver --version`; manifest path absolute and existing; bounded daemon running |
-| Desktop actions fail with `permissions_pending` while both toggles are ON | the bounded daemon died (idle exit / reboot) and the gateway's `mcp` proxy resurrected it in standard mode. `cua-driver status` — if it says standard or no daemon: `launchctl kickstart -k gui/501/com.trycua.cua_driver_daemon`, then re-check. Never re-grant toggles for this; they are not the cause. |
-| Memory rejected warning in logs | the memory write policy blocked a secret-like write (by design) |
+## Legacy note
 
-## Security posture (Phase 1)
-
-1. CUA runs bounded only; unrestricted is rejected at startup.
-   The gateway also verifies the *live daemon's* posture before any tool
-   is exposed (`cua_daemon_posture_verified` in the startup log): a
-   daemon not in bounded mode, or without the approved capability
-   manifest, fails gateway startup (added 2026-09-18 after the silent
-   standard-mode resurrection incident).
-2. Tool allowlist enforced twice (native manifest + application filter).
-3. Gateway, Open WebUI, and PostgreSQL all listen on loopback only.
-4. Provider keys never leave the gateway process; Open WebUI only holds
-   the gateway key.
-5. Agent has no host shell; file tools operate on a virtual scratch
-   backend, read-only skills, and the Postgres-backed memory store.
-6. Memory writes pass a secret-screening policy; memory events never log
-   content.
-7. Computer tool output is untrusted evidence; it never changes policy.
-8. External irreversible actions fail closed.
-9. Stopping the gateway process immediately prevents new actions.
+The former Open WebUI / Agent Designer / Docker-PostgreSQL server product
+was removed (see git history). The FastAPI gateway
+(`src/assistant/main.py`, `src/assistant/api/`) is retained **only** as
+the still-live voice/text path until the Sani host finishes switching to
+sani-core IPC (`sani_core.rs`); it will be removed at that cutover along
+with the Postgres dev backend. See `docs/sani-storage-migration.md` for
+the storage map.

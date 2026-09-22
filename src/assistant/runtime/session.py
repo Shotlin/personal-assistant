@@ -92,9 +92,7 @@ class McpToolDesktopDriver:
     )
 
     def __init__(self, tools: Mapping[str, Any]) -> None:
-        self._tools = {
-            name: tool for name, tool in tools.items() if name in self._TOOL_NAMES
-        }
+        self._tools = {name: tool for name, tool in tools.items() if name in self._TOOL_NAMES}
 
     async def _invoke(self, name: str, args: dict[str, Any], *, required: bool) -> Any:
         tool = self._tools.get(name)

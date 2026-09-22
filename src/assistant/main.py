@@ -107,23 +107,6 @@ def create_app(
     app.include_router(chat_route.router)
     app.include_router(run_events_route.router)
 
-    # Designer mounts ONLY when explicitly enabled (C2 + Safety note 1).
-    # Flag-off: no designer routes, no designer state, legacy behavior.
-    if settings.designer_enabled:
-        from fastapi.responses import RedirectResponse
-
-        from assistant.designer.routes import router as designer_router
-
-        app.include_router(designer_router)
-        from assistant.designer.routes import install_error_handler, mount_designer_spa
-
-        install_error_handler(app)
-        mount_designer_spa(app)
-
-        @app.get("/", include_in_schema=False)
-        def root_redirect() -> RedirectResponse:
-            return RedirectResponse(url="/designer/")
-
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
@@ -168,9 +151,7 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
             # Agent checkpointer, long-term memory, AND run metadata on the
             # one embedded sani.db -- no Docker, no PostgreSQL server.
             if settings.memory_backend == "sqlite":
-                memory_resources_cm: Any = open_local_memory_resources(
-                    settings.sani_db_path
-                )
+                memory_resources_cm: Any = open_local_memory_resources(settings.sani_db_path)
                 run_store_cm: Any = SQLiteRunStore.connect(settings.sani_db_path)
             else:
                 memory_resources_cm = open_memory_resources(settings.database_url)
@@ -213,19 +194,6 @@ def _build_lifespan(settings: Settings) -> LifespanFn:
                 extra_tools=extra_tools,
             )
             app.state.agent = bundle.agent
-
-            # Designer services initialize ONLY when enabled (Safety note 1).
-            # Runs after the legacy app is fully up so Designer startup
-            # problems never prevent the Phase-1 gateway from serving.
-            if settings.designer_enabled:
-                from assistant.designer.service import build_designer_state
-
-                app.state.designer = await build_designer_state(settings, app)
-                stack.push_async_callback(app.state.designer["store"].close)
-                logger.info(
-                    "designer_services_initialized",
-                    extra={"event": "designer_services_initialized"},
-                )
             yield
 
     return lifespan

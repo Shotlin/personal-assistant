@@ -1,32 +1,12 @@
 # Project Graph — Personal Assistant
 
 One-page map of **what this project is, why it exists, what it can do
-today, and how the pieces fit together.** For run instructions see
-[README.md](README.md); for agent working conventions see
-[CLAUDE.md](CLAUDE.md). Mermaid diagrams render on GitHub and in most
-Markdown viewers/editors.
 
-## Purpose
-
-A single, reliable, general-purpose personal assistant you talk to like
-any chat app, that can also *act* on your Mac (open apps, click, type)
-when asked — instead of ten different bots for ten different tools. It
-runs entirely on your own machine: your chat UI, your gateway, your
-database, and (optionally) your desktop-control daemon, all on loopback.
-The only thing that leaves your machine is the model call to your chosen
-provider (OpenRouter by default).
-
-It is being built in phases. **Phase 1** (implemented) is one agent, one
-user session model, safe bounded computer control, and durable memory.
-Phase 2 (vector search, document ingestion, subagents, more apps) is
-explicitly deferred, not partially built.
-
-## What it can do right now
-
-- **Hold a real conversation with memory.** Every thread is durably
-  checkpointed in PostgreSQL; the agent also keeps user-scoped long-term
-  memory (`/memories/preferences.md`, `/memories/profile.md`) it can read
-  and write across sessions — gated by a secret-screening write policy so
+> **STATUS: LEGACY DOCUMENT** — written for the pre-Sani server
+> architecture (loopback gateway + PostgreSQL). The product is now the
+> Sani desktop app; see [README.md](README.md) for the current
+> architecture and [docs/sani-storage-migration.md](docs/sani-storage-migration.md)
+> for the storage map. Kept for reference until the gateway cutover.
   it won't persist anything that looks like a credential.
 - **Control the desktop, safely, for a fixed set of apps.** Through Cua
   Driver in *bounded* mode it can launch, observe, click, type, scroll,

@@ -75,9 +75,7 @@ def has_assistant_after_last_user(messages: Sequence[BaseMessage]) -> bool:
     return False
 
 
-def decide_turn(
-    persisted: Sequence[BaseMessage], incoming: Sequence[BaseMessage]
-) -> TurnDecision:
+def decide_turn(persisted: Sequence[BaseMessage], incoming: Sequence[BaseMessage]) -> TurnDecision:
     """Decide initialize / new_turn / regenerate / resume for one request."""
     incoming_user = last_user_content(incoming)
     if not persisted:

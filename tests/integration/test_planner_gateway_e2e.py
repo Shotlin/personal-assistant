@@ -103,7 +103,6 @@ async def planner_gateway(
             model_provider="openrouter",
             openrouter_api_key="dummy",
             cua_enabled=True,
-        designer_enabled=False,  # hermetic legacy path
             active_cursor_persistence_enabled=False,
             compact_planner_enabled=True,
         )

@@ -90,9 +90,7 @@ def _evaluate_daemon_status(output: str) -> str | None:
             "relying on the mcp proxy resurrection would silently run "
             "standard mode without the capability manifest."
         )
-    mode_line = next(
-        (line for line in output.splitlines() if "permission mode:" in line), ""
-    )
+    mode_line = next((line for line in output.splitlines() if "permission mode:" in line), "")
     if "bounded" not in mode_line:
         return (
             "CuaDriver daemon is not in bounded mode "
@@ -102,11 +100,7 @@ def _evaluate_daemon_status(output: str) -> str | None:
             "which drops the mode/manifest arguments on this host."
         )
     manifest_line = next(
-        (
-            line
-            for line in output.splitlines()
-            if line.strip().startswith("capability manifest:")
-        ),
+        (line for line in output.splitlines() if line.strip().startswith("capability manifest:")),
         "",
     )
     if not (
@@ -145,9 +139,7 @@ async def _assert_bounded_daemon(settings: Settings) -> None:
     reason = _evaluate_daemon_status(output)
     if reason is not None:
         raise RuntimeError(reason)
-    mode_line = next(
-        (line for line in output.splitlines() if "permission mode:" in line), ""
-    )
+    mode_line = next((line for line in output.splitlines() if "permission mode:" in line), "")
     manifest_sha = next(
         (
             line.split(":", 1)[1].strip()

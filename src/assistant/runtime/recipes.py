@@ -110,8 +110,11 @@ def parse_display(value: object) -> float | None:
     if not isinstance(value, str):
         return None
     text = value.strip().replace("−", "-")
-    if not re.fullmatch(r"[+-]?(?:\d{1,3}(?:,\d{3})+|\d+|\d*\.\d+)(?:\.\d+)?"
-                        r"(?:[eE][+-]?\d+)?", text):
+    if not re.fullmatch(
+        r"[+-]?(?:\d{1,3}(?:,\d{3})+|\d+|\d*\.\d+)(?:\.\d+)?"
+        r"(?:[eE][+-]?\d+)?",
+        text,
+    ):
         return None
     try:
         number = float(text.replace(",", ""))
@@ -121,9 +124,12 @@ def parse_display(value: object) -> float | None:
 
 
 def foreground_matches(evidence: object, app_id: str) -> bool:
-    return (isinstance(evidence, ToolOutcome) and evidence.status == "ok"
-            and evidence.structured.get("foreground_app") == app_id
-            and not evidence.structured.get("modal", False))
+    return (
+        isinstance(evidence, ToolOutcome)
+        and evidence.status == "ok"
+        and evidence.structured.get("foreground_app") == app_id
+        and not evidence.structured.get("modal", False)
+    )
 
 
 def search_url(query: str) -> str:
@@ -131,19 +137,26 @@ def search_url(query: str) -> str:
 
 
 def page_matches(evidence: object, query: str) -> bool:
-    return (isinstance(evidence, ToolOutcome) and evidence.status == "ok"
-            and evidence.structured.get("url") == search_url(query)
-            and evidence.structured.get("loaded") is True
-            and not evidence.structured.get("modal", False))
+    return (
+        isinstance(evidence, ToolOutcome)
+        and evidence.status == "ok"
+        and evidence.structured.get("url") == search_url(query)
+        and evidence.structured.get("loaded") is True
+        and not evidence.structured.get("modal", False)
+    )
 
 
 def calculator_matches(evidence: object, display: object, expected: object) -> bool:
     observed = parse_display(display)
-    return (isinstance(evidence, ToolOutcome) and evidence.status == "ok"
-            and evidence.structured.get("display_value", evidence.text) == display
-            and observed is not None and isinstance(expected, (int, float))
-            and math.isfinite(expected)
-            and math.isclose(observed, expected, rel_tol=1e-9, abs_tol=1e-12))
+    return (
+        isinstance(evidence, ToolOutcome)
+        and evidence.status == "ok"
+        and evidence.structured.get("display_value", evidence.text) == display
+        and observed is not None
+        and isinstance(expected, (int, float))
+        and math.isfinite(expected)
+        and math.isclose(observed, expected, rel_tol=1e-9, abs_tol=1e-12)
+    )
 
 
 def _acknowledged(outcome: ToolOutcome) -> None:
@@ -155,8 +168,7 @@ async def _open(executor: RecipeRuntime, app_id: str) -> ToolOutcome:
     launched = await executor.launch_app(app_id)
     _acknowledged(launched)
     observation = await executor.verify_foreground(app_id)
-    if (observation.status == "failed"
-            and not foreground_matches(observation, app_id)):
+    if observation.status == "failed" and not foreground_matches(observation, app_id):
         # macOS may open the app behind the current frontmost app
         # (observed live 2026-09-18). One honest activation attempt on a
         # DEFINITIVE 'not foreground' reading, then final verification
@@ -188,7 +200,8 @@ async def open_app(executor: RecipeRuntime, arguments: Mapping[str, str]) -> Rec
 
 
 async def calculator_evaluate(
-    executor: RecipeRuntime, arguments: Mapping[str, str],
+    executor: RecipeRuntime,
+    arguments: Mapping[str, str],
 ) -> RecipeResult:
     result: RecipeResult = {"recipe_id": "calculator.evaluate.v1", "ok": False}
     try:
@@ -242,8 +255,11 @@ async def browser_search(executor: RecipeRuntime, arguments: Mapping[str, str]) 
 
 async def execute_recipe(request: RecipeRequest, runtime: RecipeRuntime) -> RecipeResult:
     """Execute one validated recipe, never a model call or recovery planner."""
-    recipes = {"open_app.v1": open_app, "calculator.evaluate.v1": calculator_evaluate,
-               "browser.search.v1": browser_search}
+    recipes = {
+        "open_app.v1": open_app,
+        "calculator.evaluate.v1": calculator_evaluate,
+        "browser.search.v1": browser_search,
+    }
     recipe = recipes.get(request.recipe_id)
     if recipe is None:
         raise RecipeFailure(f"Unsupported recipe: {request.recipe_id}")

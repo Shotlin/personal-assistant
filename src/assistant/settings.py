@@ -72,7 +72,6 @@ class Settings(BaseSettings):
     cua_artifact_dir: str = "var/artifacts"
 
     # Open WebUI integration
-    openwebui_forward_headers: bool = True
 
     # WP3: trusted desktop session ownership (feature flag, master plan 17).
     # false disables cursor sessions entirely: runs execute without a
@@ -106,21 +105,6 @@ class Settings(BaseSettings):
     # real testing (Velo spec section 14).
     velo_max_same_action_repeats: int = 2
     velo_max_consecutive_failed_actions: int = 2
-
-    # Agent Designer (frozen plan v5.1, C2 + Safety note 1). Default false:
-    # the legacy Phase-1 path is the rollback boundary. Designer-only
-    # settings below are validated ONLY when this is true; missing or
-    # invalid values never block a flag-off startup.
-    designer_enabled: bool = False
-    designer_credentials_key: str = ""
-    designer_openwebui_base_url: str = "http://127.0.0.1:3000"
-    designer_session_ttl_minutes: int = 720
-    designer_login_max_attempts: int = 10
-    designer_cookie_secure: bool = False
-    # Shared secret between the same-origin reverse proxy and the gateway
-    # (SSO Mode C). Empty disables SSO entirely — the standalone Designer
-    # login flow is then the only path.
-    designer_proxy_key: str = ""
 
     @property
     def is_production(self) -> bool:
@@ -241,36 +225,6 @@ class Settings(BaseSettings):
                 errors.append("CUA_ENABLED=true requires CUA_CAPABILITY_MANIFEST_PATH")
             elif not self.cua_capability_manifest_path.startswith("/"):
                 errors.append("CUA_CAPABILITY_MANIFEST_PATH must be an absolute path")
-
-        # Designer-only validation is strictly conditional (Safety note 1):
-        # a flag-off gateway validates only the legacy requirements above.
-        if self.designer_enabled:
-            if not self.designer_credentials_key:
-                errors.append(
-                    "DESIGNER_ENABLED=true requires DESIGNER_CREDENTIALS_KEY "
-                    "(base64 32-byte key; generate with scripts/generate_designer_key.py)"
-                )
-            else:
-                from assistant.designer.credentials import (
-                    CredentialKeyMissing,
-                    load_key,
-                )
-
-                try:
-                    load_key(self.designer_credentials_key)
-                except CredentialKeyMissing as exc:
-                    errors.append(f"DESIGNER_CREDENTIALS_KEY invalid: {exc}")
-            if not self.designer_openwebui_base_url.startswith(("http://", "https://")):
-                errors.append("DESIGNER_OPENWEBUI_BASE_URL must be an http(s) URL")
-            if self.designer_session_ttl_minutes <= 0:
-                errors.append("DESIGNER_SESSION_TTL_MINUTES must be > 0")
-            if self.designer_login_max_attempts <= 0:
-                errors.append("DESIGNER_LOGIN_MAX_ATTEMPTS must be > 0")
-            if self.is_production and not self.designer_cookie_secure:
-                errors.append(
-                    "DESIGNER_ENABLED=true in production requires DESIGNER_COOKIE_SECURE=true "
-                    "(loopback HTTP without Secure cookies is dev-only)"
-                )
 
         if errors:
             raise SettingsError("Invalid configuration:\n  - " + "\n  - ".join(errors))

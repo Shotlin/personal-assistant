@@ -139,8 +139,8 @@ cua_desktop_run: contextvars.ContextVar[_DesktopRun | None] = contextvars.Contex
 if TYPE_CHECKING:  # pragma: no cover
     from assistant.runtime.runs import RunActionLedger as _RunActionLedger
 
-cua_action_ledger: contextvars.ContextVar[_RunActionLedger | None] = (
-    contextvars.ContextVar("cua_action_ledger", default=None)
+cua_action_ledger: contextvars.ContextVar[_RunActionLedger | None] = contextvars.ContextVar(
+    "cua_action_ledger", default=None
 )
 
 #: Returned to the model instead of executing an action after a local
@@ -174,6 +174,7 @@ async def cua_run_scope(
         cua_artifact_dir.reset(dir_token)
         cua_desktop_run.reset(run_token)
         cua_run_budget.reset(budget_token)
+
 
 #: Text-first observation defaults (latency + token control): skip the
 #: base64 screenshot and cap the accessibility tree; the model may opt
@@ -389,11 +390,7 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
             # explicit revival (no effect to corrupt). Mutating actions are
             # NEVER blindly retried here — their outcome is unknown; the
             # model sees the error and decides.
-            if (
-                not is_mutating
-                and run is not None
-                and _session_revive_demanded(str(exc))
-            ):
+            if not is_mutating and run is not None and _session_revive_demanded(str(exc)):
                 try:
                     await run.revive()
                     result = await original(**kwargs)

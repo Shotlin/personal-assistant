@@ -148,9 +148,7 @@ def validate_plan(plan: object) -> RecipeRequest:
     allowed_top = {"recipe_id", "arguments", "decision", "question", "reason"}
     unknown_top = set(plan) - allowed_top
     if unknown_top:
-        raise InvalidPlan(
-            f"unknown executable payload in plan: {sorted(unknown_top)!r}"
-        )
+        raise InvalidPlan(f"unknown executable payload in plan: {sorted(unknown_top)!r}")
     decision = plan.get("decision")
     if "decision" in plan:
         # Decision shapes are exact menu entries; stray metadata on a

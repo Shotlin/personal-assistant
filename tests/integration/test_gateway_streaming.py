@@ -42,7 +42,6 @@ def make_settings(**extra: Any) -> Settings:
         model_provider="openrouter",
         openrouter_api_key="dummy",
         cua_enabled=False,
-        designer_enabled=False,  # hermetic legacy path
         **extra,
     )
 

@@ -16,7 +16,8 @@ class RecipeRequest:
 
 
 def match_local_command(
-    text: str, approved_context: Mapping[str, object] | None = None,
+    text: str,
+    approved_context: Mapping[str, object] | None = None,
 ) -> RecipeRequest | None:
     """Match only a complete, unambiguous command; context never widens scope.
 

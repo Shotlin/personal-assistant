@@ -22,13 +22,10 @@ from assistant.api.schemas import ChatCompletionChunk, ChatCompletionChunkChoice
 logger = logging.getLogger("assistant.api.streaming")
 
 _PARTIAL_STATE_NOTICE = (
-    "\n\n[Stopped: run time ceiling reached. Reporting partial progress rather than "
-    "continuing.]"
+    "\n\n[Stopped: run time ceiling reached. Reporting partial progress rather than continuing.]"
 )
 
-_STOPPED_NOTICE = (
-    "\n\n[Stopped by user; no further desktop actions were taken after the stop.]"
-)
+_STOPPED_NOTICE = "\n\n[Stopped by user; no further desktop actions were taken after the stop.]"
 _STATUS_WORKING = "[working] "
 _STATUS_WAITING = "[waiting for the model…]"
 
@@ -143,17 +140,13 @@ async def sse_agent_stream(
                             # Break (not return) so finalization still runs.
                             if run is not None and run.cancelled:
                                 status = "cancelled"
-                                yield _sse(
-                                    _content_chunk(completion_id, model_id, _STOPPED_NOTICE)
-                                )
+                                yield _sse(_content_chunk(completion_id, model_id, _STOPPED_NOTICE))
                                 break
                             if status_events_enabled and waiting_emitted is False:
                                 elapsed = (time.monotonic_ns() - quiet_since_ns) / 1e9
                                 if elapsed >= status_quiet_seconds:
                                     yield _sse(
-                                        _content_chunk(
-                                            completion_id, model_id, _STATUS_WAITING
-                                        )
+                                        _content_chunk(completion_id, model_id, _STATUS_WAITING)
                                     )
                                     waiting_emitted = True
                             payload = _base_chunk(completion_id, model_id)
@@ -191,14 +184,12 @@ async def sse_agent_stream(
             if run_store is not None and run_id:
                 await run_store.finish(
                     run_id,
-                    "completed" if status == "ok" else (
-                        "cancelled" if status == "cancelled" else "failed"
-                    ),
+                    "completed"
+                    if status == "ok"
+                    else ("cancelled" if status == "cancelled" else "failed"),
                 )
             if timeline is not None:
-                timeline.mark_terminal(
-                    metadata={"status": status, "emitted_any": emitted_any}
-                )
+                timeline.mark_terminal(metadata={"status": status, "emitted_any": emitted_any})
             if ledger is not None:
                 totals = ledger.snapshot()
                 logger.info(
