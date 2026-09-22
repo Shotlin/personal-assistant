@@ -575,3 +575,26 @@ git commit -m "docs: verify Sani main window on macOS"
 **Type consistency:** `LogicalWorkArea`, `NormalWindowBounds`, `SavedMainWindow`, and `ResolvedRestore` originate in Task 1; Task 3 persistence stores those normal values; Task 4 consumes them before native restoration. `mainReady` is introduced in Task 5 and registered in Task 4’s native command surface.
 
 **Review Focus coverage:** External-monitor fallback and stale geometry are tested in Task 1; all-edge Dock work areas are tested in Task 2; maximization preserves normal bounds in Task 3; hide/reopen behavior is implemented in Task 4 and checked manually in Task 6.
+
+## Completion Record — 2026-09-22
+
+Automated checks passed: `npm run build`, `cargo test` (30 tests), `cargo
+check`, the selected Python regression suite (22 tests), and `npm run tauri --
+build`. The manually tested release was
+`sani/src-tauri/target/release/bundle/macos/Sani.app`; its executable path was
+verified before testing.
+
+On the built-in Liquid Retina display, acceptance confirmed the normal main
+window, native titlebar/traffic lights, Dock presence, normal zoom (not
+exclusive fullscreen), resize/move, saved normal bounds, persisted maximized
+intent, unmaximize returning to saved normal bounds, quit/relaunch, and
+close-to-hide with the Sani process still alive. The renderer loaded from
+`tauri://localhost/app.html`; no duplicate main window was observed on
+reactivation.
+
+Not physically tested: Dock-left/right (the user requested no Dock setting
+changes; focused `NSScreen.visibleFrame` unit tests cover those conversions),
+external display (none connected; geometry tests cover fallback), sleep/wake,
+literal Dock/Spotlight invocation, and a visual global-shortcut result (the
+available automation surface could not demonstrate it; no source regression
+was inferred).
