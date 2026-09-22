@@ -44,6 +44,7 @@ fn main() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(hotkey::HotkeyState::default())
         .manage(sani_core::SaniCoreState::default())
+        .manage(windows::OverlayPreviewState::default())
         .setup(|app| {
             let handle = app.handle().clone();
             init_logging(log_dir(&handle));
@@ -157,6 +158,11 @@ fn main() {
             mic_permission_state,
             request_mic_permission,
             open_mic_settings,
+            windows::overlay_editor_state,
+            windows::preview_overlay_layout,
+            windows::save_overlay_layout,
+            windows::cancel_overlay_preview,
+            windows::reset_overlay_draft,
             sani_core::core_start,
             sani_core::core_stop,
             sani_core::core_agents,
@@ -185,6 +191,12 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building Sani")
         .run(|app_handle, event| {
+            // Quitting ends any layout preview: a provisional draft is
+            // process-local, so it must never outlive the process or leave the
+            // overlays sitting somewhere that was never saved.
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                windows::cancel_preview(app_handle);
+            }
             // RC-01: opening Sani again while it already runs (Finder/Dock)
             // must reveal the hidden overlays (or the setup window, while
             // onboarding is incomplete) instead of doing nothing.

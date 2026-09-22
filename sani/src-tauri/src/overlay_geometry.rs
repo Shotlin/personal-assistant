@@ -133,6 +133,35 @@ pub fn display_rect(area: &LogicalWorkArea, rect: LogicalRect) -> LogicalRect {
     }
 }
 
+/// Normalize a draft for persistence: supported size limits applied, unusable
+/// frames replaced by defaults. Work-area clamping is deliberately *not* baked
+/// in — a 520-point panel must stay 520 points when the user later moves to a
+/// larger display.
+pub fn committable_layout(layout: &OverlayLayout) -> OverlayLayout {
+    OverlayLayout {
+        display_affinity: layout.display_affinity.trim().to_string(),
+        pill: committable_frame(Overlay::Pill, &layout.pill),
+        panel: committable_frame(Overlay::Panel, &layout.panel),
+    }
+}
+
+fn committable_frame(overlay: Overlay, frame: &OverlayFrame) -> OverlayFrame {
+    if !is_placeable(overlay, frame) {
+        return overlay.default_frame();
+    }
+    let (min_width, max_width, min_height, max_height) = overlay.limits();
+    OverlayFrame {
+        x_ratio: frame.x_ratio,
+        y_ratio: frame.y_ratio,
+        width: frame.width.clamp(min_width, max_width),
+        height: if overlay == Overlay::Pill {
+            PILL_HEIGHT
+        } else {
+            frame.height.clamp(min_height, max_height)
+        },
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Overlay {
     Pill,
@@ -581,5 +610,47 @@ mod tests {
         let resolved = resolve_overlay_layout(&layout, &areas, None);
 
         assert_eq!(resolved.pill.height, PILL_HEIGHT);
+    }
+
+    #[test]
+    fn committing_keeps_logical_size_but_enforces_supported_limits() {
+        let layout = OverlayLayout {
+            display_affinity: "  built-in  ".into(),
+            pill: OverlayFrame {
+                width: 9000.0,
+                height: 12.0,
+                ..default_pill_frame()
+            },
+            panel: OverlayFrame {
+                width: 520.0,
+                height: 9000.0,
+                ..default_panel_frame()
+            },
+        };
+
+        let committed = committable_layout(&layout);
+
+        assert_eq!(committed.display_affinity, "built-in");
+        assert_eq!(committed.pill.width, PILL_MAX_WIDTH);
+        assert_eq!(committed.pill.height, PILL_HEIGHT);
+        // 520 points stays 520 points: only the supported range is enforced,
+        // never the size of the display that happened to be attached.
+        assert_eq!(committed.panel.width, 520.0);
+        assert_eq!(committed.panel.height, PANEL_MAX_HEIGHT);
+    }
+
+    #[test]
+    fn committing_an_unusable_frame_stores_the_default() {
+        let layout = OverlayLayout {
+            panel: OverlayFrame {
+                x_ratio: f64::NAN,
+                ..default_panel_frame()
+            },
+            ..OverlayLayout::default()
+        };
+
+        let committed = committable_layout(&layout);
+
+        assert_eq!(committed.panel, default_panel_frame());
     }
 }
