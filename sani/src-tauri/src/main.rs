@@ -13,6 +13,7 @@ mod app_state;
 mod audio;
 mod history;
 mod hotkey;
+mod macos_work_area;
 mod onboarding;
 mod permissions;
 mod runtime;

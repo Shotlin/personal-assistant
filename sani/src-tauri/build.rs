@@ -10,6 +10,7 @@ fn main() {
             .file("native/mic_permission.m")
             .file("native/snapshot.m")
             .file("native/system_permissions.m")
+            .file("native/macos_work_area.m")
             .flag("-fobjc-arc")
             .compile("sani_native_bridges");
         println!("cargo:rustc-link-lib=framework=AVFoundation");
