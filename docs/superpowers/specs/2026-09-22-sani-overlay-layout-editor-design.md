@@ -32,20 +32,21 @@ Add an optional, backward-compatible `overlay_layout` setting:
 ```text
 OverlayLayoutSettings
   display_affinity: String
-  pill: OverlayFrame { x, y, width, height }
-  panel: OverlayFrame { x, y, width, height }
+  pill: PillFrame { x_ratio, y_ratio, width }
+  panel: PanelFrame { x_ratio, y_ratio, width, height }
 
-OverlayFrame fields are finite normalized fractions of the selected usable
-work area; x/y are top-left offsets and width/height are dimensions.
+`x_ratio` and `y_ratio` are finite normalized top-left positions in the
+selected usable work area. Width and height are logical Tauri/macOS points,
+never physical pixels. Pill height remains the supported fixed logical height;
+panel width and height are logical points.
 ```
 
-Normalized values, rather than physical pixels, are persisted. On every
-apply/show, native code resolves the affinity against current displays; it
-uses the primary MacBook display when the saved display is missing, then
-clamps before showing. Defaults reproduce the Phase 1 centered lower pill and
-right-side panel using current logical work-area dimensions. The pill retains
-its supported height and width range; the panel retains its supported width
-and height ranges.
+This deliberately mixes normalized position with logical size: positioning
+adapts to a changed work area, while a 520-point panel stays perceptually
+stable on a larger display and remains Retina-correct. On every apply/show,
+native code resolves affinity, then clamps logical dimensions to supported
+limits and the current visible work area. Defaults reproduce the Phase 1
+centered lower pill and right-side panel.
 
 ## Native Flow
 
@@ -61,11 +62,16 @@ reset_overlay_layout()
 
 Every mutation returns the native-resolved layout and display metadata. Invalid
 or non-finite input is rejected or safely clamped; raw IPC errors are never
-shown. Preview is process-local and never writes settings. Save atomically
-persists via the existing writer. Cancel restores the last committed layout;
-Reset previews defaults and requires explicit confirmation before persisting.
-If a preview display disappears, native code immediately re-resolves the
-committed/default layout against the primary visible work area.
+shown. Preview is process-local and never writes settings. Its session captures
+the committed layout plus exact prior pill/panel visibility; preview reveals
+real overlays only when necessary. Save atomically persists and applies the
+validated draft, then restores captured visibility unless the user explicitly
+opened an overlay outside preview. Cancel restores committed layout and exact
+captured visibility. Main-window close and app quit cancel any preview; no
+draft survives restart. Reset changes only the editor draft to defaults:
+Preview may show it, Save persists it, and Cancel discards it. If a preview
+display disappears, native code re-resolves committed/default layout against
+the primary visible work area.
 
 Existing `show_pill` and `show_panel` call this same resolver. Thus a hotkey,
 tray action, preview, scale change, Dock change, and relaunch all use one
@@ -88,19 +94,21 @@ clear but does not trigger voice, modify history, or add another overlay.
 
 ## Lifecycle and Errors
 
-The active display is the saved affinity when present, otherwise the display
-under the cursor, otherwise primary. Phase 2 does not require a display-picker
-UI. A missing display snapshot disables Preview/Save and retains the committed
-overlay positions. A malformed saved layout falls back to defaults. A failed
-preview application restores the committed layout. Main-window close, app
-quit, and Cancel must leave no provisional layout persisted.
+The active editor display resolves in this order: saved affinity when present,
+the display containing the Sani main window, the primary display, then the
+first available display. Cursor position is not an editor fallback; existing
+quick-overlay behavior may continue to use it. Phase 2 needs no display-picker
+UI. A missing display snapshot disables Preview/Save and retains committed
+placement. A malformed saved layout falls back to defaults. A failed preview
+application restores committed layout and captured visibility.
 
 ## Verification
 
-Rust tests cover defaults, normalization, invalid drafts, all-edge clamping,
-pill/panel limits, Retina conversion, resolution changes, missing-display
-fallback, and cancel restoration. Settings tests cover old settings, save, and
-reset. Renderer tests cover keyboard controls plus Preview/Save/Cancel/Reset.
+Rust tests cover defaults, mixed normalized-position/logical-size conversion,
+invalid drafts, all-edge clamping, pill/panel limits, Retina conversion,
+resolution changes, main-window display fallback, missing-display fallback,
+and cancel visibility restoration. Settings tests cover old settings, save,
+and reset. Renderer tests cover keyboard controls plus Preview/Save/Cancel/Reset.
 Manual macOS acceptance covers built-in preview/save/cancel/reset, Retina,
 main-window resize, relaunch, Dock edges only when the user allows setting
 changes, and external-display disconnect only when hardware is present.
