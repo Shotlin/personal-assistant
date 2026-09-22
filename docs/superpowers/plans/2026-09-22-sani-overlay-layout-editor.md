@@ -10,6 +10,17 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-22-sani-overlay-layout-editor-design.md`
 
+## Execution Record — 2026-09-23
+
+- [x] Task 1 — Pure mixed-unit overlay geometry (`95ba079`).
+- [x] Task 2 — Persisted overlay layout separate from main-window state (`bd02149`).
+- [x] Task 3 — Native real-overlay preview lifecycle and visibility restoration (`d98c299`).
+- [x] Task 4 — Typed bridge and accessible main-window layout editor (`517e41a`).
+- [x] Task 5 — Regression, packaged build, and verified behavior documentation (`084cdac`).
+
+Phase 2 is accepted complete. The unchecked step-level boxes below are the
+original execution recipe; this record is the authoritative completion status.
+
 ## Global Constraints
 
 - Persist `x_ratio`/`y_ratio` normalized to a usable work area; persist width/height in logical points; never persist physical pixels.
