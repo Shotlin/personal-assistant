@@ -18,6 +18,24 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
 
+use crate::window_geometry::NormalWindowBounds;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MainWindowSettings {
+    #[serde(default)]
+    pub display_id: String,
+    #[serde(default)]
+    pub x: f64,
+    #[serde(default)]
+    pub y: f64,
+    #[serde(default)]
+    pub width: f64,
+    #[serde(default)]
+    pub height: f64,
+    #[serde(default)]
+    pub maximized: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default = "default_hotkey")]
@@ -58,6 +76,11 @@ pub struct Settings {
     /// decides which ids are real.
     #[serde(default = "default_agent_mode")]
     pub agent_mode: String,
+    /// Normal main-window geometry and its independent maximized intent.
+    /// Coordinates are logical points relative to the persisted display's
+    /// usable work area; maximized state never overwrites these bounds.
+    #[serde(default)]
+    pub main_window: Option<MainWindowSettings>,
 }
 
 fn default_agent_mode() -> String {
@@ -96,6 +119,28 @@ pub fn stt_turn_end_ms(settings: &Settings) -> u32 {
         .and_then(|v| v.trim().parse::<u32>().ok())
         .unwrap_or(settings.stt_turn_end_ms);
     raw.clamp(600, 5000)
+}
+
+pub fn update_normal_main_window(
+    settings: &mut Settings,
+    display_id: String,
+    normal: NormalWindowBounds,
+) {
+    let state = settings
+        .main_window
+        .get_or_insert_with(MainWindowSettings::default);
+    state.display_id = display_id;
+    state.x = normal.x;
+    state.y = normal.y;
+    state.width = normal.width;
+    state.height = normal.height;
+}
+
+pub fn update_main_window_maximized(settings: &mut Settings, maximized: bool) {
+    settings
+        .main_window
+        .get_or_insert_with(MainWindowSettings::default)
+        .maximized = maximized;
 }
 
 impl Default for Settings {
@@ -294,4 +339,39 @@ pub fn stt_script_path(app: &tauri::AppHandle) -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::window_geometry::NormalWindowBounds;
+
+    #[test]
+    fn older_settings_without_main_window_load_normally() {
+        let settings: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+
+        assert!(settings.main_window.is_none());
+        assert_eq!(settings.theme, "dark");
+    }
+
+    #[test]
+    fn maximized_transition_keeps_last_normal_bounds() {
+        let mut settings = Settings::default();
+        update_normal_main_window(
+            &mut settings,
+            "built-in".into(),
+            NormalWindowBounds {
+                x: 100.0,
+                y: 80.0,
+                width: 1040.0,
+                height: 700.0,
+            },
+        );
+        update_main_window_maximized(&mut settings, true);
+
+        let saved = settings.main_window.unwrap();
+        assert_eq!(saved.width, 1040.0);
+        assert_eq!(saved.height, 700.0);
+        assert!(saved.maximized);
+    }
 }
