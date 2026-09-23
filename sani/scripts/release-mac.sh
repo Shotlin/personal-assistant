@@ -11,10 +11,16 @@ TRIPLE="$(rustc -vV | sed -n 's|host: ||p')"
 (cd "$HERE" && ./scripts/build-sidecar.sh && ./scripts/build-core.sh && ./scripts/build-cua-driver.sh && npm run build)
 STT="$HERE/src-tauri/binaries/sani-stt-$TRIPLE"
 CORE="$HERE/src-tauri/binaries/sani-core-runtime/sani-core"
-CUA="$HERE/src-tauri/binaries/cua-driver-$TRIPLE"
+# The driver ships as the vendor's app bundle, not a loose binary: its
+# Developer ID signature is the stable identity macOS records Sani's grant
+# against. The manifest digests the whole bundle, so a swapped helper is caught.
+CUA="$HERE/src-tauri/binaries/CuaDriver.app"
 "$STT" --list-models >/dev/null
 [ -x "$CORE" ] || { echo "error: packaged core missing" >&2; exit 1; }
-[ -x "$CUA" ] || { echo "error: packaged CUA driver missing" >&2; exit 1; }
+[ -x "$CUA/Contents/MacOS/cua-driver" ] || {
+  echo "error: packaged CUA driver bundle missing" >&2
+  exit 1
+}
 REVISION="$(git -C "$ROOT" rev-parse HEAD)"
 python3 - "$HERE/src-tauri/release-manifest.json" "$REVISION" "$TRIPLE" "$STT" "$CORE" "$CUA" <<'PY'
 import hashlib, json, pathlib, sys
