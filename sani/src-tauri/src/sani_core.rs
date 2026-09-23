@@ -142,6 +142,22 @@ impl SaniCoreConfig {
         ));
         env.push(("APP_ENV".to_string(), "development".to_string()));
         env.push(("LOG_LEVEL".to_string(), "INFO".to_string()));
+        // The embedded CUA daemon inherits the GUI host's TCC identity, while
+        // the frozen Python core is a separate executable.  Pass the native
+        // host's read-only preflight so the core does not mistake its own
+        // child identity for the user's Sani grant.
+        env.push((
+            "SANI_HOST_ACCESSIBILITY_PERMISSION".to_string(),
+            crate::system_permissions::accessibility()
+                .as_str()
+                .to_string(),
+        ));
+        env.push((
+            "SANI_HOST_SCREEN_RECORDING_PERMISSION".to_string(),
+            crate::system_permissions::screen_recording()
+                .as_str()
+                .to_string(),
+        ));
 
         let artifacts = data_dir.join("artifacts");
         let _ = std::fs::create_dir_all(&artifacts);

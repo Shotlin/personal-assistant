@@ -81,6 +81,19 @@ def test_macos_permissions_return_renderable_states() -> None:
         assert permission.deep_link.startswith("x-apple.systempreferences:")
 
 
+def test_embedded_core_uses_its_sani_host_permission_results() -> None:
+    """The frozen core is a child, so TCC must be evaluated as the Sani host."""
+    settings = Settings(
+        sani_host_accessibility_permission="granted",
+        sani_host_screen_recording_permission="granted",
+    )
+
+    accessibility, screen = macos_permissions(settings)
+
+    assert accessibility.granted is True
+    assert screen.granted is True
+
+
 async def test_system_status_shape_has_no_secrets(tmp_path: Path) -> None:
     import asyncio
 

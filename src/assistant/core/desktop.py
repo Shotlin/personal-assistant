@@ -67,11 +67,34 @@ class PermissionState:
     deep_link: str
 
 
-def macos_permissions() -> tuple[PermissionState, PermissionState]:
-    """Read-only preflight of the two permissions computer control needs."""
+def _host_permission(value: str) -> bool | None:
+    """Normalize the native host's explicit TCC result, if it supplied one."""
+    if value == "granted":
+        return True
+    if value in {"denied", "not_determined", "restricted"}:
+        return False
+    return None
+
+
+def macos_permissions(settings: Settings | None = None) -> tuple[PermissionState, PermissionState]:
+    """Read-only preflight of the two permissions computer control needs.
+
+    Embedded CUA inherits the GUI application's TCC identity.  Calling the
+    framework APIs from the frozen ``sani-core`` child instead reports the
+    child executable's separate identity, which can be denied while Sani is
+    correctly enabled in System Settings.  Prefer the explicit native-host
+    results when present; standalone and development cores retain their own
+    read-only preflight.
+    """
+    host_accessibility = _host_permission(
+        settings.sani_host_accessibility_permission if settings else "unknown"
+    )
+    host_screen = _host_permission(
+        settings.sani_host_screen_recording_permission if settings else "unknown"
+    )
     accessibility = PermissionState(
         name="accessibility",
-        granted=_ax_is_process_trusted(),
+        granted=host_accessibility if host_accessibility is not None else _ax_is_process_trusted(),
         guidance=(
             "Grant Sani Accessibility in System Settings > Privacy & Security "
             "> Accessibility, then restart Sani."
@@ -80,7 +103,7 @@ def macos_permissions() -> tuple[PermissionState, PermissionState]:
     )
     screen = PermissionState(
         name="screen_recording",
-        granted=_screen_capture_preflight(),
+        granted=host_screen if host_screen is not None else _screen_capture_preflight(),
         guidance=(
             "Grant Sani Screen Recording in System Settings > Privacy & "
             "Security > Screen Recording, then restart Sani."
@@ -133,7 +156,10 @@ async def probe_driver(settings: Settings) -> DriverStatus:
         return DriverStatus(
             found=True,
             bounded_ok=True,
-            detail="Sani embedded bounded CuaDriver is listening; check the live permission results below",
+            detail=(
+                "Sani embedded bounded CuaDriver is listening; "
+                "check the live permission results below"
+            ),
         )
     executable = shutil.which(settings.cua_command)
     if executable is None:
@@ -168,7 +194,7 @@ async def probe_driver(settings: Settings) -> DriverStatus:
 
 async def system_status(settings: Settings) -> dict[str, Any]:
     """One status payload for the desktop UI (subsystem states, no secrets)."""
-    accessibility, screen = macos_permissions()
+    accessibility, screen = macos_permissions(settings)
     driver = await probe_driver(settings)
     return {
         "driver": {

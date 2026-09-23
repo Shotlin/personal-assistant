@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     cua_capability_manifest_path: str = ""
     cua_existing_profile_grant: bool = False
     cua_artifact_dir: str = "var/artifacts"
+    # The packaged sani-core process is not the macOS GUI host.  The native
+    # Sani app probes the TCC grants made to *its* identity and passes those
+    # read-only results to its embedded child at launch.
+    sani_host_accessibility_permission: str = "unknown"
+    sani_host_screen_recording_permission: str = "unknown"
 
     # Open WebUI integration
 
