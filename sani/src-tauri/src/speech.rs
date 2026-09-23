@@ -9,8 +9,8 @@ use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
 use std::path::{Component, Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -298,17 +298,19 @@ pub fn use_voice_model(app: &AppHandle, model: &str) -> Result<VoiceModelDescrip
     if let Some(old) = replaced {
         old.stop();
     }
-    let _ = app.emit("settings://changed", crate::onboarding::get_full_settings(app.clone()));
+    let _ = app.emit(
+        "settings://changed",
+        crate::onboarding::get_full_settings(app.clone()),
+    );
     known_voice_model(app, model)
 }
 
 fn owned_cache_model_path(root: &Path, model: &str) -> Result<PathBuf, String> {
     let mut components = Path::new(model).components();
     match (components.next(), components.next()) {
-        (Some(Component::Normal(_)), None) => Ok(root
-            .join("download.moonshine.ai")
-            .join("model")
-            .join(model)),
+        (Some(Component::Normal(_)), None) => {
+            Ok(root.join("download.moonshine.ai").join("model").join(model))
+        }
         _ => Err("That model does not name an owned voice cache directory.".into()),
     }
 }
@@ -526,7 +528,10 @@ mod tests {
 
     #[test]
     fn rejects_a_catalog_whose_default_is_not_supported() {
-        assert!(parse_voice_catalog(br#"{"models":["tiny-streaming-en"],"default":"missing"}"#).is_err());
+        assert!(
+            parse_voice_catalog(br#"{"models":["tiny-streaming-en"],"default":"missing"}"#)
+                .is_err()
+        );
     }
 
     #[test]

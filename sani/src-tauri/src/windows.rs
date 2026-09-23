@@ -457,10 +457,7 @@ fn area_containing<'a>(
 /// The display holding the Sani main window: the editor's first fallback when a
 /// saved display affinity is gone. The cursor is deliberately not a fallback.
 fn main_window_display(app: &AppHandle, areas: &[DisplayArea]) -> Option<String> {
-    let position = app
-        .get_webview_window(MAIN_LABEL)?
-        .outer_position()
-        .ok()?;
+    let position = app.get_webview_window(MAIN_LABEL)?.outer_position().ok()?;
     area_containing(areas, position).map(|area| area.logical.id.clone())
 }
 
@@ -672,8 +669,11 @@ fn placement(app: &AppHandle, kind: OverlayKind, layout: &OverlayLayout) -> Opti
         return None;
     }
     let logical: Vec<_> = areas.iter().map(|area| area.logical.clone()).collect();
-    let resolved =
-        resolve_overlay_layout(layout, &logical, main_window_display(app, &areas).as_deref());
+    let resolved = resolve_overlay_layout(
+        layout,
+        &logical,
+        main_window_display(app, &areas).as_deref(),
+    );
     let area = areas
         .iter()
         .find(|area| area.logical.id == resolved.display.id)?;
@@ -733,10 +733,12 @@ impl OverlayPreviewState {
             // Visibility is captured once, when the preview starts, so a later
             // Preview of a second draft still restores the original state.
             Some(active) => active.provisional = draft,
-            None => *guard = Some(ActivePreview {
-                session: PreviewSession::new(committed, seen.pill, seen.panel),
-                provisional: draft,
-            }),
+            None => {
+                *guard = Some(ActivePreview {
+                    session: PreviewSession::new(committed, seen.pill, seen.panel),
+                    provisional: draft,
+                })
+            }
         }
     }
 
@@ -1080,14 +1082,20 @@ mod tests {
     fn cancel_restores_committed_layout_and_prior_visibility() {
         let session = PreviewSession::new(committed(), false, true);
 
-        assert_eq!(session.cancel(), RestoreAction::new(committed(), false, true));
+        assert_eq!(
+            session.cancel(),
+            RestoreAction::new(committed(), false, true)
+        );
     }
 
     #[test]
     fn save_commits_the_new_layout_and_restores_prior_visibility() {
         let session = PreviewSession::new(committed(), true, false);
 
-        assert_eq!(session.save(moved()), RestoreAction::new(moved(), true, false));
+        assert_eq!(
+            session.save(moved()),
+            RestoreAction::new(moved(), true, false)
+        );
     }
 
     #[test]
@@ -1095,7 +1103,13 @@ mod tests {
         let mut session = PreviewSession::new(committed(), false, false);
         session.note_open_outside_preview(OverlayKind::Pill);
 
-        assert_eq!(session.cancel(), RestoreAction::new(committed(), true, false));
-        assert_eq!(session.save(moved()), RestoreAction::new(moved(), true, false));
+        assert_eq!(
+            session.cancel(),
+            RestoreAction::new(committed(), true, false)
+        );
+        assert_eq!(
+            session.save(moved()),
+            RestoreAction::new(moved(), true, false)
+        );
     }
 }

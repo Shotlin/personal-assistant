@@ -425,11 +425,8 @@ mod tests {
         let without_main = resolve_overlay_layout(&layout, &areas, None);
         assert_eq!(without_main.display.id, "second");
 
-        let no_primary = resolve_overlay_layout(
-            &layout,
-            &[area("only", 1512.0, 945.0, false)],
-            Some("gone"),
-        );
+        let no_primary =
+            resolve_overlay_layout(&layout, &[area("only", 1512.0, 945.0, false)], Some("gone"));
         assert_eq!(no_primary.display.id, "only");
     }
 

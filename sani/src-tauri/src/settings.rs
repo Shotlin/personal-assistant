@@ -18,7 +18,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
 
-use crate::overlay_geometry::{default_panel_frame, default_pill_frame, OverlayFrame, OverlayLayout};
+use crate::overlay_geometry::{
+    default_panel_frame, default_pill_frame, OverlayFrame, OverlayLayout,
+};
 use crate::window_geometry::NormalWindowBounds;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -157,7 +159,9 @@ fn default_theme() -> String {
 fn default_stt_model() -> String {
     "small-streaming-en".into()
 }
-fn default_technical_retention_days() -> u32 { 30 }
+fn default_technical_retention_days() -> u32 {
+    30
+}
 fn default_stt_turn_end_ms() -> u32 {
     1400
 }

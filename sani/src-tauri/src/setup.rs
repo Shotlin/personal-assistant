@@ -598,10 +598,7 @@ pub(crate) fn voice_model_cached(model: &str) -> bool {
     let Some(root) = moonshine_cache_root() else {
         return false;
     };
-    let model_dir = root
-        .join("download.moonshine.ai")
-        .join("model")
-        .join(model);
+    let model_dir = root.join("download.moonshine.ai").join("model").join(model);
     if !model_dir.is_dir() {
         return false;
     }

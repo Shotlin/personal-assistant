@@ -47,7 +47,12 @@ pub struct ActivityRecord {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct TimingRecord { pub run_id: String, pub stage: String, pub elapsed_ms: i64, pub status: String }
+pub struct TimingRecord {
+    pub run_id: String,
+    pub stage: String,
+    pub elapsed_ms: i64,
+    pub status: String,
+}
 
 /// Provenance recorded alongside one stored message.
 #[derive(Clone, Default)]
@@ -284,21 +289,39 @@ impl History {
     pub fn activity(&self, conversation_id: &str) -> Result<Vec<ActivityRecord>, String> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare("SELECT sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status FROM run_activity WHERE conversation_id = ?1 ORDER BY sequence ASC").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![conversation_id], |row| Ok(ActivityRecord { sequence: row.get(0)?, conversation_id: row.get(1)?, run_id: row.get(2)?, agent_id: row.get(3)?, event_type: row.get(4)?, timestamp: row.get(5)?, label: row.get(6)?, status: row.get(7)? })).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        let rows = stmt
+            .query_map(params![conversation_id], |row| {
+                Ok(ActivityRecord {
+                    sequence: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    run_id: row.get(2)?,
+                    agent_id: row.get(3)?,
+                    event_type: row.get(4)?,
+                    timestamp: row.get(5)?,
+                    label: row.get(6)?,
+                    status: row.get(7)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     }
 
     /// Retention deliberately targets execution metadata only. Conversations
     /// and messages (the user's chat record) are never part of this query.
     pub fn prune_activity_before(&self, cutoff_ms: i64) -> Result<usize, String> {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM run_activity WHERE timestamp < ?1", params![cutoff_ms])
-            .map_err(|e| e.to_string())
+        conn.execute(
+            "DELETE FROM run_activity WHERE timestamp < ?1",
+            params![cutoff_ms],
+        )
+        .map_err(|e| e.to_string())
     }
 
     pub fn clear_activity(&self) -> Result<usize, String> {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM run_activity", []).map_err(|e| e.to_string())
+        conn.execute("DELETE FROM run_activity", [])
+            .map_err(|e| e.to_string())
     }
 
     pub fn append_timing(&self, record: &TimingRecord) -> Result<(), String> {
@@ -307,9 +330,20 @@ impl History {
     }
 
     pub fn recent_timing(&self) -> Result<Vec<TimingRecord>, String> {
-        let conn = self.conn.lock(); let mut stmt = conn.prepare("SELECT run_id, stage, elapsed_ms, status FROM run_timing ORDER BY rowid DESC LIMIT 100").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([], |row| Ok(TimingRecord { run_id: row.get(0)?, stage: row.get(1)?, elapsed_ms: row.get(2)?, status: row.get(3)? })).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare("SELECT run_id, stage, elapsed_ms, status FROM run_timing ORDER BY rowid DESC LIMIT 100").map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(TimingRecord {
+                    run_id: row.get(0)?,
+                    stage: row.get(1)?,
+                    elapsed_ms: row.get(2)?,
+                    status: row.get(3)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     }
 }
 

@@ -128,12 +128,24 @@ pub async fn stream_turn(
                     &event.agent_id,
                     &agent_name,
                 );
-                record_timing(&emitter, &stream.run_id, "run_start", started_at.elapsed().as_millis() as i64, "observed");
+                record_timing(
+                    &emitter,
+                    &stream.run_id,
+                    "run_start",
+                    started_at.elapsed().as_millis() as i64,
+                    "observed",
+                );
             }
             match event.kind.as_str() {
                 "agent.token" => {
                     if let Some(delta) = &event.token {
-                        record_timing(&emitter, &event.run_id, "first_token", started_at.elapsed().as_millis() as i64, "observed");
+                        record_timing(
+                            &emitter,
+                            &event.run_id,
+                            "first_token",
+                            started_at.elapsed().as_millis() as i64,
+                            "observed",
+                        );
                         stream.text.push_str(delta);
                         emit_chunk(&emitter, &message_id, "text", delta, &event.agent_id);
                     }
@@ -144,7 +156,13 @@ pub async fn stream_turn(
                         .clone()
                         .unwrap_or_else(|| "Working…".to_string());
                     emit_chunk(&emitter, &message_id, "status", &line, &event.agent_id);
-                    emit_activity(&emitter, &activity_conversation_id, &event.run_id, &event.agent_id, &line);
+                    emit_activity(
+                        &emitter,
+                        &activity_conversation_id,
+                        &event.run_id,
+                        &event.agent_id,
+                        &line,
+                    );
                 }
                 _ => {}
             }
@@ -193,13 +211,30 @@ pub async fn stream_turn(
         &agent_id,
         &agent_name,
     );
-    if !streamed.run_id.is_empty() { record_timing(&app, &streamed.run_id, "completion", started_at.elapsed().as_millis() as i64, status); }
+    if !streamed.run_id.is_empty() {
+        record_timing(
+            &app,
+            &streamed.run_id,
+            "completion",
+            started_at.elapsed().as_millis() as i64,
+            status,
+        );
+    }
 }
 
 fn record_timing(app: &AppHandle, run_id: &str, stage: &str, elapsed_ms: i64, status: &str) {
-    if run_id.is_empty() { return; }
-    let record = crate::history::TimingRecord { run_id: run_id.into(), stage: stage.into(), elapsed_ms, status: status.into() };
-    if let Err(error) = app_state::history(app).append_timing(&record) { log::warn!("[performance] could not persist timing: {error}"); }
+    if run_id.is_empty() {
+        return;
+    }
+    let record = crate::history::TimingRecord {
+        run_id: run_id.into(),
+        stage: stage.into(),
+        elapsed_ms,
+        status: status.into(),
+    };
+    if let Err(error) = app_state::history(app).append_timing(&record) {
+        log::warn!("[performance] could not persist timing: {error}");
+    }
 }
 
 fn emit_start(
@@ -232,7 +267,13 @@ fn emit_chunk(emitter: &AppHandle, message_id: &str, kind: &str, delta: &str, ag
     );
 }
 
-fn emit_activity(emitter: &AppHandle, conversation_id: &str, run_id: &str, agent_id: &str, label: &str) {
+fn emit_activity(
+    emitter: &AppHandle,
+    conversation_id: &str,
+    run_id: &str,
+    agent_id: &str,
+    label: &str,
+) {
     let sequence = next_sequence();
     let timestamp = app_state::now_ms();
     let record = crate::history::ActivityRecord {
@@ -348,13 +389,22 @@ mod tests {
 
     #[test]
     fn explicit_agent_modes_select_the_matching_registry_entry() {
-        assert_eq!(select_agent("velo", &roster()), Some(("velo".into(), "Velo".into())));
-        assert_eq!(select_agent("deep", &roster()), Some(("deep".into(), "Deep Agent".into())));
+        assert_eq!(
+            select_agent("velo", &roster()),
+            Some(("velo".into(), "Velo".into()))
+        );
+        assert_eq!(
+            select_agent("deep", &roster()),
+            Some(("deep".into(), "Deep Agent".into()))
+        );
     }
 
     #[test]
     fn legacy_auto_is_compatibility_selection_not_a_new_agent() {
-        assert_eq!(select_agent("auto", &roster()), Some(("deep".into(), "Deep Agent".into())));
+        assert_eq!(
+            select_agent("auto", &roster()),
+            Some(("deep".into(), "Deep Agent".into()))
+        );
     }
 
     #[test]

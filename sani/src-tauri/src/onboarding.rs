@@ -315,10 +315,18 @@ fn validate_ai_patch(patch: &AiConfigPatch) -> Result<(), String> {
             return Err("Velo provider must be OpenRouter or TypeSafe".into());
         }
     }
-    if patch.reasoning_model.as_ref().is_some_and(|m| m.trim().is_empty()) {
+    if patch
+        .reasoning_model
+        .as_ref()
+        .is_some_and(|m| m.trim().is_empty())
+    {
         return Err("Deep Agent model ID cannot be empty".into());
     }
-    if patch.velo_model.as_ref().is_some_and(|m| m.trim().is_empty()) {
+    if patch
+        .velo_model
+        .as_ref()
+        .is_some_and(|m| m.trim().is_empty())
+    {
         return Err("Velo model ID cannot be empty".into());
     }
     Ok(())
@@ -340,10 +348,18 @@ pub async fn apply_ai_settings(
     {
         let settings_arc = app_state::settings(&app);
         let mut s = settings_arc.write();
-        if let Some(v) = patch.reasoning_provider { s.reasoning_provider = v; }
-        if let Some(v) = patch.reasoning_model { s.reasoning_model = v; }
-        if let Some(v) = patch.velo_provider { s.velo_provider = v; }
-        if let Some(v) = patch.velo_model { s.velo_model = v; }
+        if let Some(v) = patch.reasoning_provider {
+            s.reasoning_provider = v;
+        }
+        if let Some(v) = patch.reasoning_model {
+            s.reasoning_model = v;
+        }
+        if let Some(v) = patch.velo_provider {
+            s.velo_provider = v;
+        }
+        if let Some(v) = patch.velo_model {
+            s.velo_model = v;
+        }
         settings::save(&app, &s)?;
     }
     set_apply_status(&app, ApplyStatus::Saved);
@@ -604,15 +620,35 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
     let runtime = sani_core::core_status(app.clone()).await;
     let runtime_ok = runtime.is_ok();
     let (status, message) = if restart_required {
-        ("restart_required", "Screen Recording was granted; restart Sani before computer control can use it.")
+        (
+            "restart_required",
+            "Screen Recording was granted; restart Sani before computer control can use it.",
+        )
     } else if !accessibility_state.is_granted() || !screen_recording_state.is_granted() {
-        ("permission_required", "Grant Accessibility and Screen Recording to enable computer control.")
+        (
+            "permission_required",
+            "Grant Accessibility and Screen Recording to enable computer control.",
+        )
     } else if !runtime_ok {
-        ("unavailable", "Sani’s computer-control runtime is unavailable. Try restarting Sani.")
+        (
+            "unavailable",
+            "Sani’s computer-control runtime is unavailable. Try restarting Sani.",
+        )
     } else {
         ("ready", "Computer control is ready.")
     };
-    ComputerControlSnapshot { status: status.into(), message: message.into(), accessibility, screen_recording, restart_required, runtime: if runtime_ok { "available".into() } else { "unavailable".into() } }
+    ComputerControlSnapshot {
+        status: status.into(),
+        message: message.into(),
+        accessibility,
+        screen_recording,
+        restart_required,
+        runtime: if runtime_ok {
+            "available".into()
+        } else {
+            "unavailable".into()
+        },
+    }
 }
 
 #[tauri::command]

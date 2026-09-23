@@ -424,7 +424,10 @@ fn install_voice_model(
 }
 
 #[tauri::command]
-fn use_voice_model(app: tauri::AppHandle, model: String) -> Result<speech::VoiceModelDescriptor, String> {
+fn use_voice_model(
+    app: tauri::AppHandle,
+    model: String,
+) -> Result<speech::VoiceModelDescriptor, String> {
     speech::use_voice_model(&app, &model)
 }
 
@@ -555,7 +558,8 @@ fn toggle_panel(app: tauri::AppHandle) {
 #[tauri::command]
 fn show_main_settings(app: tauri::AppHandle) -> Result<(), String> {
     windows::show_main(&app).map_err(|error| error.to_string())?;
-    app.emit("settings://open-full", ()).map_err(|error| error.to_string())
+    app.emit("settings://open-full", ())
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -580,11 +584,16 @@ fn get_run_activity(
 }
 
 #[tauri::command]
-fn recent_run_timing(app: tauri::AppHandle) -> Result<Vec<history::TimingRecord>, String> { app_state::history(&app).recent_timing() }
+fn recent_run_timing(app: tauri::AppHandle) -> Result<Vec<history::TimingRecord>, String> {
+    app_state::history(&app).recent_timing()
+}
 
 #[tauri::command]
 fn prune_run_activity(app: tauri::AppHandle, days: u32) -> Result<usize, String> {
-    let days = match days { 7 | 14 | 30 => days, _ => return Err("Choose 7, 14, or 30 days for technical retention.".into()) };
+    let days = match days {
+        7 | 14 | 30 => days,
+        _ => return Err("Choose 7, 14, or 30 days for technical retention.".into()),
+    };
     let cutoff = app_state::now_ms() - i64::from(days) * 24 * 60 * 60 * 1000;
     app_state::history(&app).prune_activity_before(cutoff)
 }
@@ -596,8 +605,16 @@ fn clear_run_activity(app: tauri::AppHandle) -> Result<usize, String> {
 
 #[tauri::command]
 fn set_technical_retention(app: tauri::AppHandle, days: u32) -> Result<usize, String> {
-    let days = match days { 7 | 14 | 30 => days, _ => return Err("Choose 7, 14, or 30 days for technical retention.".into()) };
-    { let settings_arc = app_state::settings(&app); let mut settings = settings_arc.write(); settings.technical_retention_days = days; settings::save(&app, &settings)?; }
+    let days = match days {
+        7 | 14 | 30 => days,
+        _ => return Err("Choose 7, 14, or 30 days for technical retention.".into()),
+    };
+    {
+        let settings_arc = app_state::settings(&app);
+        let mut settings = settings_arc.write();
+        settings.technical_retention_days = days;
+        settings::save(&app, &settings)?;
+    }
     let removed = prune_run_activity(app.clone(), days)?;
     onboarding::emit_settings_changed(&app);
     Ok(removed)
