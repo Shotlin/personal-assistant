@@ -17,12 +17,17 @@ OUT="$HERE/src-tauri/binaries"
 TRIPLE="$(rustc -vV | sed -n 's|host: ||p')"
 [ -n "$TRIPLE" ] || { echo "error: could not determine Rust target triple" >&2; exit 1; }
 
-rm -rf "$BUILD"
+rm -rf "$BUILD" "$OUT/sani-core-runtime"
 mkdir -p "$BUILD" "$OUT"
-PYTHONPATH="$ROOT/src" "$PY" -m PyInstaller --noconfirm --clean --onefile \
+# A macOS one-file executable extracts Python dylibs into /private/tmp.  Once
+# the outer Sani app is ad-hoc signed, hardened runtime rejects those extracted
+# dylibs as a different signing identity.  `--onedir` keeps the signed runtime
+# in Sani.app's Resources and also avoids PyInstaller's parent/child process
+# pair at launch.
+PYTHONPATH="$ROOT/src" "$PY" -m PyInstaller --noconfirm --clean --onedir \
   --name sani-core --distpath "$BUILD/dist" --workpath "$BUILD/work" --specpath "$BUILD" \
   --paths "$ROOT/src" --collect-submodules assistant \
   "$HERE/src-tauri/python/sani_core_entry.py"
-cp "$BUILD/dist/sani-core" "$OUT/sani-core-$TRIPLE"
-chmod +x "$OUT/sani-core-$TRIPLE"
-echo "Core sidecar ready: $OUT/sani-core-$TRIPLE"
+cp -R "$BUILD/dist/sani-core" "$OUT/sani-core-runtime"
+chmod +x "$OUT/sani-core-runtime/sani-core"
+echo "Core runtime ready: $OUT/sani-core-runtime/sani-core"

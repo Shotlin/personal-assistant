@@ -10,7 +10,7 @@ TRIPLE="$(rustc -vV | sed -n 's|host: ||p')"
 [ "$TRIPLE" = "aarch64-apple-darwin" ] || { echo "error: this MacBook release requires an arm64 build host" >&2; exit 1; }
 (cd "$HERE" && ./scripts/build-sidecar.sh && ./scripts/build-core.sh && ./scripts/build-cua-driver.sh && npm run build)
 STT="$HERE/src-tauri/binaries/sani-stt-$TRIPLE"
-CORE="$HERE/src-tauri/binaries/sani-core-$TRIPLE"
+CORE="$HERE/src-tauri/binaries/sani-core-runtime/sani-core"
 CUA="$HERE/src-tauri/binaries/cua-driver-$TRIPLE"
 "$STT" --list-models >/dev/null
 [ -x "$CORE" ] || { echo "error: packaged core missing" >&2; exit 1; }
@@ -19,7 +19,16 @@ REVISION="$(git -C "$ROOT" rev-parse HEAD)"
 python3 - "$HERE/src-tauri/release-manifest.json" "$REVISION" "$TRIPLE" "$STT" "$CORE" "$CUA" <<'PY'
 import hashlib, json, pathlib, sys
 out, revision, arch, stt, core, cua = sys.argv[1:]
-digest = lambda p: hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
+def digest(p):
+    path = pathlib.Path(p)
+    if path.is_file():
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    for child in sorted(path.rglob("*")):
+        if child.is_file():
+            digest.update(child.relative_to(path).as_posix().encode())
+            digest.update(child.read_bytes())
+    return digest.hexdigest()
 pathlib.Path(out).write_text(json.dumps({"source_revision": revision, "architecture": arch, "protocol": 1, "components": {"sani-stt": digest(stt), "sani-core": digest(core), "cua-driver": digest(cua)}}, indent=2) + "\n")
 PY
 (cd "$HERE" && npm run tauri -- build)

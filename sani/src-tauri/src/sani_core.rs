@@ -109,7 +109,7 @@ impl SaniCoreConfig {
     /// Build the launch configuration from live app state. Errors only when
     /// there is no runtime to launch at all.
     pub fn resolve(app: &AppHandle) -> Result<Self, String> {
-        let bundled_core = packaged_core();
+        let bundled_core = packaged_core(app);
         let is_bundled_core = bundled_core.is_some();
         let python = if bundled_core.is_none() && !running_from_bundle() {
             crate::setup::core_python()
@@ -259,8 +259,13 @@ pub(crate) fn running_from_bundle() -> bool {
     })
 }
 
-fn packaged_core() -> Option<PathBuf> {
-    packaged_external_bin("sani-core")
+fn packaged_core(app: &AppHandle) -> Option<PathBuf> {
+    // Frozen Python is a directory runtime on macOS so every dylib can be
+    // signed inside Sani.app.  Keep the older external-binary lookup as a
+    // development/upgrade fallback only.
+    crate::setup::resource_path(app, "sani-core-runtime/sani-core")
+        .filter(|path| path.is_file())
+        .or_else(|| packaged_external_bin("sani-core"))
 }
 
 fn packaged_cua_driver() -> Option<PathBuf> {
