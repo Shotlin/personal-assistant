@@ -606,11 +606,15 @@ pub struct ComputerControlSnapshot {
     pub message: String,
     pub accessibility: String,
     pub screen_recording: String,
+    /// The driver daemon's own grants. macOS evaluates them separately from
+    /// Sani's, so both must be granted for the pointer to move.
+    pub driver_accessibility: String,
+    pub driver_screen_recording: String,
     pub restart_required: bool,
     pub runtime: String,
 }
 
-fn driver_readiness(payload: &Value) -> &'static str {
+fn driver_readiness(payload: &Value, permissions: Option<(bool, bool)>) -> &'static str {
     let driver = payload.get("driver");
     if driver.and_then(|value| value.get("found")).and_then(Value::as_bool) != Some(true) {
         "missing"
@@ -620,6 +624,11 @@ fn driver_readiness(payload: &Value) -> &'static str {
         != Some(true)
     {
         "policy_invalid"
+    } else if permissions != Some((true, true)) {
+        // A live, policy-valid daemon that macOS will not let touch the pointer
+        // is not ready. An unanswered probe is treated the same way: Sani never
+        // reports readiness it could not verify.
+        "not_authorized"
     } else {
         "ready"
     }
@@ -637,10 +646,15 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
     // does not restart a conversation or alter any user setting.
     let driver_recovery = sani_core::recover_embedded_cua_driver(&app).await;
     let runtime = sani_core::core_status(app.clone()).await;
+    let permissions = sani_core::driver_permissions(&app);
     let driver = if driver_recovery.is_err() {
         "unavailable"
     } else {
-        runtime.as_ref().ok().map(driver_readiness).unwrap_or("unavailable")
+        runtime
+            .as_ref()
+            .ok()
+            .map(|payload| driver_readiness(payload, permissions))
+            .unwrap_or("unavailable")
     };
     let (status, message) = if restart_required {
         (
@@ -651,6 +665,11 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
         (
             "permission_required",
             "Grant Accessibility and Screen Recording to enable computer control.",
+        )
+    } else if driver == "not_authorized" {
+        (
+            "driver_permission_required",
+            "Sani is allowed, but macOS has not allowed CuaDriver — the separate process that actually moves the pointer. Enable CuaDriver under Accessibility and Screen Recording, then restart Sani.",
         )
     } else if driver == "missing" {
         (
@@ -675,8 +694,19 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
         message: message.into(),
         accessibility,
         screen_recording,
+        driver_accessibility: permission_label(permissions.map(|grants| grants.0)),
+        driver_screen_recording: permission_label(permissions.map(|grants| grants.1)),
         restart_required,
         runtime: driver.into(),
+    }
+}
+
+/// Never guesses: an unanswered probe is reported as unknown, not as granted.
+fn permission_label(granted: Option<bool>) -> String {
+    match granted {
+        Some(true) => "granted".to_string(),
+        Some(false) => "denied".to_string(),
+        None => "unknown".to_string(),
     }
 }
 
@@ -687,9 +717,29 @@ mod control_tests {
 
     #[test]
     fn transport_success_does_not_make_a_missing_driver_ready() {
-        assert_eq!(driver_readiness(&json!({"driver":{"found":false,"bounded_ok":false}})), "missing");
-        assert_eq!(driver_readiness(&json!({"driver":{"found":true,"bounded_ok":false}})), "policy_invalid");
-        assert_eq!(driver_readiness(&json!({"driver":{"found":true,"bounded_ok":true}})), "ready");
+        let authorized = Some((true, true));
+        assert_eq!(
+            driver_readiness(&json!({"driver":{"found":false,"bounded_ok":false}}), authorized),
+            "missing"
+        );
+        assert_eq!(
+            driver_readiness(&json!({"driver":{"found":true,"bounded_ok":false}}), authorized),
+            "policy_invalid"
+        );
+        assert_eq!(
+            driver_readiness(&json!({"driver":{"found":true,"bounded_ok":true}}), authorized),
+            "ready"
+        );
+    }
+
+    #[test]
+    fn a_live_bounded_driver_is_not_ready_without_its_own_grants() {
+        // Sani being granted says nothing about the process that posts events.
+        let live = json!({"driver":{"found":true,"bounded_ok":true}});
+        assert_eq!(driver_readiness(&live, Some((false, true))), "not_authorized");
+        assert_eq!(driver_readiness(&live, Some((true, false))), "not_authorized");
+        // An unanswered probe is never reported as ready either.
+        assert_eq!(driver_readiness(&live, None), "not_authorized");
     }
 }
 

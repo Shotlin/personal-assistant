@@ -98,26 +98,27 @@ pub struct SaniCoreConfig {
 
 /// A CUA daemon embedded in Sani's own macOS responsibility chain.
 ///
-/// The driver runs from Sani's bundled `CuaDriver.app`, launched through
-/// LaunchServices so macOS attributes Accessibility and Screen Recording to the
-/// vendor's stable Developer ID identity (`com.trycua.driver`).  Sani still owns
-/// the endpoint: every launch passes an explicit private `--socket`, so no
-/// global or standard-mode daemon is ever revived.
+/// The driver must be a **direct child** of Sani. In embedded mode macOS
+/// attributes Accessibility and Screen Recording through the host's
+/// responsibility chain — `check_permissions` reports the *host's* grants and
+/// states plainly that "no separate driver grant exists or is needed".
+/// Launching it through LaunchServices instead reparents it to launchd, which
+/// severs that chain and leaves an unattributable daemon, so `open` must not be
+/// used here.
 ///
-/// Launching the loose nested binary instead — the original design — could never
-/// work.  A nested executable has its own code identity, so the user's grant to
-/// Sani did not cover it, and the driver silently degraded input to background
-/// delivery while still reporting itself ready.
+/// Sani ships the vendor's `CuaDriver.app` (Developer ID signed) rather than a
+/// loose binary so the helper also carries the cursor-theme resource and a real
+/// bundle, but it is still spawned as a child, with `--socket` naming Sani's
+/// private endpoint so no global or standard-mode daemon is ever revived.
 #[derive(Clone)]
 struct EmbeddedCuaConfig {
-    bundle: PathBuf,
     command: PathBuf,
     socket: PathBuf,
     manifest: PathBuf,
 }
 
 struct EmbeddedCuaDriver {
-    command: PathBuf,
+    child: Child,
     socket: PathBuf,
 }
 
@@ -194,8 +195,7 @@ impl SaniCoreConfig {
             packaged_cua_driver(app),
             crate::setup::resource_path(app, "config/cua-capabilities.yaml"),
         ) {
-            (Some((bundle, command)), Some(manifest)) => Some(EmbeddedCuaConfig {
-                bundle,
+            (Some(command), Some(manifest)) => Some(EmbeddedCuaConfig {
                 command,
                 socket: data_dir.join("cua-driver.sock"),
                 manifest,
@@ -310,10 +310,36 @@ fn packaged_core(app: &AppHandle) -> Option<PathBuf> {
         .or_else(|| packaged_external_bin("sani-core"))
 }
 
-fn packaged_cua_driver(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
-    let bundle = crate::setup::resource_path(app, "CuaDriver.app")?;
-    let command = bundle.join("Contents/MacOS/cua-driver");
-    bundle.is_dir().then_some((bundle, command))
+/// The driver daemon's *own* macOS authorization, read over Sani's private
+/// socket.
+///
+/// This is not the same thing as Sani's permission state, and conflating the two
+/// was the bug: macOS attributes Accessibility and Screen Recording to each
+/// process's code identity, so a fully granted Sani still cannot make an
+/// ungranted driver move the pointer. `None` means the probe could not be
+/// answered, which must never be reported as ready.
+pub fn driver_permissions(app: &AppHandle) -> Option<(bool, bool)> {
+    let cua = SaniCoreConfig::resolve(app).ok()?.cua?;
+    let output = std::process::Command::new(&cua.command)
+        .args([
+            "call",
+            "check_permissions",
+            "{\"prompt\": false}",
+            "--socket",
+            cua.socket.to_string_lossy().as_ref(),
+        ])
+        .output()
+        .ok()?;
+    let value: Value = serde_json::from_slice(&output.stdout).ok()?;
+    Some((
+        value.get("accessibility")?.as_bool()?,
+        value.get("screen_recording")?.as_bool()?,
+    ))
+}
+
+fn packaged_cua_driver(app: &AppHandle) -> Option<PathBuf> {
+    let command = crate::setup::resource_path(app, "CuaDriver.app/Contents/MacOS/cua-driver")?;
+    command.is_file().then_some(command)
 }
 
 /// Resolve an architecture-qualified Tauri external binary beside Sani.
@@ -816,24 +842,17 @@ fn live_control(app: &AppHandle) -> Option<RunControl> {
 }
 
 async fn stop_embedded_cua_driver(driver: EmbeddedCuaDriver) {
-    // The driver is a LaunchServices process rather than our child, so it is
-    // stopped by name over the same private socket it was started with.
-    if let Err(err) = tokio::process::Command::new(&driver.command)
-        .args([
-            "stop",
-            "--socket",
-            driver.socket.to_string_lossy().as_ref(),
-        ])
-        .status()
-        .await
-    {
+    let socket = driver.socket.clone();
+    let mut child = driver.child;
+    if let Err(err) = child.kill().await {
         log::debug!("embedded CUA driver was already stopped: {err}");
     }
-    if let Err(err) = std::fs::remove_file(&driver.socket) {
+    let _ = child.wait().await;
+    if let Err(err) = std::fs::remove_file(&socket) {
         if err.kind() != std::io::ErrorKind::NotFound {
             log::warn!(
                 "could not remove stale CUA socket {}: {err}",
-                driver.socket.display()
+                socket.display()
             );
         }
     }
@@ -845,18 +864,6 @@ async fn spawn_embedded_cua_driver(
     // The socket is owned below Sani's data directory.  A previous crashed
     // child can leave this one exact endpoint behind; do not touch any global
     // Cua Driver socket or user-managed daemon.
-    //
-    // Ask politely first: the driver is a LaunchServices process now, so
-    // removing the socket file alone would orphan a live daemon that then holds
-    // a dead endpoint while a second one starts up.
-    let _ = tokio::process::Command::new(&config.command)
-        .args([
-            "stop",
-            "--socket",
-            config.socket.to_string_lossy().as_ref(),
-        ])
-        .status()
-        .await;
     if let Err(err) = std::fs::remove_file(&config.socket) {
         if err.kind() != std::io::ErrorKind::NotFound {
             return Err(format!(
@@ -865,18 +872,9 @@ async fn spawn_embedded_cua_driver(
             ));
         }
     }
-    // LaunchServices rather than a fork: this is what makes the driver's code
-    // identity the vendor's Developer ID bundle, and that bundle is the
-    // identity macOS records the user's Accessibility and Screen Recording
-    // grant against.  `--socket` keeps the endpoint private to this Sani, so no
-    // global or standard-mode daemon can be revived.
-    let opened = tokio::process::Command::new("open")
+    let mut command = tokio::process::Command::new(&config.command);
+    command
         .args([
-            "-n",
-            "-g",
-            "-a",
-            config.bundle.to_string_lossy().as_ref(),
-            "--args",
             "serve",
             "--embedded",
             "--socket",
@@ -887,34 +885,36 @@ async fn spawn_embedded_cua_driver(
             config.manifest.to_string_lossy().as_ref(),
             "--approve-capability-manifest",
         ])
+        // Embedded mode reports the *host's* TCC grants, which is only true
+        // while this process stays a child in Sani's responsibility chain.
+        .env("CUA_DRIVER_EMBEDDED", "1")
+        .env("CUA_DRIVER_HOST_BUNDLE_ID", "app.sani.local")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::inherit())
-        .status()
-        .await
-        .map_err(|err| {
-            format!(
-                "could not ask LaunchServices to start {}: {err}",
-                config.bundle.display()
-            )
-        })?;
-    if !opened.success() {
-        return Err(format!(
-            "LaunchServices refused to start {} (exit {})",
-            config.bundle.display(),
-            opened.code().unwrap_or_default()
-        ));
-    }
+        .kill_on_drop(true);
+    let mut child = command.spawn().map_err(|err| {
+        format!(
+            "could not start embedded CUA driver {}: {err}",
+            config.command.display()
+        )
+    })?;
     let deadline = tokio::time::Instant::now() + CUA_BOOT_TIMEOUT;
     loop {
         if embedded_driver_socket_ready(&config.socket).await {
             return Ok(EmbeddedCuaDriver {
-                command: config.command.clone(),
+                child,
                 socket: config.socket.clone(),
             });
         }
+        if let Some(status) = child.try_wait().map_err(|err| err.to_string())? {
+            return Err(format!(
+                "embedded CUA driver exited during startup: {status}"
+            ));
+        }
         if tokio::time::Instant::now() >= deadline {
-            let _ = std::fs::remove_file(&config.socket);
+            let _ = child.kill().await;
+            let _ = child.wait().await;
             return Err(format!(
                 "embedded CUA driver did not create its private socket within {CUA_BOOT_TIMEOUT:?}"
             ));
@@ -929,18 +929,18 @@ async fn ensure_embedded_cua_driver(
     app: &AppHandle,
     config: &EmbeddedCuaConfig,
 ) -> Result<(), String> {
-    let registered = {
+    let child_running = {
         let state = app.state::<SaniCoreState>();
-        let guard = state
+        let mut guard = state
             .cua_driver
             .lock()
             .map_err(|_| "embedded CUA driver state poisoned".to_string())?;
-        guard
-            .as_ref()
-            .is_some_and(|driver| driver.socket == config.socket)
+        guard.as_mut().is_some_and(|driver| {
+            driver.socket == config.socket && matches!(driver.child.try_wait(), Ok(None))
+        })
     };
-    let socket_ready = embedded_driver_socket_ready(&config.socket).await;
-    if !embedded_driver_needs_recovery(registered, socket_ready) {
+    let socket_ready = child_running && embedded_driver_socket_ready(&config.socket).await;
+    if !embedded_driver_needs_recovery(child_running, socket_ready) {
         return Ok(());
     }
     let stale = {
