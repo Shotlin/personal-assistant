@@ -451,7 +451,6 @@ pub fn on_partial(app: &AppHandle, text: String) {
 /// Log-only, by contract: `on_final` remains the single voice->agent handoff,
 /// so a `note` must never touch the state machine, the audio gate or `turn_gen`.
 pub fn on_stt_note(app: &AppHandle, ev: &crate::speech::SttEvent) {
-    let _ = app;
     match ev.reason.as_str() {
         "segment" => {
             log::info!(
@@ -490,6 +489,19 @@ pub fn on_stt_note(app: &AppHandle, ev: &crate::speech::SttEvent) {
             ev.chars
         ),
         "flush-empty" => log::info!("[turn] flush requested with nothing pending"),
+        "recording-limit" => {
+            // A long capture must never become an implicit submission. Stop
+            // accepting more audio and ask the renderer for an explicit
+            // Finish or Cancel decision while preserving the accumulated text.
+            if let Some(audio) = app.state::<SaniState>().audio.lock().as_ref() {
+                audio.gate.store(false, Ordering::Relaxed);
+            }
+            let _ = app.emit(
+                "sani://voice-limit",
+                "Recording paused. Finish & Send or Cancel this draft.",
+            );
+            log::warn!("[turn] recording limit reached; awaiting explicit user action");
+        }
         "unknown-cmd" => log::warn!(
             "[stt] sidecar received an unknown control command: {}",
             ev.message
