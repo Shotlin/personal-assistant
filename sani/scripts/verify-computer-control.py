@@ -162,7 +162,57 @@ def youtube_leg() -> int:
     return 0
 
 
+def watch(seconds: int = 90) -> int:
+    """Record the physical pointer and Chrome's window titles while Sani works.
+
+    Used for the Velo leg: the objective has to be issued *inside* the
+    installed Sani process, because a driver opened by this script would run
+    under this terminal's permissions rather than Sani's. So the agent's own
+    actions are verified here from outside, by what they leave behind.
+    """
+    print(f"watching for {seconds}s -- send your command to Sani's Velo agent now")
+    samples: list[tuple[float, tuple[float, float]]] = []
+    titles: dict[str, None] = {}
+    start = time.time()
+    while time.time() - start < seconds:
+        point = cursor()
+        samples.append((time.time() - start, point))
+        for app in call("list_apps", {}).get("apps", []):
+            if app.get("bundle_id") != CHROME:
+                continue
+            pid = app.get("pid")
+            if not isinstance(pid, int):
+                continue
+            for window in call("list_windows", {"pid": pid}).get("windows", []):
+                if window.get("is_on_screen") and window.get("title"):
+                    titles[str(window["title"])] = None
+        time.sleep(0.2)
+
+    travelled = max(
+        (distance(a[1], b[1]) for a, b in zip(samples, samples[1:])), default=0.0
+    )
+    total = sum(
+        distance(a[1], b[1]) for a, b in zip(samples, samples[1:])
+    )
+    print(f"pointer: {len(samples)} samples, largest single jump {travelled:.0f}pt, "
+          f"path length {total:.0f}pt")
+    print(f"Chrome window titles seen ({len(titles)}):")
+    for title in list(titles)[:12]:
+        print(f"   {title[:100]}")
+    if travelled < 100:
+        return fail("watch", "the pointer never made a large displacement -- no "
+                            "computer-control action was physically delivered")
+    print("PASS  the physical pointer was driven while Sani worked; titles above "
+          "show what Chrome opened")
+    return 0
+
+
 def main() -> int:
+    argv = sys.argv[1:]
+    for index, argument in enumerate(argv):
+        if argument == "--watch":
+            span = int(argv[index + 1]) if index + 1 < len(argv) else 90
+            return watch(span)
     sani = subprocess.run(["pgrep", "-f", "Sani.app/Contents/MacOS/sani$"],
                           capture_output=True, text=True).stdout.split()
     if not sani:
