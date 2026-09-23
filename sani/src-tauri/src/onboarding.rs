@@ -367,28 +367,47 @@ pub struct StoreResult {
     pub stored: bool,
     pub has_openrouter: bool,
     pub has_typesafe: bool,
+    pub runtime_status: ApplyStatus,
 }
 
 /// Store a provider key in the OS credential store. Empty clears it. The value
 /// is never returned or logged.
 #[tauri::command]
-pub fn store_provider_key(
+pub async fn store_provider_key(
     app: AppHandle,
     provider: String,
     key: String,
 ) -> Result<StoreResult, String> {
     let service = provider_service(&provider)?;
+    if crate::sani_core::is_run_live(&app) {
+        return Err("Finish the current task before changing AI settings.".into());
+    }
     let trimmed = key.trim();
     let stored = if trimmed.is_empty() {
         settings::secret_delete(service)
     } else {
         settings::secret_write(service, trimmed)
     };
-    let _ = app;
+    // A credential lives in the child environment only at spawn. Apply it
+    // through the exact AI transaction rather than pretending a Keychain write
+    // took effect in an already-running sidecar.
+    set_apply_status(&app, ApplyStatus::Saved);
+    emit_settings_changed(&app);
+    set_apply_status(&app, ApplyStatus::Applying);
+    emit_settings_changed(&app);
+    match crate::sani_core::reload_for_settings(app.clone()).await {
+        Ok(()) => set_apply_status(&app, ApplyStatus::Ready),
+        Err(error) => {
+            log::warn!("provider credential runtime failed to apply: {}", error);
+            set_apply_status(&app, ApplyStatus::FailedToApply);
+        }
+    }
+    emit_settings_changed(&app);
     Ok(StoreResult {
         stored,
         has_openrouter: settings::secret_read(OPENROUTER_KEY_SERVICE).is_some(),
         has_typesafe: settings::secret_read(TYPESAFE_KEY_SERVICE).is_some(),
+        runtime_status: apply_status(&app),
     })
 }
 
@@ -423,6 +442,33 @@ pub async fn validate_provider_key(provider: String, key: String) -> KeyStatus {
         "typesafe" => check_typesafe(&key).await,
         _ => KeyStatus::Invalid,
     }
+}
+
+/// Validate a Keychain credential without disclosing it. This is deliberately
+/// separate from candidate validation so the UI can say "stored" without ever
+/// receiving the stored secret back from native code.
+#[tauri::command]
+pub async fn validate_stored_provider_key(_app: AppHandle, provider: String) -> StoredKeyStatus {
+    let Ok(service) = provider_service(&provider) else {
+        return StoredKeyStatus::Invalid;
+    };
+    let Some(key) = settings::secret_read(service) else {
+        return StoredKeyStatus::Absent;
+    };
+    match validate_provider_key(provider, key).await {
+        KeyStatus::Connected { .. } => StoredKeyStatus::Connected,
+        KeyStatus::Invalid => StoredKeyStatus::Invalid,
+        KeyStatus::Offline => StoredKeyStatus::Offline,
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StoredKeyStatus {
+    Absent,
+    Connected,
+    Invalid,
+    Offline,
 }
 
 async fn check_openrouter(key: &str) -> KeyStatus {

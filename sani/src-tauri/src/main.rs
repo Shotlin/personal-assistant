@@ -183,6 +183,7 @@ fn main() {
             onboarding::save_ai_config,
             onboarding::store_provider_key,
             onboarding::validate_provider_key,
+            onboarding::validate_stored_provider_key,
             onboarding::list_openrouter_models,
             onboarding::permission_snapshot,
             onboarding::open_permission_settings,
