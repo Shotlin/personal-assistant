@@ -131,10 +131,7 @@ class VeloCuaAdapter:
         outcome: ToolOutcome | None = None
         if apps:
             frontmost = next((app for app in apps if _is_frontmost(app)), None)
-            # `list_apps` never populates a per-app `windows` list, so the
-            # fallback has to be "any running application" rather than "any
-            # application that owns a window".
-            app = frontmost or next((app for app in apps if _runnable(app)), None)
+            app = frontmost or _fallback_app(apps, self.allowed_apps)
             if app is not None:
                 foreground = _string_field(app, ("name", "localizedName")) or _string_field(
                     app, ("bundle_id",)
@@ -176,28 +173,7 @@ class VeloCuaAdapter:
         windows = data.get("windows")
         if not isinstance(windows, list):
             return None
-        records = [w for w in windows if isinstance(w, dict)]
-
-        def area(window: dict[str, Any]) -> float:
-            bounds = window.get("bounds")
-            if not isinstance(bounds, dict):
-                return 0.0
-            try:
-                return float(bounds.get("width", 0)) * float(bounds.get("height", 0))
-            except (TypeError, ValueError):
-                return 0.0
-
-        # A window the user can actually see is the only one worth acting on.
-        on_screen = [w for w in records if w.get("is_on_screen")]
-        ranked = on_screen or records
-        if not ranked:
-            return None
-        best = max(ranked, key=area)
-        for key in ("window_id", "id"):
-            value = best.get(key)
-            if isinstance(value, int):
-                return value
-        return None
+        return _pick_window_id(windows)
 
     def _observation_from_window_state(
         self, outcome: ToolOutcome | None, foreground: str
@@ -415,6 +391,58 @@ def _runnable(app: dict[str, Any]) -> bool:
     if "running" in app:
         return bool(app.get("running"))
     return True
+
+
+def _fallback_app(
+    apps: list[dict[str, Any]], allowed_apps: dict[str, str]
+) -> dict[str, Any] | None:
+    """Pick an observation target when nothing reports itself frontmost.
+
+    No application is flagged active for stretches of a normal session, so
+    this is the common path rather than a rare one. Choosing the first running
+    entry in driver order lands on whatever happens to be listed -- routinely a
+    browser Sani is not allowed to drive -- so the allowlist narrows the choice
+    and recency decides within it.
+    """
+    runnable = [app for app in apps if _runnable(app)]
+    if not runnable:
+        return None
+    if allowed_apps:
+        permitted = [app for app in runnable if app.get("bundle_id") in allowed_apps]
+        if permitted:
+            # `last_used` is an ISO-8601 UTC string, which orders as text.
+            return max(permitted, key=lambda app: str(app.get("last_used") or ""))
+    return runnable[0]
+
+
+def _pick_window_id(windows: list[Any]) -> int | None:
+    """Choose the window to observe from a real ``list_windows`` payload.
+
+    A driver reports a dozen windows per application -- off-Space, minimized
+    and 1x1 placeholder surfaces alongside the one the user can see. Only a
+    visible window can be aimed at, so on-screen windows win outright and the
+    largest of them is the one worth reading.
+    """
+    records = [window for window in windows if isinstance(window, dict)]
+
+    def area(window: dict[str, Any]) -> float:
+        bounds = window.get("bounds")
+        if not isinstance(bounds, dict):
+            return 0.0
+        try:
+            return float(bounds.get("width", 0)) * float(bounds.get("height", 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    ranked = [window for window in records if window.get("is_on_screen")] or records
+    if not ranked:
+        return None
+    best = max(ranked, key=area)
+    for key in ("window_id", "id"):
+        value = best.get(key)
+        if isinstance(value, int):
+            return value
+    return None
 
 
 def _first_window_id(app: dict[str, Any]) -> int | None:

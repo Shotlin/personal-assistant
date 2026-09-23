@@ -452,3 +452,66 @@ async def test_observation_survives_an_app_with_no_windows(cua_tools) -> None:
 
     assert "window_id" not in cua_tools["get_window_state"].calls[-1]
     assert result.targets == ()
+
+
+#: Trimmed from a real `list_windows` response for a running Chrome: ten
+#: windows, one visible, the rest off-screen or 1x1 placeholders. Recorded
+#: verbatim from the packaged driver so the selection logic is tested against
+#: the payload it actually has to survive.
+CAPTURED_WINDOWS = [
+    {"window_id": 1971, "is_on_screen": False, "title": "",
+     "bounds": {"x": 99.0, "y": 58.0, "width": 1254.0, "height": 138.0}},
+    {"window_id": 1970, "is_on_screen": False, "title": "",
+     "bounds": {"x": 99.0, "y": 58.0, "width": 1263.0, "height": 138.0}},
+    {"window_id": 1969, "is_on_screen": True, "title": "",
+     "bounds": {"x": 0.0, "y": 25.0, "width": 1470.0, "height": 849.0}},
+    {"window_id": 1590, "is_on_screen": False, "title": "",
+     "bounds": {"x": 0.0, "y": 25.0, "width": 495.0, "height": 98.0}},
+    {"window_id": 1973, "is_on_screen": False, "title": "",
+     "bounds": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0}},
+    {"window_id": 1598, "is_on_screen": False, "title": "",
+     "bounds": {"x": 0.0, "y": 0.0, "width": 64.0, "height": 64.0}},
+    "not-a-dict",
+]
+
+
+def test_visible_window_wins_over_larger_offscreen_placeholders() -> None:
+    from assistant.velo.cua_adapter import _pick_window_id
+
+    assert _pick_window_id(CAPTURED_WINDOWS) == 1969
+
+
+def test_window_selection_falls_back_and_survives_junk() -> None:
+    from assistant.velo.cua_adapter import _pick_window_id
+
+    assert _pick_window_id([]) is None
+    assert _pick_window_id(["nope", 7]) is None
+    # Nothing on screen: the biggest window is still the best available guess.
+    offscreen = [w for w in CAPTURED_WINDOWS if isinstance(w, dict) and not w["is_on_screen"]]
+    assert _pick_window_id(offscreen) == 1970
+    # A window record with no usable id must not raise.
+    assert _pick_window_id([{"bounds": {"width": 10, "height": 10}}]) is None
+
+
+def test_fallback_target_is_allowlisted_and_recent_not_just_first(cua_tools) -> None:
+    """Nothing is frontmost for long stretches, so the fallback is the norm.
+
+    Driver order puts a disallowed browser first; the allowlist and then
+    recency have to decide.
+    """
+    from assistant.velo.cua_adapter import _fallback_app
+
+    apps = [
+        {"pid": 532, "bundle_id": "com.apple.Safari", "name": "Safari",
+         "running": True, "active": False, "last_used": "2026-09-23T20:00:00Z"},
+        {"pid": 4242, "bundle_id": "com.google.Chrome", "name": "Google Chrome",
+         "running": True, "active": False, "last_used": "2026-09-23T19:00:00Z"},
+        {"pid": 100, "bundle_id": "com.apple.Terminal", "name": "Terminal",
+         "running": True, "active": False, "last_used": "2026-09-23T21:00:00Z"},
+    ]
+    allowed = {"com.google.Chrome": "Chrome", "com.apple.Terminal": "Terminal"}
+    chosen = _fallback_app(apps, allowed)
+    assert chosen is not None and chosen["bundle_id"] == "com.apple.Terminal"
+    # With no allowlist configured, a running app is still returned.
+    assert _fallback_app(apps, {})["bundle_id"] == "com.apple.Safari"
+    assert _fallback_app([], allowed) is None
