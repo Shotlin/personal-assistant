@@ -4,11 +4,17 @@ import {
   getFullSettings,
   listMics,
   coreAgents,
+  installVoiceModel,
   onSettingsChanged,
+  onVoiceModelProgress,
+  removeVoiceModel,
   saveSettings,
   setAgentMode,
   storeProviderKey,
+  useVoiceModel,
+  voiceModels,
   type FullSettingsSnapshot,
+  type VoiceModelDescriptor,
 } from "../../lib/tauri";
 
 interface SettingsContextValue {
@@ -16,12 +22,17 @@ interface SettingsContextValue {
   microphones: string[];
   agents: import("../../lib/tauri").AgentDescriptor[];
   agentsAvailable: boolean;
+  voiceModels: VoiceModelDescriptor[];
+  voiceProgress: Record<string, number>;
   error: string;
   refresh: () => Promise<void>;
   saveGeneral: (patch: Parameters<typeof saveSettings>[0]) => Promise<void>;
   saveAi: (patch: Parameters<typeof applyAiSettings>[0]) => Promise<void>;
   saveProviderKey: (provider: "openrouter" | "typesafe", candidate: string) => Promise<void>;
   selectAgent: (agentId: string) => Promise<void>;
+  installVoice: (model: string) => Promise<void>;
+  useVoice: (model: string) => Promise<void>;
+  removeVoice: (model: string) => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -36,21 +47,26 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [microphones, setMicrophones] = useState<string[]>([]);
   const [agents, setAgents] = useState<import("../../lib/tauri").AgentDescriptor[]>([]);
   const [agentsAvailable, setAgentsAvailable] = useState(false);
+  const [voiceModelList, setVoiceModelList] = useState<VoiceModelDescriptor[]>([]);
+  const [voiceProgress, setVoiceProgress] = useState<Record<string, number>>({});
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
-    const [next, mics, roster] = await Promise.all([getFullSettings(), listMics(), coreAgents().catch(() => null)]);
+    const [next, mics, roster, voices] = await Promise.all([getFullSettings(), listMics(), coreAgents().catch(() => null), voiceModels().catch(() => [])]);
     setSnapshot(next);
     setMicrophones(mics);
     setAgents(roster ?? []);
     setAgentsAvailable(roster !== null);
+    setVoiceModelList(voices);
   }, []);
 
   useEffect(() => {
     void refresh().catch((reason) => setError(String(reason)));
     let unlisten: (() => void) | undefined;
     void onSettingsChanged((next) => setSnapshot(next)).then((cleanup) => { unlisten = cleanup; });
-    return () => unlisten?.();
+    let progressCleanup: (() => void) | undefined;
+    void onVoiceModelProgress((update) => setVoiceProgress((current) => ({ ...current, [update.model]: update.progress }))).then((cleanup) => { progressCleanup = cleanup; });
+    return () => { unlisten?.(); progressCleanup?.(); };
   }, [refresh]);
 
   const mutate = useCallback(async (operation: () => Promise<unknown>) => {
@@ -70,6 +86,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     microphones,
     agents,
     agentsAvailable,
+    voiceModels: voiceModelList,
+    voiceProgress,
     error,
     refresh,
     saveGeneral: (patch) => mutate(() => saveSettings(patch)),
@@ -78,7 +96,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     // retains them in state or exposes them in the snapshot.
     saveProviderKey: (provider, candidate) => mutate(() => storeProviderKey(provider, candidate)),
     selectAgent: (agentId) => mutate(() => setAgentMode(agentId)),
-  }), [snapshot, microphones, agents, agentsAvailable, error, refresh, mutate]);
+    installVoice: (model) => mutate(() => installVoiceModel(model)),
+    useVoice: (model) => mutate(() => useVoiceModel(model)),
+    removeVoice: (model) => mutate(() => removeVoiceModel(model)),
+  }), [snapshot, microphones, agents, agentsAvailable, voiceModelList, voiceProgress, error, refresh, mutate]);
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }

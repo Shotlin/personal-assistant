@@ -145,6 +145,7 @@ fn main() {
             voice_models,
             install_voice_model,
             use_voice_model,
+            remove_voice_model,
             save_settings_cmd,
             set_agent_mode,
             list_mics,
@@ -419,6 +420,11 @@ fn install_voice_model(
 #[tauri::command]
 fn use_voice_model(app: tauri::AppHandle, model: String) -> Result<speech::VoiceModelDescriptor, String> {
     speech::use_voice_model(&app, &model)
+}
+
+#[tauri::command]
+fn remove_voice_model(app: tauri::AppHandle, model: String) -> Result<(), String> {
+    speech::remove_voice_model(&app, &model)
 }
 
 #[tauri::command]

@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -301,6 +302,42 @@ pub fn use_voice_model(app: &AppHandle, model: &str) -> Result<VoiceModelDescrip
     known_voice_model(app, model)
 }
 
+fn owned_cache_model_path(root: &Path, model: &str) -> Result<PathBuf, String> {
+    let mut components = Path::new(model).components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(_)), None) => Ok(root
+            .join("download.moonshine.ai")
+            .join("model")
+            .join(model)),
+        _ => Err("That model does not name an owned voice cache directory.".into()),
+    }
+}
+
+/// Delete only a completed, non-active model directory under Moonshine's owned
+/// cache root. Paths are derived from an already sidecar-validated model ID;
+/// symlinks are rejected rather than followed.
+pub fn remove_voice_model(app: &AppHandle, model: &str) -> Result<(), String> {
+    if voice_capture_active(app) {
+        return Err("Finish or cancel the current voice capture before removing a model.".into());
+    }
+    let descriptor = known_voice_model(app, model)?;
+    if descriptor.active {
+        return Err("Choose another voice model before removing the active model.".into());
+    }
+    let root = crate::setup::moonshine_cache_root()
+        .ok_or_else(|| "Sani could not locate its owned voice model cache.".to_string())?;
+    let path = owned_cache_model_path(&root, model)?;
+    let metadata = std::fs::symlink_metadata(&path)
+        .map_err(|_| "That voice model is not installed in Sani’s cache.".to_string())?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Sani will only remove a real directory in its owned voice cache.".into());
+    }
+    std::fs::remove_dir_all(&path)
+        .map_err(|_| "Sani could not remove that voice model cache.".to_string())?;
+    let _ = app.emit("sani://voice-model-removed", model);
+    Ok(())
+}
+
 /// Locate the voice engine for first-run setup *without* starting it. Returns a
 /// diagnostic describing what was found, or an error the setup UI can show.
 pub fn locate_for_setup(app: &AppHandle) -> Result<String, String> {
@@ -474,7 +511,7 @@ pub fn setup_hint(err: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_voice_catalog, voice_mutation_allowed};
+    use super::{owned_cache_model_path, parse_voice_catalog, voice_mutation_allowed};
     use crate::app_state::UiState;
 
     #[test]
@@ -499,5 +536,13 @@ mod tests {
         assert!(!voice_mutation_allowed(UiState::Finalizing));
         assert!(voice_mutation_allowed(UiState::Idle));
         assert!(voice_mutation_allowed(UiState::Working));
+    }
+
+    #[test]
+    fn owned_cache_path_rejects_path_traversal() {
+        let root = std::path::Path::new("/safe/cache");
+        assert!(owned_cache_model_path(root, "../other").is_err());
+        assert!(owned_cache_model_path(root, "/other").is_err());
+        assert!(owned_cache_model_path(root, "small-streaming-en").is_ok());
     }
 }

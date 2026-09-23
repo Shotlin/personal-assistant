@@ -242,6 +242,8 @@ export const installVoiceModel = (model: string) =>
   invoke<VoiceModelDescriptor>("install_voice_model", { model });
 export const useVoiceModel = (model: string) =>
   invoke<VoiceModelDescriptor>("use_voice_model", { model });
+export const removeVoiceModel = (model: string) =>
+  invoke<void>("remove_voice_model", { model });
 export const onVoiceModelProgress = (cb: (update: { model: string; progress: number }) => void) =>
   listen<{ model: string; progress: number }>("sani://voice-model-progress", (e) => cb(e.payload));
 export const getFullSettings = () => invoke<FullSettingsSnapshot>("get_full_settings");
