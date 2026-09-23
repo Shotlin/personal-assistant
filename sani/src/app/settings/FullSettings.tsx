@@ -6,9 +6,9 @@ import { clearRunActivity, computerControlSnapshot, setTechnicalRetention, type 
 const CATEGORIES = ["General", "AI & Models", "Voice", "Microphone", "Computer Control", "Appearance", "Shortcuts", "Startup", "Storage"] as const;
 type Category = typeof CATEGORIES[number];
 
-export default function FullSettings({ onOpenLayout }: { onOpenLayout: () => void }) {
+export default function FullSettings({ onOpenLayout, initialCategory = "General" }: { onOpenLayout: () => void; initialCategory?: Category }) {
   const { snapshot, microphones, voiceModels, voiceProgress, error, saveGeneral, saveAi, saveProviderKey, installVoice, useVoice, removeVoice } = useSettings();
-  const [category, setCategory] = useState<Category>("General");
+  const [category, setCategory] = useState<Category>(initialCategory);
   const [voiceBusy, setVoiceBusy] = useState("");
   const [openRouterCandidate, setOpenRouterCandidate] = useState("");
   const [typeSafeCandidate, setTypeSafeCandidate] = useState("");
@@ -16,6 +16,7 @@ export default function FullSettings({ onOpenLayout }: { onOpenLayout: () => voi
   const [control, setControl] = useState<ComputerControlSnapshot | null>(null);
   const refreshControl = () => void computerControlSnapshot().then(setControl).catch(() => setControl(null));
   useEffect(() => { refreshControl(); }, []);
+  useEffect(() => { setCategory(initialCategory); }, [initialCategory]);
   if (!snapshot) return <section className="full-settings"><p>Loading settings…</p></section>;
   const keyEditor = (provider: "openrouter" | "typesafe", value: string, setValue: (v: string) => void, label: string) => (
     <div className="settings-card">
