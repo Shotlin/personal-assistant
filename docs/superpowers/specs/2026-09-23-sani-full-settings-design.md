@@ -49,11 +49,11 @@ The main Settings route has a left category list and one content pane:
 - Storage: local history/settings location and safe actions already supported;
   no conversation/log expansion or destructive data cleanup in this phase.
 
-Quick Settings remains an overlay drawer for fast microphone, theme,
-launch-at-login, and shortcut changes. It opens Full Settings in the main
-window for categories it does not own. It must use the exact same snapshot and
-patch commands, with native events or refetch after successful mutation so both
-surfaces immediately converge.
+Quick Settings supports the same Phase-3-owned fast controls: Deep Agent
+model, Velo provider/model, microphone, theme, global shortcut, and retained
+launch-at-login. API-key editing remains Full Settings only. It opens Full
+Settings for all other categories and uses the exact same snapshot and patch
+commands, so both surfaces converge without duplicate React persistence.
 
 ## AI & Models Contract
 
@@ -61,18 +61,25 @@ Deep Agent has one supported provider: `openrouter`, with a user-entered model
 ID. The OpenRouter key is shared with Velo when Velo uses OpenRouter.
 
 Velo/JEV has exactly two supported providers: `openrouter` and `typesafe`.
-The user selects provider and model ID explicitly. Choosing OpenRouter requires
-the shared OpenRouter Keychain key; choosing TypeSafe requires the TypeSafe
-Keychain key. A missing or invalid key makes that selected provider unavailable
-for use and presents a clear actionable status. It must never silently switch
-providers or reuse the other provider's model.
+The user selects provider and model ID explicitly. `velo_provider` is
+authoritative end-to-end: Sani passes `VELO_PROVIDER=openrouter` or
+`VELO_PROVIDER=typesafe` to sani-core; Python Settings persists that explicit
+choice; and the JEV resolver selects its route from it, never credential
+precedence. OpenRouter uses the shared OpenRouter Keychain key; TypeSafe uses
+the TypeSafe Keychain key. Both keys may reach the core because Deep Agent
+needs OpenRouter independently, but credential presence never decides Velo's
+provider. A selected provider without a usable key makes Velo unavailable with
+an actionable status and no fallback.
 
 The full UI may request validation for a newly entered key, then call the
 existing `store_provider_key` command only after explicit Save. Keys are
 write-only UI fields: never returned in a snapshot, rendered after save,
 written to JSON, included in events, logs, diagnostics, or child arguments.
-Key status reports only absent, stored, validating, connected label (where the
-provider supplies one), invalid, or offline.
+Snapshots report only `absent` or `stored`. Connected, invalid, and offline
+are returned only by an explicit candidate-key validation or a new
+`validate_stored_provider_key(provider)` command that reads Keychain material
+internally and never returns it. Settings opening does not validate over the
+network automatically.
 
 ## Native Settings Facade
 
@@ -87,20 +94,39 @@ save_general_settings(patch)
 save_ai_model_settings(patch) -> AiConfig
 store_provider_key(provider, key) -> KeyStatusSummary
 validate_provider_key(provider, key) -> KeyStatus
+validate_stored_provider_key(provider) -> KeyStatus
 save_voice_settings(patch)
 save_microphone_settings(patch)
 save_shortcut_settings(patch)
 save_startup_settings(patch)
 ```
 
-Each command validates its own finite enum/value domain before mutation. It
+Each command validates its own finite enum/value domain before mutation.
+`reasoning_provider` is strictly `openrouter`; `velo_provider` is strictly
+`openrouter | typesafe`, and unsupported legacy values remain readable but are
+never presented as selectable Phase-3 choices. It
 uses the existing settings writer and corresponding live side effects: hotkey
 registration, audio-handle reset, autostart enable/disable, and runtime restart
-only where existing code already needs it. Provider/model fields do not change
-credentials. `settings://changed` carries only a fresh non-secret snapshot or
-version signal after a successful save.
+where AI settings change. AI application is deterministic: reject an AI patch
+while a run is active with “Finish the current task before changing AI
+settings.” Otherwise validate, persist, controlled-restart sani-core, wait for
+ready, then emit `settings://changed` and report `Ready`. The UI states are
+Saved, Applying, Ready, and Failed to apply; it never reports Saved as Applied
+while the running core retains old configuration. A failed new runtime does not
+fall back silently. Provider/model fields do not change credentials.
 
 ## UX and Error Rules
+
+The Voice page shows only current STT model and ready/preparing/unavailable
+runtime information. It exposes neither `stt_turn_end_ms` nor silence tuning,
+downloads, model management, or manual submission behavior. The Computer
+Control page uses actual system-permission/core status to show Ready/Needs
+attention, Accessibility and Screen Recording allowance (including restart
+requirements), and existing macOS permission actions without internal CUA/MCP
+jargon. Appearance contains theme, a layout summary, and a route to the Phase
+2 Layout editor; it never duplicates that editor. Storage is read-only local
+data, settings, and history/database location information with a local-only
+explanation—no delete, clear, repair, export, import, or cleanup actions.
 
 The main pane loads a snapshot once, maintains per-section drafts, validates
 before Save, and does not optimistically claim a system side effect succeeded.
@@ -112,8 +138,9 @@ they do not claim macOS permission was granted until a fresh snapshot says so.
 ## Testing and Acceptance
 
 Rust tests cover legacy JSON migration, patch isolation, rejecting unsupported
-AI providers, no Velo fallback, Keychain-service selection, absent-key status,
-and side effects for mic/hotkey/autostart. Renderer tests cover category
+AI providers, explicit Velo provider propagation/no fallback, Keychain-service
+selection, stored-versus-network-validation status, safe deferred/rejected AI
+reload, and side effects for mic/hotkey/autostart. Renderer tests cover category
 navigation, shared snapshot refresh in quick/full surfaces, disabled provider
 states, write-only key controls, and no secret rendering. Manual macOS
 acceptance covers changing an existing setting from each surface and observing
