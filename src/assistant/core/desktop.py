@@ -153,11 +153,27 @@ async def probe_driver(settings: Settings) -> DriverStatus:
                 bounded_ok=False,
                 detail="Sani embedded CuaDriver endpoint is not a Unix socket",
             )
+        try:
+            _reader, writer = await asyncio.wait_for(
+                asyncio.open_unix_connection(settings.cua_socket),
+                timeout=_DRIVER_PROBE_TIMEOUT_SECONDS,
+            )
+            writer.close()
+            await writer.wait_closed()
+        except (OSError, TimeoutError) as exc:
+            return DriverStatus(
+                found=True,
+                bounded_ok=False,
+                detail=(
+                    "Sani embedded CuaDriver socket is not accepting connections: "
+                    f"{exc}"
+                ),
+            )
         return DriverStatus(
             found=True,
             bounded_ok=True,
             detail=(
-                "Sani embedded bounded CuaDriver is listening; "
+                "Sani embedded bounded CuaDriver accepted a live connection; "
                 "check the live permission results below"
             ),
         )

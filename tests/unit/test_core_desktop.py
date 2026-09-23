@@ -6,6 +6,8 @@ the real macOS frameworks but only assert type safety, never a granted
 state (this process may or may not be trusted).
 """
 
+import os
+import socket
 import stat
 from pathlib import Path
 
@@ -71,6 +73,26 @@ async def test_probe_driver_honors_cua_disabled(tmp_path: Path) -> None:
     status = await probe_driver(settings)
     assert status.found is False
     assert "CUA_ENABLED=false" in status.detail
+
+
+async def test_probe_driver_rejects_a_stale_embedded_socket() -> None:
+    """A leftover socket pathname must not be presented as a ready daemon."""
+    stale_socket = Path(f"/private/tmp/sani-stale-{os.getpid()}.sock")
+    stale_socket.unlink(missing_ok=True)
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(stale_socket))
+    listener.close()
+    settings = _settings("unused-for-embedded-driver")
+    settings.cua_socket = str(stale_socket)
+
+    try:
+        status = await probe_driver(settings)
+    finally:
+        stale_socket.unlink(missing_ok=True)
+
+    assert status.found is True
+    assert status.bounded_ok is False
+    assert "not accepting connections" in status.detail
 
 
 def test_macos_permissions_return_renderable_states() -> None:
