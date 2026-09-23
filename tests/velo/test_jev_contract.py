@@ -351,7 +351,9 @@ def _settings(**overrides: Any) -> Settings:
 
 
 def test_provider_resolution_typesafe_direct() -> None:
-    provider = resolve_jev_provider(_settings(typesafe_api_key="ts-key"))
+    provider = resolve_jev_provider(
+        _settings(typesafe_api_key="ts-key", velo_provider="typesafe")
+    )
     assert provider.source == "typesafe_direct"
     assert provider.base_url == ""
     assert provider.model == "jev-latest"
@@ -359,7 +361,9 @@ def test_provider_resolution_typesafe_direct() -> None:
 
 
 def test_provider_resolution_openrouter_one_key_story() -> None:
-    provider = resolve_jev_provider(_settings(openrouter_api_key="sk-or-test"))
+    provider = resolve_jev_provider(
+        _settings(openrouter_api_key="sk-or-test", velo_provider="openrouter")
+    )
     assert provider.source == "openrouter"
     assert provider.base_url == OPENROUTER_BASE_URL
     assert provider.model == "~typesafe/jev-latest"
@@ -368,16 +372,30 @@ def test_provider_resolution_openrouter_one_key_story() -> None:
 
 def test_provider_resolution_openrouter_keeps_explicit_model_pin() -> None:
     provider = resolve_jev_provider(
-        _settings(openrouter_api_key="sk-or-test", velo_jev_model="jev-1.13")
+        _settings(
+            openrouter_api_key="sk-or-test",
+            velo_provider="openrouter",
+            velo_jev_model="jev-1.13",
+        )
     )
     assert provider.model == "jev-1.13"
 
 
-def test_provider_resolution_prefers_openrouter_when_both_present() -> None:
+def test_provider_resolution_honors_explicit_typesafe_when_both_present() -> None:
     provider = resolve_jev_provider(
-        _settings(typesafe_api_key="ts-key", openrouter_api_key="sk-or-test")
+        _settings(
+            typesafe_api_key="ts-key",
+            openrouter_api_key="sk-or-test",
+            velo_provider="typesafe",
+        )
     )
-    assert provider.source == "openrouter"
+    assert provider.source == "typesafe_direct"
+    assert provider.api_key == "ts-key"
+
+
+def test_provider_resolution_does_not_fallback_when_selected_key_is_absent() -> None:
+    with pytest.raises(SettingsError, match="VELO_PROVIDER=typesafe requires TYPESAFE_API_KEY"):
+        _settings(openrouter_api_key="sk-or-test", velo_provider="typesafe")
 
 
 def test_provider_resolution_manual_override_uses_any_credential() -> None:
@@ -385,6 +403,7 @@ def test_provider_resolution_manual_override_uses_any_credential() -> None:
         _settings(
             velo_typesafe_base_url="https://systemone-proxy.example.ai/v1",
             openrouter_api_key="sk-or-test",
+            velo_provider="openrouter",
             velo_jev_model="jev-1.13",
         )
     )
@@ -397,12 +416,12 @@ def test_provider_resolution_manual_override_uses_any_credential() -> None:
 def test_provider_resolution_without_any_credential_fails_closed() -> None:
     # velo_enabled=False lets Settings construct; the resolver still refuses.
     with pytest.raises(JevServiceError, match="OPENROUTER_API_KEY"):
-        resolve_jev_provider(_settings(velo_enabled=False))
+        resolve_jev_provider(_settings(velo_enabled=False, velo_provider="openrouter"))
 
 
 def test_from_settings_plumbs_the_openrouter_provider() -> None:
     engine = JevDecisionEngine.from_settings(
-        _settings(openrouter_api_key="sk-or-test"), timeout=15.0
+        _settings(openrouter_api_key="sk-or-test", velo_provider="openrouter"), timeout=15.0
     )
     assert engine._classifier.model == "~typesafe/jev-latest"
     assert engine._classifier.base_url == OPENROUTER_BASE_URL

@@ -142,6 +142,7 @@ impl SaniCoreConfig {
         // Enabled deliberately: the sidecar then validates the JEV credential
         // at startup instead of failing on the first Velo turn.
         env.push(("VELO_ENABLED".to_string(), "true".to_string()));
+        env.push(("VELO_PROVIDER".to_string(), settings.velo_provider.clone()));
         env.push(("VELO_JEV_MODEL".to_string(), settings.velo_model.clone()));
 
         // Credentials go to the child's environment only -- never argv, never

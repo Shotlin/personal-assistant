@@ -10,6 +10,7 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SUPPORTED_MODEL_PROVIDERS = {"openrouter", "openai", "generic_openai_compatible"}
+SUPPORTED_VELO_PROVIDERS = {"openrouter", "typesafe"}
 SUPPORTED_APP_ENVS = {"development", "production"}
 SUPPORTED_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
@@ -91,6 +92,10 @@ class Settings(BaseSettings):
     # Opt-in flag: the gateway runtime never consults these; only
     # scripts/run_velo.py does, and it fails closed when disabled.
     velo_enabled: bool = False
+    # This is deliberately independent from Deep Agent's MODEL_PROVIDER.
+    # Velo must only ever use the route explicitly selected by the desktop
+    # application; it may not infer a route from whichever credential exists.
+    velo_provider: str = "openrouter"
     typesafe_api_key: str = ""
     velo_jev_model: str = "jev-latest"
     # Optional override for the System One API root. Empty = the official
@@ -158,12 +163,15 @@ class Settings(BaseSettings):
         # credential rule (Sani master doc): OPENROUTER_API_KEY alone drives
         # the Deep Agent and JEV; a direct TYPESAFE_API_KEY also works.
         if self.velo_enabled:
-            if not (self.typesafe_api_key or self.openrouter_api_key):
+            if self.velo_provider not in SUPPORTED_VELO_PROVIDERS:
                 errors.append(
-                    "VELO_ENABLED=true requires a JEV credential: "
-                    "OPENROUTER_API_KEY (one-key Sani story) or TYPESAFE_API_KEY "
-                    "(direct api.typesafe.ai)"
+                    "VELO_PROVIDER must be one of "
+                    f"{sorted(SUPPORTED_VELO_PROVIDERS)}, got {self.velo_provider!r}"
                 )
+            elif self.velo_provider == "openrouter" and not self.openrouter_api_key:
+                errors.append("VELO_PROVIDER=openrouter requires OPENROUTER_API_KEY")
+            elif self.velo_provider == "typesafe" and not self.typesafe_api_key:
+                errors.append("VELO_PROVIDER=typesafe requires TYPESAFE_API_KEY")
             if self.velo_max_steps <= 0:
                 errors.append(f"VELO_MAX_STEPS must be > 0, got {self.velo_max_steps}")
             if self.velo_typesafe_base_url and not self.velo_typesafe_base_url.startswith(
