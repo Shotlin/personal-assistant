@@ -774,11 +774,24 @@ pub fn restart_app(app: AppHandle) {
             let bundle = exe
                 .ancestors()
                 .find(|p| p.extension().map(|e| e == "app").unwrap_or(false));
-            if let Some(bundle) = bundle {
-                let _ = std::process::Command::new("open").arg(bundle).spawn();
-            } else {
-                let _ = std::process::Command::new(&exe).spawn();
-            }
+            let target = bundle
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| exe.clone());
+            // `open` activates an application that is already running instead of
+            // relaunching it, so issuing it before this process has gone away
+            // races the shutdown: Sani quits and nothing comes back, leaving the
+            // just-granted permission unapplied. Wait for our own pid to exit,
+            // then open the bundle -- which also keeps it to one instance.
+            let script = r#"while kill -0 "$1" 2>/dev/null; do sleep 0.1; done; open "$2""#;
+            let _ = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(script)
+                .arg(std::process::id().to_string())
+                .arg(target)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
         }
     }
     app.exit(0);
