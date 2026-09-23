@@ -35,6 +35,7 @@
     "externalBin": ["binaries/sani-stt", "binaries/sani-core", "binaries/cua-driver"],
     "macOS": {
       "minimumSystemVersion": "12.0",
+      "signingIdentity": "-",
       "infoPlist": "Info.plist"
     }
   }
