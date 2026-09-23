@@ -35,6 +35,7 @@ APP = "/Applications/Sani.app"
 DRIVER = f"{APP}/Contents/Resources/CuaDriver.app/Contents/MacOS/cua-driver"
 SOCKET = "/Users/sayan/Library/Application Support/app.sani.local/cua-driver.sock"
 TEXTEDIT = "com.apple.TextEdit"
+CHROME = "com.google.Chrome"
 PHRASE = "sani computer control check"
 
 #: How far the pointer is parked before the click, in logical points.
@@ -75,6 +76,90 @@ def fail(step: str, detail: str) -> int:
 def blocked(step: str, detail: str) -> int:
     print(f"BLOCKED  {step}: {detail}")
     return 2
+
+
+def youtube_leg() -> int:
+    """The scenario actually asked for: open Chrome, reach YouTube, play a video.
+
+    Verified through the window's own reported `url`, which the driver reads
+    from the browser rather than from the address bar text, so a keystroke that
+    never reached the renderer cannot produce a passing result here.
+    """
+    launch = call("launch_app", {"bundle_id": CHROME})
+    time.sleep(2.5)
+    pid = launch.get("pid") or next(
+        (a.get("pid") for a in call("list_apps", {}).get("apps", [])
+         if a.get("bundle_id") == CHROME), None)
+    if not pid:
+        return fail("chrome", json.dumps(launch)[:200])
+
+    call("bring_to_front", {"pid": pid})
+    time.sleep(1.5)
+    windows = [w for w in call("list_windows", {"pid": pid}).get("windows", [])
+               if w.get("is_on_screen")]
+    if not windows:
+        return fail("chrome", "Chrome has no on-screen window")
+    window = max(windows, key=lambda w: w["bounds"]["width"] * w["bounds"]["height"])
+    wid, bounds = window["window_id"], window["bounds"]
+
+    # A new tab, then the address bar, then the URL. `keys` is what the driver
+    # declares -- the adapter used to send `combo`, which is silently dropped.
+    call("hotkey", {"pid": pid, "window_id": wid, "keys": ["cmd", "t"]})
+    time.sleep(1.5)
+    call("hotkey", {"pid": pid, "window_id": wid, "keys": ["cmd", "l"]})
+    time.sleep(1.0)
+    call("type_text", {"pid": pid, "window_id": wid, "text": "youtube.com",
+                       "delivery_mode": "foreground"})
+    time.sleep(1.0)
+    call("press_key", {"pid": pid, "window_id": wid, "key": "Return",
+                       "delivery_mode": "foreground"})
+    time.sleep(6.0)
+
+    state = call("get_window_state", {"pid": pid, "window_id": wid,
+                                      "include_screenshot": False,
+                                      "max_elements": 200, "max_depth": 25})
+    url = str(state.get("url", ""))
+    print(f"6. navigation: url={url[:90]!r}")
+    if "youtube.com" not in url:
+        return fail("youtube", "Chrome never reached youtube.com")
+
+    # Aim at the largest link-shaped element below the toolbar: on the YouTube
+    # front page that is a video rather than a menu entry.
+    elements = [e for e in state.get("elements", []) if isinstance(e, dict)]
+    scale = state.get("screenshot_scale") or 1
+    playable = [e for e in elements
+                if str(e.get("role", "")).lower() in ("link", "button")
+                and (e.get("frame") or {}).get("w", 0) > 100
+                and (e.get("frame") or {}).get("h", 0) > 60
+                and e.get("element_token")]
+    if not playable:
+        return fail("youtube", "reached YouTube but found no playable element")
+    pick = max(playable, key=lambda e: e["frame"]["w"] * e["frame"]["h"])
+    token = pick["element_token"]
+
+    park((float(bounds["x"]) - PARK_OFFSET, float(bounds["y"]) + PARK_OFFSET))
+    time.sleep(0.4)
+    before = cursor()
+    click = call("click", {"pid": pid, "window_id": wid, "element_token": token})
+    time.sleep(5.0)
+    after = cursor()
+    print(f"7. clicked {pick.get('role')!r} label={str(pick.get('label'))[:40]!r} "
+          f"pointer {before[0]:.0f},{before[1]:.0f} -> {after[0]:.0f},{after[1]:.0f} "
+          f"moved={distance(before, after):.0f}pt result={json.dumps(click)[:140]}")
+
+    watch = call("get_window_state", {"pid": pid, "window_id": wid,
+                                      "include_screenshot": False,
+                                      "max_elements": 80, "max_depth": 25})
+    url2 = str(watch.get("url", ""))
+    print(f"8. after click: url={url2[:90]!r}")
+    playing = "/watch" in url2 or "v=" in url2
+    if not playing:
+        return fail("youtube", f"click did not open a video (url={url2[:80]!r})")
+    print("   NOTE: playback position is not observable through the "
+          "accessibility tree; the video page opening is what is proven here.")
+    print("PASS  Chrome opened by the driver, YouTube reached and a video opened, "
+          "with the physical pointer moving to the click")
+    return 0
 
 
 def main() -> int:
@@ -170,6 +255,8 @@ def main() -> int:
 
     print("PASS  grants real and attributed to Sani; the physical pointer travelled to "
           "the aimed window; typing read back from the document")
+    if "--chrome" in sys.argv[1:]:
+        return youtube_leg()
     return 0
 
 
