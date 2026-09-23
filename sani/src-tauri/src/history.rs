@@ -46,6 +46,9 @@ pub struct ActivityRecord {
     pub status: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TimingRecord { pub run_id: String, pub stage: String, pub elapsed_ms: i64, pub status: String }
+
 /// Provenance recorded alongside one stored message.
 #[derive(Clone, Default)]
 pub struct Attribution<'a> {
@@ -117,7 +120,11 @@ impl History {
              CREATE INDEX IF NOT EXISTS run_activity_conversation_idx
                  ON run_activity (conversation_id, timestamp, sequence);
              CREATE INDEX IF NOT EXISTS run_activity_run_idx
-                 ON run_activity (run_id, sequence);",
+                 ON run_activity (run_id, sequence);
+             CREATE TABLE IF NOT EXISTS run_timing (
+                 run_id TEXT NOT NULL, stage TEXT NOT NULL, elapsed_ms INTEGER NOT NULL,
+                 status TEXT NOT NULL, PRIMARY KEY (run_id, stage)
+             );",
         )
         .map_err(|e| e.to_string())?;
         // Databases created before multi-agent attribution lack these columns.
@@ -292,6 +299,17 @@ impl History {
     pub fn clear_activity(&self) -> Result<usize, String> {
         let conn = self.conn.lock();
         conn.execute("DELETE FROM run_activity", []).map_err(|e| e.to_string())
+    }
+
+    pub fn append_timing(&self, record: &TimingRecord) -> Result<(), String> {
+        self.conn.lock().execute("INSERT OR IGNORE INTO run_timing (run_id, stage, elapsed_ms, status) VALUES (?1, ?2, ?3, ?4)", params![record.run_id, record.stage, record.elapsed_ms, record.status]).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn recent_timing(&self) -> Result<Vec<TimingRecord>, String> {
+        let conn = self.conn.lock(); let mut stmt = conn.prepare("SELECT run_id, stage, elapsed_ms, status FROM run_timing ORDER BY rowid DESC LIMIT 100").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |row| Ok(TimingRecord { run_id: row.get(0)?, stage: row.get(1)?, elapsed_ms: row.get(2)?, status: row.get(3)? })).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 }
 

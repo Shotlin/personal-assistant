@@ -158,6 +158,7 @@ fn main() {
             list_conversations,
             get_messages,
             get_run_activity,
+            recent_run_timing,
             prune_run_activity,
             clear_run_activity,
             set_technical_retention,
@@ -577,6 +578,9 @@ fn get_run_activity(
 ) -> Result<Vec<history::ActivityRecord>, String> {
     app_state::history(&app).activity(&conversation_id)
 }
+
+#[tauri::command]
+fn recent_run_timing(app: tauri::AppHandle) -> Result<Vec<history::TimingRecord>, String> { app_state::history(&app).recent_timing() }
 
 #[tauri::command]
 fn prune_run_activity(app: tauri::AppHandle, days: u32) -> Result<usize, String> {

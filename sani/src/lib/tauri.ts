@@ -35,6 +35,7 @@ export interface ActivityEvent {
   duration_ms?: number;
   detail?: string;
 }
+export interface TimingRecord { run_id: string; stage: string; elapsed_ms: number; status: string; }
 
 export interface AgentChunk {
   message_id: string;
@@ -280,6 +281,7 @@ export const getMessages = (conversationId: string) =>
   invoke<ChatMessage[]>("get_messages", { conversationId });
 export const getRunActivity = (conversationId: string) =>
   invoke<ActivityEvent[]>("get_run_activity", { conversationId });
+export const recentRunTiming = () => invoke<TimingRecord[]>("recent_run_timing");
 export const pruneRunActivity = (days: 7 | 14 | 30) => invoke<number>("prune_run_activity", { days });
 export const clearRunActivity = () => invoke<number>("clear_run_activity");
 export const setTechnicalRetention = (days: 7 | 14 | 30) => invoke<number>("set_technical_retention", { days });

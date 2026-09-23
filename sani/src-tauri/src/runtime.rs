@@ -15,6 +15,7 @@
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 
 use crate::app_state;
@@ -104,6 +105,7 @@ pub async fn stream_turn(
     text: String,
     thread_id: String,
 ) {
+    let started_at = Instant::now();
     let live = Arc::new(Mutex::new(Streamed::default()));
     let emitter = app.clone();
 
@@ -112,6 +114,7 @@ pub async fn stream_turn(
         let message_id = message_id.clone();
         let agent_name = agent_name.clone();
         let activity_conversation_id = thread_id.clone();
+        let started_at = started_at;
         move |frame: Value| {
             let _ = emitter.emit("sani://core-event", frame.clone());
             let Some(event) = parse(&frame) else { return };
@@ -125,10 +128,12 @@ pub async fn stream_turn(
                     &event.agent_id,
                     &agent_name,
                 );
+                record_timing(&emitter, &stream.run_id, "run_start", started_at.elapsed().as_millis() as i64, "observed");
             }
             match event.kind.as_str() {
                 "agent.token" => {
                     if let Some(delta) = &event.token {
+                        record_timing(&emitter, &event.run_id, "first_token", started_at.elapsed().as_millis() as i64, "observed");
                         stream.text.push_str(delta);
                         emit_chunk(&emitter, &message_id, "text", delta, &event.agent_id);
                     }
@@ -188,6 +193,13 @@ pub async fn stream_turn(
         &agent_id,
         &agent_name,
     );
+    if !streamed.run_id.is_empty() { record_timing(&app, &streamed.run_id, "completion", started_at.elapsed().as_millis() as i64, status); }
+}
+
+fn record_timing(app: &AppHandle, run_id: &str, stage: &str, elapsed_ms: i64, status: &str) {
+    if run_id.is_empty() { return; }
+    let record = crate::history::TimingRecord { run_id: run_id.into(), stage: stage.into(), elapsed_ms, status: status.into() };
+    if let Err(error) = app_state::history(app).append_timing(&record) { log::warn!("[performance] could not persist timing: {error}"); }
 }
 
 fn emit_start(
