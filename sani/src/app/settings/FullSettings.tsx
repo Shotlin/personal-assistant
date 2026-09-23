@@ -1,0 +1,35 @@
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useSettings } from "./SettingsContext";
+
+const CATEGORIES = ["General", "AI & Models", "Voice", "Microphone", "Computer Control", "Appearance", "Shortcuts", "Startup", "Storage"] as const;
+type Category = typeof CATEGORIES[number];
+
+export default function FullSettings({ onOpenLayout }: { onOpenLayout: () => void }) {
+  const { snapshot, microphones, error, saveGeneral, saveAi, saveProviderKey } = useSettings();
+  const [category, setCategory] = useState<Category>("General");
+  const [openRouterCandidate, setOpenRouterCandidate] = useState("");
+  const [typeSafeCandidate, setTypeSafeCandidate] = useState("");
+  if (!snapshot) return <section className="full-settings"><p>Loading settings…</p></section>;
+  const keyEditor = (provider: "openrouter" | "typesafe", value: string, setValue: (v: string) => void, label: string) => (
+    <div className="settings-card">
+      <strong>{label}</strong><span className="settings-muted">Keychain: {provider === "openrouter" ? snapshot.openrouter_key : snapshot.typesafe_key}</span>
+      <div className="settings-inline"><input type="password" value={value} placeholder="Paste key to replace; blank clears" onChange={(e) => setValue(e.target.value)} /><button onClick={() => void saveProviderKey(provider, value).then(() => setValue(""))}>Apply key</button></div>
+    </div>
+  );
+  return <section className="full-settings" aria-label="Full Settings">
+    <header><div><h1>Settings</h1><p>Desired settings are saved locally; runtime status is reported separately.</p></div><span className={`runtime-status ${snapshot.runtime_status}`}>{snapshot.runtime_status.replaceAll("_", " ")}</span></header>
+    <div className="full-settings-grid"><nav aria-label="Settings categories">{CATEGORIES.map((item) => <button key={item} className={category === item ? "selected" : ""} onClick={() => setCategory(item)}>{item}</button>)}</nav><div className="settings-content">
+      {error && <p className="settings-error" role="alert">{error}</p>}
+      {category === "General" && <><h2>General</h2><label>Theme<select value={snapshot.theme} onChange={(e) => void saveGeneral({ theme: e.target.value })}><option value="dark">Dark</option><option value="light">Light</option></select></label><label>Agent mode<input defaultValue={snapshot.agent_mode} onBlur={(e) => void saveGeneral({ agent_mode: e.target.value })}/></label></>}
+      {category === "AI & Models" && <><h2>AI &amp; Models</h2><div className="settings-card"><strong>Deep Agent</strong><span className="settings-muted">Provider: OpenRouter</span><label>Model ID<input defaultValue={snapshot.reasoning_model} onBlur={(e) => void saveAi({ reasoning_model: e.target.value })}/></label></div><div className="settings-card"><strong>Velo / JEV</strong><label>Provider<select value={snapshot.velo_provider} onChange={(e) => void saveAi({ velo_provider: e.target.value as "openrouter" | "typesafe" })}><option value="openrouter">OpenRouter</option><option value="typesafe">TypeSafe</option></select></label><label>Model ID<input defaultValue={snapshot.velo_model} onBlur={(e) => void saveAi({ velo_model: e.target.value })}/></label></div>{keyEditor("openrouter", openRouterCandidate, setOpenRouterCandidate, "OpenRouter credential")}{keyEditor("typesafe", typeSafeCandidate, setTypeSafeCandidate, "TypeSafe credential")}</>}
+      {category === "Voice" && <><h2>Voice</h2><div className="settings-card"><strong>{snapshot.stt_ready ? "Ready" : "Preparing"}</strong><span className="settings-muted">{snapshot.stt_model}</span><p>Voice-model management and submission behavior are not part of this phase.</p></div></>}
+      {category === "Microphone" && <><h2>Microphone</h2><label>Input device<select value={snapshot.mic_device} onChange={(e) => void saveGeneral({ mic_device: e.target.value })}><option value="">System default</option>{microphones.map((mic) => <option key={mic} value={mic}>{mic}</option>)}</select></label><p className="settings-muted">Permission: {snapshot.microphone_permission}</p><button onClick={() => void invoke("open_mic_settings")}>Open macOS Microphone settings</button></>}
+      {category === "Computer Control" && <><h2>Computer Control</h2><p>Accessibility: {snapshot.accessibility_permission} · Screen Recording: {snapshot.screen_recording_permission}</p><div className="settings-inline"><button onClick={() => void invoke("request_accessibility")}>Request Accessibility</button><button onClick={() => void invoke("request_screen_recording")}>Request Screen Recording</button></div></>}
+      {category === "Appearance" && <><h2>Appearance</h2><p>Overlay layout remains a separate, safe editor.</p><button onClick={onOpenLayout}>Open Layout Editor</button></>}
+      {category === "Shortcuts" && <><h2>Shortcuts</h2><label>Global shortcut<input defaultValue={snapshot.hotkey} onBlur={(e) => void saveGeneral({ hotkey: e.target.value })}/></label></>}
+      {category === "Startup" && <><h2>Startup</h2><label className="settings-toggle"><input type="checkbox" checked={snapshot.launch_at_login} onChange={(e) => void saveGeneral({ launch_at_login: e.target.checked })}/> Launch Sani at login</label></>}
+      {category === "Storage" && <><h2>Storage</h2><div className="settings-card"><strong>Local Sani data</strong><code>{snapshot.storage_path}</code><p>Data stays on this Mac. Storage management and deletion are intentionally not available in this phase.</p></div></>}
+    </div></div>
+  </section>;
+}
