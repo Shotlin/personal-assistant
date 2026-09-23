@@ -241,6 +241,23 @@ installed `/Applications/Sani.app`, not a dev binary.
 | --- | --- |
 | `scripts/build-sidecar.sh` | the STT worker freezes into one self-contained binary and reaches `ready` |
 | `scripts/install-app.sh` | release build → ad-hoc sign → back up the old bundle → install → LaunchServices launch |
+
+## Phase 10 release evidence (2026-09-23)
+
+Automated evidence: `cargo fmt --check`, the Rust suite (61 tests), `cargo
+check`, the frontend production build, and the Python unit suite completed on
+the release checkout. `npm run tauri -- build` produced a native `Sani.app`
+and the arm64 DMG.
+
+Physical packaged-app evidence on the current MacBook: the bundled app opened
+as a normal decorated macOS window with traffic lights; the desktop workspace
+and Settings rendered; closing the main window retained a running Sani process;
+opening the app again restored and focused the main window. The live
+computer-control status reported Accessibility and Screen Recording as denied.
+No system permissions, Dock preferences, external-display configuration, or
+computer-control action were changed for this verification. Consequently,
+physical Velo/TextEdit acceptance and external-display acceptance are recorded
+as unavailable rather than passed.
 | `scripts/probe-gateway-contract.sh` | the gateway contract Sani relies on: `[DONE]`, activity past `run.started`, exactly-once dedup by message id, `/stop` → `run.cancelled` |
 | `scripts/probe-sidecar-speech.py` | the *installed* sidecar transcribes real speech with no repo venv or Terminal env |
 | `scripts/probe-voice-loop.sh` | the full loop on the installed app: audible sentence → mic → partials → final → one agent turn → streamed answer |
