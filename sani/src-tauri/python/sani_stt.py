@@ -849,7 +849,14 @@ def run_sidecar(args, sink: Sink) -> int:
     arch = ModelArch[MODEL_CHOICES[args.model]]
 
     def on_progress(fraction: float, name: str) -> None:
-        sink({"type": "downloading", "progress": round(fraction, 3), "file": name})
+        sink(
+            {
+                "type": "downloading",
+                "model": args.model,
+                "progress": round(fraction, 3),
+                "file": name,
+            }
+        )
 
     try:
         model_path, resolved_arch = get_model_for_language(

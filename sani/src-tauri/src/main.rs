@@ -143,6 +143,8 @@ fn main() {
             get_state,
             get_settings,
             voice_models,
+            install_voice_model,
+            use_voice_model,
             save_settings_cmd,
             set_agent_mode,
             list_mics,
@@ -404,6 +406,19 @@ fn get_settings(app: tauri::AppHandle) -> SettingsOut {
 #[tauri::command]
 fn voice_models(app: tauri::AppHandle) -> Result<Vec<speech::VoiceModelDescriptor>, String> {
     speech::voice_models(&app)
+}
+
+#[tauri::command]
+fn install_voice_model(
+    app: tauri::AppHandle,
+    model: String,
+) -> Result<speech::VoiceModelDescriptor, String> {
+    speech::install_voice_model(&app, &model)
+}
+
+#[tauri::command]
+fn use_voice_model(app: tauri::AppHandle, model: String) -> Result<speech::VoiceModelDescriptor, String> {
+    speech::use_voice_model(&app, &model)
 }
 
 #[tauri::command]

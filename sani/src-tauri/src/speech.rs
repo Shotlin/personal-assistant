@@ -12,7 +12,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::settings::stt_python_path;
 
@@ -205,6 +206,101 @@ pub fn voice_models(app: &AppHandle) -> Result<Vec<VoiceModelDescriptor>, String
         .collect())
 }
 
+fn voice_capture_active(app: &AppHandle) -> bool {
+    voice_mutation_allowed(crate::app_state::current_state(app)) == false
+}
+
+fn voice_mutation_allowed(state: crate::app_state::UiState) -> bool {
+    !matches!(
+        state,
+        crate::app_state::UiState::Preparing
+            | crate::app_state::UiState::Listening
+            | crate::app_state::UiState::Finalizing
+    )
+}
+
+fn wait_for_ready(handle: &SpeechHandle, timeout: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if handle.is_ready() {
+            return Ok(());
+        }
+        if !handle.is_alive() {
+            return Err("The voice model could not start.".to_string());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Err("The voice model did not become ready in time.".to_string())
+}
+
+fn known_voice_model(app: &AppHandle, model: &str) -> Result<VoiceModelDescriptor, String> {
+    voice_models(app)?
+        .into_iter()
+        .find(|candidate| candidate.id == model)
+        .ok_or_else(|| "That voice model is not supported by this Sani voice engine.".to_string())
+}
+
+/// Download and verify a model using the actual Moonshine sidecar. No synthetic
+/// install status is emitted: the sidecar downloader remains the sole source
+/// of progress events. A voice capture may not be disrupted mid-turn.
+pub fn install_voice_model(app: &AppHandle, model: &str) -> Result<VoiceModelDescriptor, String> {
+    if voice_capture_active(app) {
+        return Err("Finish or cancel the current voice capture before changing models.".into());
+    }
+    let descriptor = known_voice_model(app, model)?;
+    if descriptor.installed {
+        return Ok(descriptor);
+    }
+    let turn_end_ms = crate::settings::stt_turn_end_ms(&crate::app_state::settings(app).read());
+    let candidate = start(app.clone(), model, turn_end_ms)?;
+    let result = wait_for_ready(&candidate, Duration::from_secs(45));
+    candidate.stop();
+    result?;
+    known_voice_model(app, model)
+}
+
+/// Switch models without killing a known-good warm engine until the candidate
+/// sidecar has reported ready. Audio capture stays alive; its writer observes
+/// the swapped speech handle on the next block. If the candidate fails, the
+/// previous engine and persisted selection are left intact.
+pub fn use_voice_model(app: &AppHandle, model: &str) -> Result<VoiceModelDescriptor, String> {
+    if voice_capture_active(app) {
+        return Err("Finish or cancel the current voice capture before changing models.".into());
+    }
+    let requested = known_voice_model(app, model)?;
+    let state = app.state::<crate::app_state::SaniState>();
+    let old_handle = state.speech.lock().as_ref().cloned();
+    let previous_model = crate::app_state::settings(app).read().stt_model.clone();
+    if requested.active && old_handle.as_ref().is_some_and(|handle| handle.is_ready()) {
+        return Ok(requested);
+    }
+
+    let turn_end_ms = crate::settings::stt_turn_end_ms(&crate::app_state::settings(app).read());
+    let candidate = start(app.clone(), model, turn_end_ms)?;
+    if let Err(error) = wait_for_ready(&candidate, Duration::from_secs(45)) {
+        candidate.stop();
+        // Explicitly retain the previous running handle and selected setting.
+        // There is no provider/model fallback hidden in this path.
+        log::warn!("voice model change to {model} failed; retaining {previous_model}");
+        return Err(error);
+    }
+
+    // Persist only after the exact requested sidecar has proved it can run.
+    // A write failure leaves the currently working handle untouched.
+    {
+        let settings_arc = crate::app_state::settings(app);
+        let mut settings = settings_arc.write();
+        settings.stt_model = model.to_string();
+        crate::settings::save(app, &settings)?;
+    }
+    let replaced = state.speech.lock().replace(candidate);
+    if let Some(old) = replaced {
+        old.stop();
+    }
+    let _ = app.emit("settings://changed", crate::onboarding::get_full_settings(app.clone()));
+    known_voice_model(app, model)
+}
+
 /// Locate the voice engine for first-run setup *without* starting it. Returns a
 /// diagnostic describing what was found, or an error the setup UI can show.
 pub fn locate_for_setup(app: &AppHandle) -> Result<String, String> {
@@ -328,6 +424,10 @@ pub fn start(app: AppHandle, model: &str, turn_end_ms: u32) -> Result<Arc<Speech
                 }
                 "downloading" => {
                     let _ = app.emit(
+                        "sani://voice-model-progress",
+                        serde_json::json!({"model": event.model, "progress": event.progress}),
+                    );
+                    let _ = app.emit(
                         "sani://stt-status",
                         serde_json::json!({"status": "downloading", "progress": event.progress}),
                     );
@@ -374,7 +474,8 @@ pub fn setup_hint(err: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_voice_catalog;
+    use super::{parse_voice_catalog, voice_mutation_allowed};
+    use crate::app_state::UiState;
 
     #[test]
     fn accepts_the_sidecars_catalog_shape() {
@@ -389,5 +490,14 @@ mod tests {
     #[test]
     fn rejects_a_catalog_whose_default_is_not_supported() {
         assert!(parse_voice_catalog(br#"{"models":["tiny-streaming-en"],"default":"missing"}"#).is_err());
+    }
+
+    #[test]
+    fn model_mutation_is_rejected_during_any_voice_capture_stage() {
+        assert!(!voice_mutation_allowed(UiState::Preparing));
+        assert!(!voice_mutation_allowed(UiState::Listening));
+        assert!(!voice_mutation_allowed(UiState::Finalizing));
+        assert!(voice_mutation_allowed(UiState::Idle));
+        assert!(voice_mutation_allowed(UiState::Working));
     }
 }
