@@ -31,9 +31,10 @@
       "../../config/cua-capabilities.yaml": "config/cua-capabilities.yaml",
       "../../src/assistant/skills": "skills",
       "release-manifest.json": "release-manifest.json",
-      "binaries/sani-core-runtime": "sani-core-runtime"
+      "binaries/sani-core-runtime": "sani-core-runtime",
+      "binaries/CuaDriver.app": "CuaDriver.app"
     },
-    "externalBin": ["binaries/sani-stt", "binaries/cua-driver"],
+    "externalBin": ["binaries/sani-stt"],
     "macOS": {
       "minimumSystemVersion": "12.0",
       "signingIdentity": "-",

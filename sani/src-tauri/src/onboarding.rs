@@ -632,8 +632,16 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
     let accessibility = accessibility_state.as_str().to_string();
     let screen_recording = screen_recording_state.as_str().to_string();
     let restart_required = system_permissions::screen_recording_restart_required();
+    // A crashed embedded driver can leave its socket pathname behind.  Repair
+    // only that private child before asking the core for its live report; this
+    // does not restart a conversation or alter any user setting.
+    let driver_recovery = sani_core::recover_embedded_cua_driver(&app).await;
     let runtime = sani_core::core_status(app.clone()).await;
-    let driver = runtime.as_ref().ok().map(driver_readiness).unwrap_or("unavailable");
+    let driver = if driver_recovery.is_err() {
+        "unavailable"
+    } else {
+        runtime.as_ref().ok().map(driver_readiness).unwrap_or("unavailable")
+    };
     let (status, message) = if restart_required {
         (
             "restart_required",
@@ -657,7 +665,7 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
     } else if driver == "unavailable" {
         (
             "unavailable",
-            "Sani’s computer-control runtime is unavailable. Try restarting Sani.",
+            "Sani’s computer-control driver is not accepting live connections. Sani tried one private-driver recovery; restart Sani if it remains unavailable.",
         )
     } else {
         ("ready", "Computer control is ready.")

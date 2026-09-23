@@ -346,3 +346,31 @@ async def test_scrolling_bare_and_targeted(cua_tools: dict[str, FakeTool]) -> No
     first, second = cua_tools["scroll"].calls
     assert first == {"direction": "down", "amount": 5}
     assert second == {"direction": "down", "amount": 5}  # element_token schema-filtered
+
+
+async def test_sani_is_never_the_observed_desktop_target(cua_tools) -> None:
+    """Sani's pill and panel are always-on-top, so Sani is usually frontmost.
+
+    Observing itself returns no actionable elements, so JEV kept deciding
+    OBSERVE and the cursor never moved.
+    """
+    cua_tools["list_apps"].outcome = ok_outcome(
+        {
+            "apps": [
+                {
+                    "pid": 7,
+                    "bundle_id": "app.sani.local",
+                    "name": "Sani",
+                    "frontmost": True,
+                    "windows": [{"window_id": 8, "title": "Sani"}],
+                },
+                *APPS_STATE["apps"],
+            ]
+        }
+    )
+    adapter, _ = build_adapter(cua_tools)
+
+    result = await adapter.observe()
+
+    assert cua_tools["get_window_state"].calls[-1]["pid"] == 4242
+    assert result.foreground_app == "Google Chrome"

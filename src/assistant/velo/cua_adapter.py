@@ -54,6 +54,14 @@ _MAX_TARGETS = 120
 _LABEL_CHAR_LIMIT = 80
 
 _FRONTMOST_FLAGS = ("frontmost", "is_frontmost", "focused", "active", "foreground")
+
+#: Sani and the CUA helper are never valid desktop targets. Sani's pill and
+#: panel are always-on-top, so Sani is routinely the frontmost application; if
+#: the adapter observes itself it sees a transparent overlay with no actionable
+#: elements, reports ``[0 targets]``, and the loop keeps deciding OBSERVE
+#: forever instead of ever moving the cursor.
+_SELF_APP_IDS = frozenset({"app.sani.local", "com.trycua.driver"})
+_SELF_APP_NAMES = frozenset({"sani", "cua-driver", "cua driver", "cuadriver"})
 _ELEMENT_ROLE_KEYS = ("role", "type", "subrole")
 _ELEMENT_LABEL_KEYS = ("label", "title", "name", "description")
 _ELEMENT_VALUE_KEYS = ("value", "state", "text")
@@ -119,7 +127,7 @@ class VeloCuaAdapter:
             "max_elements": _MAX_ELEMENTS,
             "max_depth": _MAX_DEPTH,
         }
-        apps = await self._apps()
+        apps = [app for app in await self._apps() if not _is_self_app(app)]
         if apps:
             frontmost = next((app for app in apps if _is_frontmost(app)), None)
             app = frontmost or next((app for app in apps if app.get("windows")), None)
@@ -343,6 +351,12 @@ def _coerce_records(outcome: ToolOutcome, keys: tuple[str, ...]) -> list[dict[st
 
 def _is_frontmost(app: dict[str, Any]) -> bool:
     return any(bool(app.get(flag)) for flag in _FRONTMOST_FLAGS)
+
+
+def _is_self_app(app: dict[str, Any]) -> bool:
+    bundle_id = (_string_field(app, ("bundle_id", "bundleId")) or "").lower()
+    name = (_string_field(app, ("name", "localizedName")) or "").lower()
+    return bundle_id in _SELF_APP_IDS or name in _SELF_APP_NAMES
 
 
 def _first_window_id(app: dict[str, Any]) -> int | None:
