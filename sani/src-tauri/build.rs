@@ -1,4 +1,26 @@
+use std::path::Path;
+
+/// Tauri embeds the production frontend in the application binary. Cargo does
+/// not discover Vite output by itself, so without these dependency markers a
+/// frontend-only change can produce a new `dist/` while reusing an older
+/// bundled Sani binary. Track every generated asset so release builds always
+/// contain the UI that `beforeBuildCommand` just created.
+fn track_frontend_assets(path: &Path) {
+    println!("cargo:rerun-if-changed={}", path.display());
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let child = entry.path();
+            if child.is_dir() {
+                track_frontend_assets(&child);
+            } else {
+                println!("cargo:rerun-if-changed={}", child.display());
+            }
+        }
+    }
+}
+
 fn main() {
+    track_frontend_assets(Path::new("../dist"));
     // Compile the native macOS microphone-authorization bridge (Objective-C)
     // and link AVFoundation. Other platforms skip it: Sani falls back to a
     // "granted" assumption where the OS has no TCC microphone gate.
