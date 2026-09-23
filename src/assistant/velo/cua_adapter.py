@@ -169,6 +169,8 @@ class VeloCuaAdapter:
         from_list = _first_window_id(app)
         if from_list is not None:
             return from_list
+        if "list_windows" not in self._tools:
+            return None
         outcome = await self._call("list_windows", {"pid": pid})
         data = _structured_dict(outcome) or {}
         windows = data.get("windows")
