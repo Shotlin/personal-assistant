@@ -128,9 +128,13 @@ class VeloCuaAdapter:
             "max_depth": _MAX_DEPTH,
         }
         apps = [app for app in await self._apps() if not _is_self_app(app)]
+        outcome: ToolOutcome | None = None
         if apps:
             frontmost = next((app for app in apps if _is_frontmost(app)), None)
-            app = frontmost or next((app for app in apps if app.get("windows")), None)
+            # `list_apps` never populates a per-app `windows` list, so the
+            # fallback has to be "any running application" rather than "any
+            # application that owns a window".
+            app = frontmost or next((app for app in apps if _runnable(app)), None)
             if app is not None:
                 foreground = _string_field(app, ("name", "localizedName")) or _string_field(
                     app, ("bundle_id",)
@@ -138,10 +142,10 @@ class VeloCuaAdapter:
                 pid = app.get("pid")
                 if isinstance(pid, int):
                     args["pid"] = pid
-                window_id = _first_window_id(app)
-                if window_id is not None:
-                    args["window_id"] = window_id
-        outcome = await self._call("get_window_state", args)
+                    window_id = await self._resolve_window_id(pid, app)
+                    if window_id is not None:
+                        args["window_id"] = window_id
+                outcome = await self._call("get_window_state", args)
         observation = self._observation_from_window_state(outcome, foreground)
         if observation is None:
             tree = await self._call("get_accessibility_tree", {"max_elements": _MAX_ELEMENTS})
@@ -153,9 +157,51 @@ class VeloCuaAdapter:
         outcome = await self._call("list_apps", {})
         return _coerce_records(outcome, ("apps", "applications"))
 
+    async def _resolve_window_id(
+        self, pid: int, app: dict[str, Any]
+    ) -> int | None:
+        """Find a window to snapshot for ``pid``.
+
+        ``get_window_state`` rejects a snapshot without a ``window_id``, and
+        ``list_apps`` reports an empty ``windows`` list for every application,
+        so the id has to come from ``list_windows``.
+        """
+        from_list = _first_window_id(app)
+        if from_list is not None:
+            return from_list
+        outcome = await self._call("list_windows", {"pid": pid})
+        data = _structured_dict(outcome) or {}
+        windows = data.get("windows")
+        if not isinstance(windows, list):
+            return None
+        records = [w for w in windows if isinstance(w, dict)]
+
+        def area(window: dict[str, Any]) -> float:
+            bounds = window.get("bounds")
+            if not isinstance(bounds, dict):
+                return 0.0
+            try:
+                return float(bounds.get("width", 0)) * float(bounds.get("height", 0))
+            except (TypeError, ValueError):
+                return 0.0
+
+        # A window the user can actually see is the only one worth acting on.
+        on_screen = [w for w in records if w.get("is_on_screen")]
+        ranked = on_screen or records
+        if not ranked:
+            return None
+        best = max(ranked, key=area)
+        for key in ("window_id", "id"):
+            value = best.get(key)
+            if isinstance(value, int):
+                return value
+        return None
+
     def _observation_from_window_state(
-        self, outcome: ToolOutcome, foreground: str
+        self, outcome: ToolOutcome | None, foreground: str
     ) -> VeloObservation | None:
+        if outcome is None:
+            return None
         data = _structured_dict(outcome)
         if data is None:
             return None
@@ -357,6 +403,16 @@ def _is_self_app(app: dict[str, Any]) -> bool:
     bundle_id = (_string_field(app, ("bundle_id", "bundleId")) or "").lower()
     name = (_string_field(app, ("name", "localizedName")) or "").lower()
     return bundle_id in _SELF_APP_IDS or name in _SELF_APP_NAMES
+
+
+def _runnable(app: dict[str, Any]) -> bool:
+    """An application Sani could plausibly observe: running, with a real pid."""
+    pid = app.get("pid")
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if "running" in app:
+        return bool(app.get("running"))
+    return True
 
 
 def _first_window_id(app: dict[str, Any]) -> int | None:

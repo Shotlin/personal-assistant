@@ -375,3 +375,80 @@ async def test_sani_is_never_the_observed_desktop_target(cua_tools) -> None:
 
     assert cua_tools["get_window_state"].calls[-1]["pid"] == 4242
     assert result.foreground_app == "Google Chrome"
+
+
+#: What the packaged driver actually returns from `list_apps`: an `active`
+#: flag rather than `frontmost`, and an empty `windows` list for every
+#: application. The earlier fixture invented both fields, which is why the
+#: unit tests passed while observation could never succeed on a real machine.
+REAL_APPS_STATE = {
+    "apps": [
+        {
+            "pid": 4242,
+            "bundle_id": "com.google.Chrome",
+            "name": "Google Chrome",
+            "kind": "desktop",
+            "active": True,
+            "running": True,
+            "windows": [],
+        },
+        {
+            "pid": 100,
+            "bundle_id": "com.apple.Terminal",
+            "name": "Terminal",
+            "kind": "desktop",
+            "active": False,
+            "running": True,
+            "windows": [],
+        },
+    ]
+}
+
+REAL_WINDOWS_STATE = {
+    "windows": [
+        {
+            "window_id": 1971,
+            "app_name": "Google Chrome",
+            "is_on_screen": False,
+            "bounds": {"x": 99.0, "y": 58.0, "width": 1254.0, "height": 138.0},
+        },
+        {
+            "window_id": 2002,
+            "app_name": "Google Chrome",
+            "is_on_screen": True,
+            "bounds": {"x": 0.0, "y": 25.0, "width": 1470.0, "height": 874.0},
+        },
+    ]
+}
+
+
+async def test_window_id_comes_from_list_windows(cua_tools) -> None:
+    """`get_window_state` refuses a snapshot without a window id.
+
+    Observation used to read the id off `list_apps`, which never reports one,
+    so every snapshot failed and the loop could only ever decide OBSERVE.
+    """
+    cua_tools["list_apps"].outcome = ok_outcome(REAL_APPS_STATE)
+    cua_tools["list_windows"] = FakeTool(
+        "list_windows", ok_outcome(REAL_WINDOWS_STATE), arg_names=("pid",)
+    )
+    adapter, _ = build_adapter(cua_tools)
+
+    result = await adapter.observe()
+
+    assert cua_tools["list_windows"].calls[-1]["pid"] == 4242
+    assert cua_tools["get_window_state"].calls[-1]["window_id"] == 2002
+    assert result.foreground_app == "Google Chrome"
+
+
+async def test_observation_survives_an_app_with_no_windows(cua_tools) -> None:
+    """No window id must degrade to the tree fallback, not raise."""
+    cua_tools["list_apps"].outcome = ok_outcome(REAL_APPS_STATE)
+    cua_tools["list_windows"] = FakeTool("list_windows", ok_outcome({"windows": []}))
+    cua_tools["get_window_state"].error = VeloCuaError("window_id required")
+    adapter, _ = build_adapter(cua_tools)
+
+    result = await adapter.observe()
+
+    assert "window_id" not in cua_tools["get_window_state"].calls[-1]
+    assert result.targets == ()
