@@ -55,6 +55,7 @@ interface LiveRun {
   done: boolean;
   outcome: string;
   error: string;
+  agentName: string;
 }
 
 const EMPTY_RUN: LiveRun = {
@@ -65,6 +66,7 @@ const EMPTY_RUN: LiveRun = {
   done: false,
   outcome: "",
   error: "",
+  agentName: "",
 };
 
 export default function PanelApp() {
@@ -125,7 +127,7 @@ export default function PanelApp() {
           });
         }),
         await onAgentStart((s) => {
-          setRun((prev) => ({ ...(prev ?? EMPTY_RUN), runId: s.run_id }));
+          setRun((prev) => ({ ...(prev ?? EMPTY_RUN), runId: s.run_id, agentName: s.agent_name }));
         }),
         await onActivity((a) => {
           setRun((prev) => {
@@ -240,7 +242,7 @@ export default function PanelApp() {
           )}
 
           {messages.map((m) => (
-            <Message key={m.id} role={m.role} text={m.text} createdAt={m.created_at} />
+            <Message key={m.id} role={m.role} text={m.text} createdAt={m.created_at} agentName={m.agent_name} />
           ))}
 
           {partial && <Message role="user" text={partial} muted />}
@@ -251,7 +253,7 @@ export default function PanelApp() {
 
           {run && (run.text || run.status || run.activity.length > 0 || run.done) && (
             <>
-              {run.text && <Message role="assistant" text={run.text} />}
+              {run.text && <Message role="assistant" text={run.text} agentName={run.agentName} />}
               <ActivityTimeline events={run.activity} status={run.status} working={!run.done} />
               {run.done && run.outcome !== "completed" && (
                 <div className={`run-outcome ${run.outcome}`}>

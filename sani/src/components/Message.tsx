@@ -3,6 +3,7 @@ interface MessageProps {
   text: string;
   createdAt?: number;
   muted?: boolean;
+  agentName?: string | null;
 }
 
 function time(ts?: number): string {
@@ -10,7 +11,7 @@ function time(ts?: number): string {
   return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-export default function Message({ role, text, createdAt, muted }: MessageProps) {
+export default function Message({ role, text, createdAt, muted, agentName }: MessageProps) {
   const isUser = role === "user";
   return (
     <div className={`msg ${isUser ? "msg-user" : "msg-agent"}`}>
@@ -31,7 +32,7 @@ export default function Message({ role, text, createdAt, muted }: MessageProps) 
             </svg>
           )}
         </span>
-        <span className="msg-author">{isUser ? "You" : "Sani"}</span>
+        <span className="msg-author">{isUser ? "You" : agentName || "Sani"}</span>
         <span className="msg-time">{time(createdAt)}</span>
       </div>
       <div className={`msg-text ${muted ? "muted" : ""}`}>{text}</div>
