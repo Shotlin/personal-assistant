@@ -123,6 +123,13 @@ pub fn current_state(app: &AppHandle) -> UiState {
 fn set_state(app: &AppHandle, next: UiState) {
     let state = app.state::<SaniState>();
     *state.state.lock() = next;
+    notify_state_change(app, next);
+}
+
+/// Publish effects after a state transition.  Keep this separate from the
+/// state write so an admission path can claim a turn while holding the mutex,
+/// release it, and only then notify WebViews.
+fn notify_state_change(app: &AppHandle, next: UiState) {
     log::info!("[state] {}", next.as_str());
     let _ = app.emit("sani://state", next.as_str());
     hotkey::rebind_on_state_change(app);
@@ -582,6 +589,30 @@ fn can_admit_text(state: UiState) -> bool {
     matches!(state, UiState::Idle | UiState::Error)
 }
 
+fn claim_text_state(state: &mut UiState) -> bool {
+    if !can_admit_text(*state) {
+        return false;
+    }
+    *state = UiState::Working;
+    true
+}
+
+/// Atomically reserve the one live text turn.  Renderer state is deliberately
+/// not used as the lock: two send events can arrive before React processes the
+/// first `sani://state` event.  Reserving `Working` here, before any history
+/// I/O, prevents two user messages from sharing one assistant stream.
+fn claim_text_turn(app: &AppHandle) -> bool {
+    let state = app.state::<SaniState>();
+    let claimed = {
+        let mut current = state.state.lock();
+        claim_text_state(&mut current)
+    };
+    if claimed {
+        notify_state_change(app, UiState::Working);
+    }
+    claimed
+}
+
 /// Typed turns use the exact same admission, persistence and runtime path as
 /// explicitly finalized speech. The native state is the single authority, so
 /// separate WebViews can observe a run without creating a second one.
@@ -590,11 +621,13 @@ pub fn submit_text(app: &AppHandle, text: String) -> Result<(), String> {
     if text.is_empty() {
         return Err("Enter a message before sending.".to_string());
     }
-    if !can_admit_text(current_state(app)) {
-        return Err("Finish, cancel, or wait for the current request before sending another message."
-            .to_string());
+    if !claim_text_turn(app) {
+        return Err(
+            "Finish, cancel, or wait for the current request before sending another message."
+                .to_string(),
+        );
     }
-    begin_turn(app, text);
+    begin_turn(app, text, true);
     Ok(())
 }
 
@@ -614,7 +647,7 @@ fn begin_turn_if_current(app: &AppHandle, gen: u64, final_text: String) {
         );
         return;
     }
-    begin_turn(app, final_text);
+    begin_turn(app, final_text, false);
 }
 
 fn ensure_active_conversation(app: &AppHandle) -> String {
@@ -646,9 +679,13 @@ fn ensure_active_conversation(app: &AppHandle) -> String {
     id
 }
 
-fn begin_turn(app: &AppHandle, final_text: String) {
+/// Start a turn after the caller has either atomically reserved it (typed
+/// input) or validated the voice-finalization state.  `already_claimed` must
+/// remain true only for `claim_text_turn`; keeping the voice path unchanged
+/// preserves its cancellation-generation guard.
+fn begin_turn(app: &AppHandle, final_text: String, already_claimed: bool) {
     let state = app.state::<SaniState>();
-    if matches!(current_state(app), UiState::Working) {
+    if !already_claimed && matches!(current_state(app), UiState::Working) {
         return;
     }
     let conversation_id = ensure_active_conversation(app);
@@ -681,7 +718,9 @@ fn begin_turn(app: &AppHandle, final_text: String) {
     });
 
     log::info!("begin turn: conversation={conversation_id} message={message_id}");
-    set_state(app, UiState::Working);
+    if !already_claimed {
+        set_state(app, UiState::Working);
+    }
     let _ = windows::show_panel(app);
 
     let app_handle = app.clone();
@@ -719,7 +758,7 @@ fn begin_turn(app: &AppHandle, final_text: String) {
 
 #[cfg(test)]
 mod admission_tests {
-    use super::{can_admit_text, UiState};
+    use super::{can_admit_text, claim_text_state, UiState};
 
     #[test]
     fn text_admission_only_accepts_idle_state() {
@@ -727,6 +766,14 @@ mod admission_tests {
         assert!(!can_admit_text(UiState::Listening));
         assert!(!can_admit_text(UiState::Finalizing));
         assert!(!can_admit_text(UiState::Working));
+    }
+
+    #[test]
+    fn second_text_turn_is_rejected_after_the_first_claims_working() {
+        let mut state = UiState::Idle;
+        assert!(claim_text_state(&mut state));
+        assert_eq!(state, UiState::Working);
+        assert!(!claim_text_state(&mut state));
     }
 }
 
