@@ -19,6 +19,11 @@
 #   Calculator     com.apple.calculator
 #   Google Chrome  com.google.Chrome
 #   Terminal       com.apple.Terminal   (hosts Claude Code CLI)
+#   TextEdit       com.apple.TextEdit   (reviewed 2026-09-24: the computer-
+#       control acceptance test types a harmless phrase into a document, and
+#       no other allowlisted app has a text field that a keystroke can be
+#       independently verified against. Read/write is limited to whatever the
+#       user opens; the driver still cannot touch any other application.)
 version: 3
 expires_after: 8h
 idle_timeout: 30m
@@ -70,6 +75,10 @@ resources:
       windows: all
       terminate: driver_launched
     - bundle_id: com.apple.Terminal
+      launch: true
+      windows: all
+      terminate: driver_launched
+    - bundle_id: com.apple.TextEdit
       launch: true
       windows: all
       terminate: driver_launched

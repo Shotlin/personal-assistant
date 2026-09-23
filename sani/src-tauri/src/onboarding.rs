@@ -669,7 +669,7 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
     } else if driver == "not_authorized" {
         (
             "driver_permission_required",
-            "Sani is allowed, but macOS has not allowed CuaDriver — the separate process that actually moves the pointer. Enable CuaDriver under Accessibility and Screen Recording, then restart Sani.",
+            "macOS has not authorized the process that moves the pointer. The driver runs as a child of Sani and shares Sani's own Accessibility and Screen Recording grants — there is no separate CuaDriver switch. Enable both for Sani, then restart Sani so the running driver picks them up.",
         )
     } else if driver == "missing" {
         (
