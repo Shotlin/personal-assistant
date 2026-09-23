@@ -157,6 +157,7 @@ fn main() {
             show_main_settings,
             list_conversations,
             get_messages,
+            get_run_activity,
             new_conversation,
             select_conversation,
             delete_conversation,
@@ -563,6 +564,14 @@ fn get_messages(
     conversation_id: String,
 ) -> Result<Vec<history::StoredMessage>, String> {
     app_state::history(&app).messages(&conversation_id)
+}
+
+#[tauri::command]
+fn get_run_activity(
+    app: tauri::AppHandle,
+    conversation_id: String,
+) -> Result<Vec<history::ActivityRecord>, String> {
+    app_state::history(&app).activity(&conversation_id)
 }
 
 #[tauri::command]

@@ -111,6 +111,7 @@ pub async fn stream_turn(
         let live = live.clone();
         let message_id = message_id.clone();
         let agent_name = agent_name.clone();
+        let activity_conversation_id = thread_id.clone();
         move |frame: Value| {
             let _ = emitter.emit("sani://core-event", frame.clone());
             let Some(event) = parse(&frame) else { return };
@@ -138,7 +139,7 @@ pub async fn stream_turn(
                         .clone()
                         .unwrap_or_else(|| "Working…".to_string());
                     emit_chunk(&emitter, &message_id, "status", &line, &event.agent_id);
-                    emit_activity(&emitter, &event.run_id, &event.agent_id, &line);
+                    emit_activity(&emitter, &activity_conversation_id, &event.run_id, &event.agent_id, &line);
                 }
                 _ => {}
             }
@@ -219,15 +220,32 @@ fn emit_chunk(emitter: &AppHandle, message_id: &str, kind: &str, delta: &str, ag
     );
 }
 
-fn emit_activity(emitter: &AppHandle, run_id: &str, agent_id: &str, label: &str) {
+fn emit_activity(emitter: &AppHandle, conversation_id: &str, run_id: &str, agent_id: &str, label: &str) {
+    let sequence = next_sequence();
+    let timestamp = app_state::now_ms();
+    let record = crate::history::ActivityRecord {
+        sequence: sequence as i64,
+        conversation_id: conversation_id.to_string(),
+        run_id: run_id.to_string(),
+        agent_id: agent_id.to_string(),
+        event_type: "agent.progress".to_string(),
+        timestamp,
+        label: label.to_string(),
+        status: "info".to_string(),
+    };
+    if !conversation_id.is_empty() {
+        if let Err(error) = app_state::history(emitter).append_activity(&record) {
+            log::warn!("[history] could not persist run activity: {error}");
+        }
+    }
     let _ = emitter.emit(
         "sani://activity",
         json!({
-            "sequence": next_sequence(),
+            "sequence": sequence,
             "run_id": run_id,
             "agent_id": agent_id,
             "event_type": "agent.progress",
-            "timestamp": app_state::now_ms(),
+            "timestamp": timestamp,
             "label": label,
             "status": "info",
         }),

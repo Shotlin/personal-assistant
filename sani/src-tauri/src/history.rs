@@ -32,6 +32,20 @@ pub struct StoredMessage {
     pub agent_name: Option<String>,
 }
 
+/// Non-secret operational metadata for one agent run. Transcript text, audio,
+/// screenshots, clipboard contents, and credentials are deliberately absent.
+#[derive(Debug, Clone, Serialize)]
+pub struct ActivityRecord {
+    pub sequence: i64,
+    pub conversation_id: String,
+    pub run_id: String,
+    pub agent_id: String,
+    pub event_type: String,
+    pub timestamp: i64,
+    pub label: String,
+    pub status: String,
+}
+
 /// Provenance recorded alongside one stored message.
 #[derive(Clone, Default)]
 pub struct Attribution<'a> {
@@ -89,7 +103,21 @@ impl History {
                  agent_name      TEXT
              );
              CREATE INDEX IF NOT EXISTS messages_conversation_idx
-                 ON messages (conversation_id, created_at);",
+                 ON messages (conversation_id, created_at);
+             CREATE TABLE IF NOT EXISTS run_activity (
+                 sequence INTEGER PRIMARY KEY,
+                 conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                 run_id TEXT NOT NULL,
+                 agent_id TEXT NOT NULL,
+                 event_type TEXT NOT NULL,
+                 timestamp INTEGER NOT NULL,
+                 label TEXT NOT NULL,
+                 status TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS run_activity_conversation_idx
+                 ON run_activity (conversation_id, timestamp, sequence);
+             CREATE INDEX IF NOT EXISTS run_activity_run_idx
+                 ON run_activity (run_id, sequence);",
         )
         .map_err(|e| e.to_string())?;
         // Databases created before multi-agent attribution lack these columns.
@@ -234,6 +262,23 @@ impl History {
             .map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())
+    }
+
+    pub fn append_activity(&self, record: &ActivityRecord) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO run_activity (sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![record.sequence, record.conversation_id, record.run_id, record.agent_id, record.event_type, record.timestamp, record.label, record.status],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn activity(&self, conversation_id: &str) -> Result<Vec<ActivityRecord>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare("SELECT sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status FROM run_activity WHERE conversation_id = ?1 ORDER BY sequence ASC").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(params![conversation_id], |row| Ok(ActivityRecord { sequence: row.get(0)?, conversation_id: row.get(1)?, run_id: row.get(2)?, agent_id: row.get(3)?, event_type: row.get(4)?, timestamp: row.get(5)?, label: row.get(6)?, status: row.get(7)? })).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 }
 

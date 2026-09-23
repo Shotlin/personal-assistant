@@ -276,6 +276,8 @@ export const pressEscape = () => invoke<void>("escape_cmd");
 export const listConversations = () => invoke<Conversation[]>("list_conversations");
 export const getMessages = (conversationId: string) =>
   invoke<ChatMessage[]>("get_messages", { conversationId });
+export const getRunActivity = (conversationId: string) =>
+  invoke<ActivityEvent[]>("get_run_activity", { conversationId });
 export const newConversation = () => invoke<string>("new_conversation");
 export const selectConversation = (conversationId: string) =>
   invoke<void>("select_conversation", { conversationId });
