@@ -258,6 +258,11 @@ No system permissions, Dock preferences, external-display configuration, or
 computer-control action were changed for this verification. Consequently,
 physical Velo/TextEdit acceptance and external-display acceptance are recorded
 as unavailable rather than passed.
+
+Performance review: no representative provider-backed text or voice run was
+available in this release environment, so no valid before/after timing dataset
+exists. Sani records observed runtime stages locally for a later comparable
+capture; no speculative performance optimization was made without that evidence.
 | `scripts/probe-gateway-contract.sh` | the gateway contract Sani relies on: `[DONE]`, activity past `run.started`, exactly-once dedup by message id, `/stop` → `run.cancelled` |
 | `scripts/probe-sidecar-speech.py` | the *installed* sidecar transcribes real speech with no repo venv or Terminal env |
 | `scripts/probe-voice-loop.sh` | the full loop on the installed app: audible sentence → mic → partials → final → one agent turn → streamed answer |
