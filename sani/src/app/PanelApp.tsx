@@ -137,12 +137,23 @@ export default function PanelApp() {
           });
         }),
         await onAgentDone((d) => {
-          setRun((prev) => ({
-            ...(prev ?? EMPTY_RUN),
-            done: true,
-            outcome: d.status,
-            error: d.error,
-          }));
+          // Replace the temporary streaming bubble with the exact row native
+          // committed to history. Leaving a completed LiveRun in place made
+          // the next turn append its tokens to the prior answer.
+          if (d.assistant_message_id && d.text.trim()) {
+            setMessages((prev) => prev.some((message) => message.id === d.assistant_message_id)
+              ? prev
+              : [...prev, {
+                  id: d.assistant_message_id,
+                  role: "assistant",
+                  text: d.text,
+                  created_at: d.created_at,
+                  run_id: d.run_id || null,
+                  agent_id: d.agent_id || null,
+                  agent_name: d.agent_name || null,
+                }]);
+          }
+          setRun(null);
           setAgentOnline(d.ok ? true : false);
           if (d.run_id) void refreshConversations();
         }),

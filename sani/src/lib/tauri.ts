@@ -53,6 +53,10 @@ export interface AgentDone {
   error: string;
   agent_id: string;
   agent_name: string;
+  /** Persisted terminal assistant row; empty when the run produced no text. */
+  assistant_message_id: string;
+  text: string;
+  created_at: number;
 }
 
 export interface AgentStart {

@@ -826,10 +826,12 @@ pub fn agent_finished(
     } else {
         Some(agent_name)
     };
+    let mut assistant_id = String::new();
+    let mut assistant_created_at = 0;
     if !text.trim().is_empty() {
-        let assistant_id = Uuid::new_v4().to_string();
+        assistant_id = Uuid::new_v4().to_string();
         let conversation_id = state.settings.read().active_conversation_id.clone();
-        let now = now_ms();
+        assistant_created_at = now_ms();
         let attribution = history::Attribution {
             run_id: run_opt,
             agent_id: agent_opt,
@@ -840,11 +842,13 @@ pub fn agent_finished(
             &conversation_id,
             "assistant",
             text,
-            now,
+            assistant_created_at,
             &attribution,
         );
-        let _ = state.history.touch_conversation(&conversation_id, now);
-        *state.assistant_message_id.lock() = assistant_id;
+        let _ = state
+            .history
+            .touch_conversation(&conversation_id, assistant_created_at);
+        *state.assistant_message_id.lock() = assistant_id.clone();
     }
     let _ = app.emit(
         "sani://agent-done",
@@ -856,6 +860,13 @@ pub fn agent_finished(
             "error": error,
             "agent_id": agent_id,
             "agent_name": agent_name,
+            // A terminal event carries the authoritative, persisted assistant
+            // row. Renderers must replace their temporary stream with this
+            // row before accepting another turn; otherwise the next stream
+            // can be concatenated onto the previous answer.
+            "assistant_message_id": assistant_id,
+            "text": text,
+            "created_at": assistant_created_at,
         }),
     );
     // Length, never content: the transcript stays in the local history store.
