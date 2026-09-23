@@ -33,3 +33,21 @@ def test_list_models_is_a_machine_readable_catalog() -> None:
     args = parser.parse_args(["--list-models"])
 
     assert args.list_models is True
+
+
+def test_silence_never_commits_without_explicit_flush() -> None:
+    sidecar = load_sidecar()
+    events: list[dict] = []
+    acc = sidecar.TurnAccumulator(
+        turn_end_s=1.0,
+        max_utterance_s=30.0,
+        partial_stable_s=0.1,
+        emit=events.append,
+    )
+    acc.on_line_text(1, "keep this draft", 0.0)
+    acc.on_speech_end(0.0)
+    for seconds in (2.0, 5.0, 15.0):
+        assert acc.due(seconds)[0] != "commit"
+    assert not [event for event in events if event["type"] == "final"]
+    acc.commit("explicit-flush", 15.0)
+    assert [event["text"] for event in events if event["type"] == "final"] == ["keep this draft"]

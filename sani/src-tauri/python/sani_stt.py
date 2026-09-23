@@ -258,6 +258,7 @@ class TurnAccumulator:
         self.committed_ids: set[int] = set()
         self.discard_requested = False
         self.stream_reset_pending = False
+        self.limit_warned = False
         self.rescue_armed_at: float | None = None
         self.stats: dict[str, int] = {
             "commits": 0,
@@ -390,51 +391,21 @@ class TurnAccumulator:
 
     # -- scheduling ----------------------------------------------------------
     def deadline(self) -> float | None:
-        """Earliest instant a decision could be due, for the scheduler's wait."""
+        """Earliest instant a non-submitting safety warning can be due."""
         with self._lock:
-            if self.phase == PHASE_POSSIBLE_END and self.last_speech_time is not None:
-                return self.last_speech_time + self._turn_end_s
-            if self.phase == PHASE_SPEAKING and self.utterance_started_at is not None:
-                return min(
-                    self.utterance_started_at + self._max_utterance_s,
-                    (self.last_speech_time or 0.0) + self._turn_end_s
-                    if self.last_speech_time
-                    else self.utterance_started_at + self._max_utterance_s,
-                )
-            if self.phase == PHASE_IDLE and self.rescue_armed_at is not None:
-                return self.rescue_armed_at + 2 * self._turn_end_s
+            if self.utterance_started_at is not None and not self.limit_warned:
+                return self.utterance_started_at + self._max_utterance_s
             return None
 
     def due(self, now: float) -> tuple[str, str | None]:
         with self._lock:
-            if self.phase == PHASE_POSSIBLE_END:
-                if self.utterance_started_at is not None and (
-                    now - self.utterance_started_at
-                ) >= self._max_utterance_s:
-                    return "commit", "max-duration"
-                if self.last_speech_time is None:
-                    return "wait", None
-                silence = now - self.last_speech_time
-                starved = (now - self.last_audio_at) >= STARVED_INPUT_S
-                stable = now - self.last_change_at >= self._partial_stable_s
-                if silence >= self._turn_end_s and (stable or starved):
-                    return "commit", "vad-silence"
-                return "wait", None
-            if self.phase == PHASE_SPEAKING and self.last_speech_time is not None:
-                # Speech ended but no `end` edge arrived (a gated or truncated
-                # capture). The deadline still has to fire.
-                if (now - self.last_speech_time) >= self._turn_end_s and (
-                    now - self.last_change_at >= self._partial_stable_s
-                    or (now - self.last_audio_at) >= STARVED_INPUT_S
-                ):
-                    return "commit", "vad-silence"
-                return "wait", None
-            if self.phase == PHASE_IDLE and self.rescue_armed_at is not None:
-                # The VAD never confirmed speech yet the model produced text.
-                # Commit rather than lose the utterance; the frequency of this
-                # reason is the signal that a better model is warranted.
-                if (now - self.rescue_armed_at) >= 2 * self._turn_end_s and self._has_text():
-                    return "commit", "rms-rescue"
+            if (
+                self.utterance_started_at is not None
+                and not self.limit_warned
+                and now - self.utterance_started_at >= self._max_utterance_s
+            ):
+                self.limit_warned = True
+                return "warn", "max-duration"
             return "wait", None
 
     # -- the only emitter of `final` ----------------------------------------
@@ -543,6 +514,7 @@ class TurnAccumulator:
         self.last_speech_time = None
         self.speech_active = False
         self.rescue_armed_at = None
+        self.limit_warned = False
         self.commit_timer_generation += 1
         self.phase = PHASE_IDLE
 
@@ -935,14 +907,8 @@ def run_sidecar(args, sink: Sink) -> int:
             if stop.wait(wait):
                 break
             action, reason = acc.due(time.monotonic())
-            if action != "commit" or not reason:
-                continue
-            acc.commit(reason, time.monotonic())
-            if acc.take_stream_reset():
-                try:
-                    driver.reset()
-                except Exception as exc:  # noqa: BLE001
-                    sink({"type": "error", "message": f"stream reset failed: {exc}"})
+            if action == "warn" and reason:
+                sink.note("recording-limit", message=reason)
 
     threading.Thread(target=scheduler, daemon=True).start()
 
