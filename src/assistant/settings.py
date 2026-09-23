@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # CUA (computer use)
     cua_enabled: bool = True
     cua_command: str = "cua-driver"
+    # A packaged desktop host starts the driver itself in embedded mode and
+    # supplies a private Unix socket.  An empty value retains the standalone
+    # CLI integration used by development and verification scripts.
+    cua_socket: str = ""
     cua_permission_mode: str = "bounded"
     cua_capability_manifest_path: str = ""
     cua_existing_profile_grant: bool = False
@@ -233,6 +237,8 @@ class Settings(BaseSettings):
                 errors.append("CUA_ENABLED=true requires CUA_CAPABILITY_MANIFEST_PATH")
             elif not self.cua_capability_manifest_path.startswith("/"):
                 errors.append("CUA_CAPABILITY_MANIFEST_PATH must be an absolute path")
+            if self.cua_socket and not self.cua_socket.startswith("/"):
+                errors.append("CUA_SOCKET must be an absolute path when configured")
 
         if errors:
             raise SettingsError("Invalid configuration:\n  - " + "\n  - ".join(errors))

@@ -47,6 +47,10 @@ const STATUS_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long [`SaniCoreClient::shutdown`] waits for a clean sidecar exit
 /// before killing it.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
+/// A packaged CUA driver must create its private endpoint promptly.  This is
+/// a startup bound, not permission approval: denied macOS permissions leave
+/// the daemon alive and are reported honestly by the driver.
+const CUA_BOOT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Frontend event carrying raw sani-core event frames (the whole
 /// `{"type":"event",...}` object, unmodified).
@@ -71,6 +75,25 @@ pub struct SaniCoreConfig {
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
     pub working_dir: Option<PathBuf>,
+    cua: Option<EmbeddedCuaConfig>,
+}
+
+/// A CUA daemon embedded in Sani's own macOS responsibility chain.
+///
+/// The driver must be a direct child of Sani, never a globally installed
+/// `CuaDriver.app` opened through LaunchServices.  That gives Sani one
+/// permission identity and prevents the driver's MCP proxy from reviving an
+/// unrelated standard-mode daemon.
+#[derive(Clone)]
+struct EmbeddedCuaConfig {
+    command: PathBuf,
+    socket: PathBuf,
+    manifest: PathBuf,
+}
+
+struct EmbeddedCuaDriver {
+    child: Child,
+    socket: PathBuf,
 }
 
 /// The providers `assistant.settings.Settings` accepts. A value an older build
@@ -105,10 +128,10 @@ impl SaniCoreConfig {
         let mut env: Vec<(String, String)> = Vec::new();
         if !is_bundled_core {
             if let Some(root) = crate::setup::find_repo_root() {
-            env.push((
-                "PYTHONPATH".to_string(),
-                root.join("src").to_string_lossy().into_owned(),
-            ));
+                env.push((
+                    "PYTHONPATH".to_string(),
+                    root.join("src").to_string_lossy().into_owned(),
+                ));
             }
         }
         // Embedded SQLite only: the shipping path has no server to reach.
@@ -126,24 +149,28 @@ impl SaniCoreConfig {
             "CUA_ARTIFACT_DIR".to_string(),
             artifacts.to_string_lossy().into_owned(),
         ));
-        // A missing manifest must not take the whole assistant down: the
-        // sidecar would refuse to start. Computer control switches off and
-        // says so loudly instead, where reasoning keeps working.
-        match crate::setup::resource_path(app, "config/cua-capabilities.yaml") {
-            Some(manifest) => {
-                env.push(("CUA_ENABLED".to_string(), "true".to_string()));
-                env.push((
-                    "CUA_CAPABILITY_MANIFEST_PATH".to_string(),
-                    manifest.to_string_lossy().into_owned(),
-                ));
-            }
-            None => {
+        let cua = match (
+            packaged_cua_driver(),
+            crate::setup::resource_path(app, "config/cua-capabilities.yaml"),
+        ) {
+            (Some(command), Some(manifest)) => Some(EmbeddedCuaConfig {
+                command,
+                socket: data_dir.join("cua-driver.sock"),
+                manifest,
+            }),
+            (None, _) => {
                 log::error!(
-                    "CUA capability manifest not found; starting sani-core without computer control"
+                    "embedded CUA driver missing; starting sani-core without computer control"
                 );
-                env.push(("CUA_ENABLED".to_string(), "false".to_string()));
+                None
             }
-        }
+            (_, None) => {
+                log::error!(
+                    "CUA capability manifest missing; starting sani-core without computer control"
+                );
+                None
+            }
+        };
 
         let settings = crate::app_state::settings(app).read().clone();
         env.push((
@@ -184,12 +211,41 @@ impl SaniCoreConfig {
 
         Ok(Self {
             command,
-            args: if is_bundled_core { Vec::new() } else { vec!["-m".to_string(), "assistant.core".to_string()] },
+            args: if is_bundled_core {
+                Vec::new()
+            } else {
+                vec!["-m".to_string(), "assistant.core".to_string()]
+            },
             env,
             // A deterministic working dir: the sidecar must not quietly pick up
             // a developer's `.env` and disagree with what the app configured.
             working_dir: Some(data_dir),
+            cua,
         })
+    }
+
+    fn configure_cua(&mut self, cua: Option<&EmbeddedCuaConfig>) {
+        match cua {
+            Some(cua) => {
+                self.env
+                    .push(("CUA_ENABLED".to_string(), "true".to_string()));
+                self.env.push((
+                    "CUA_CAPABILITY_MANIFEST_PATH".to_string(),
+                    cua.manifest.to_string_lossy().into_owned(),
+                ));
+                self.env.push((
+                    "CUA_COMMAND".to_string(),
+                    cua.command.to_string_lossy().into_owned(),
+                ));
+                self.env.push((
+                    "CUA_SOCKET".to_string(),
+                    cua.socket.to_string_lossy().into_owned(),
+                ));
+            }
+            None => self
+                .env
+                .push(("CUA_ENABLED".to_string(), "false".to_string())),
+        }
     }
 }
 
@@ -197,20 +253,33 @@ impl SaniCoreConfig {
 /// Tauri executable. Development discovery remains an explicit fallback for
 /// unbundled builds; a release never borrows a checkout interpreter.
 pub(crate) fn running_from_bundle() -> bool {
-    std::env::current_exe()
-        .ok()
-        .is_some_and(|path| path.ancestors().any(|parent| parent.extension().is_some_and(|ext| ext == "app")))
+    std::env::current_exe().ok().is_some_and(|path| {
+        path.ancestors()
+            .any(|parent| parent.extension().is_some_and(|ext| ext == "app"))
+    })
 }
 
 fn packaged_core() -> Option<PathBuf> {
+    packaged_external_bin("sani-core")
+}
+
+fn packaged_cua_driver() -> Option<PathBuf> {
+    packaged_external_bin("cua-driver")
+}
+
+/// Resolve an architecture-qualified Tauri external binary beside Sani.
+fn packaged_external_bin(stem: &str) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
     let target = match std::env::consts::ARCH {
-        "aarch64" => "sani-core-aarch64-apple-darwin",
-        "x86_64" => "sani-core-x86_64-apple-darwin",
+        "aarch64" => format!("{stem}-aarch64-apple-darwin"),
+        "x86_64" => format!("{stem}-x86_64-apple-darwin"),
         _ => return None,
     };
-    [target, "sani-core"].into_iter().map(|name| dir.join(name)).find(|path| path.is_file())
+    [target, stem.to_string()]
+        .into_iter()
+        .map(|name| dir.join(name))
+        .find(|path| path.is_file())
 }
 
 // ------------------------------------------------------------------- framing
@@ -521,9 +590,7 @@ impl SaniCoreClient {
     /// `agents.list` -> the sidecar registry's agent descriptors.
     pub async fn list_agents(&mut self) -> Result<Vec<Value>, String> {
         let timeout = registry_timeout(self.registry_ready);
-        let result = self
-            .request("agents.list", json!({}), timeout)
-            .await?;
+        let result = self.request("agents.list", json!({}), timeout).await?;
         let agents = result
             .get("agents")
             .and_then(Value::as_array)
@@ -657,6 +724,9 @@ impl RunControl {
 pub struct SaniCoreState {
     client: Mutex<Option<SaniCoreClient>>,
     live: Mutex<Option<RunControl>>,
+    /// Sani owns exactly one embedded CUA daemon generation.  It is not a
+    /// global background service and is stopped when Sani stops.
+    cua_driver: Mutex<Option<EmbeddedCuaDriver>>,
     /// All ownership-changing IPC operations are serialized. Three WebViews
     /// ask for the registry during launch; without this gate, one could take
     /// the client while another concluded it had died and spawned a second
@@ -665,7 +735,11 @@ pub struct SaniCoreState {
 }
 
 async fn operation_guard(app: &AppHandle) -> tokio::sync::OwnedMutexGuard<()> {
-    app.state::<SaniCoreState>().operation.clone().lock_owned().await
+    app.state::<SaniCoreState>()
+        .operation
+        .clone()
+        .lock_owned()
+        .await
 }
 
 fn take_client(app: &AppHandle) -> Result<Option<SaniCoreClient>, String> {
@@ -692,6 +766,138 @@ fn live_control(app: &AppHandle) -> Option<RunControl> {
         .and_then(|guard| guard.clone())
 }
 
+async fn stop_embedded_cua_driver(driver: EmbeddedCuaDriver) {
+    let socket = driver.socket.clone();
+    let mut child = driver.child;
+    if let Err(err) = child.kill().await {
+        log::debug!("embedded CUA driver was already stopped: {err}");
+    }
+    let _ = child.wait().await;
+    if let Err(err) = std::fs::remove_file(&socket) {
+        if err.kind() != std::io::ErrorKind::NotFound {
+            log::warn!(
+                "could not remove stale CUA socket {}: {err}",
+                socket.display()
+            );
+        }
+    }
+}
+
+async fn spawn_embedded_cua_driver(
+    config: &EmbeddedCuaConfig,
+) -> Result<EmbeddedCuaDriver, String> {
+    // The socket is owned below Sani's data directory.  A previous crashed
+    // child can leave this one exact endpoint behind; do not touch any global
+    // Cua Driver socket or user-managed daemon.
+    if let Err(err) = std::fs::remove_file(&config.socket) {
+        if err.kind() != std::io::ErrorKind::NotFound {
+            return Err(format!(
+                "cannot clear Sani CUA socket {}: {err}",
+                config.socket.display()
+            ));
+        }
+    }
+    let mut command = tokio::process::Command::new(&config.command);
+    command
+        .args([
+            "serve",
+            "--embedded",
+            "--socket",
+            config.socket.to_string_lossy().as_ref(),
+            "--permission-mode",
+            "bounded",
+            "--capability-manifest",
+            config.manifest.to_string_lossy().as_ref(),
+            "--approve-capability-manifest",
+        ])
+        // The exact string is required by the driver.  It preserves Sani's
+        // macOS responsibility chain; the driver never shows its own prompt.
+        .env("CUA_DRIVER_EMBEDDED", "1")
+        .env("CUA_DRIVER_HOST_BUNDLE_ID", "app.sani.local")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::inherit())
+        .kill_on_drop(true);
+    let mut child = command.spawn().map_err(|err| {
+        format!(
+            "could not start embedded CUA driver {}: {err}",
+            config.command.display()
+        )
+    })?;
+    let deadline = tokio::time::Instant::now() + CUA_BOOT_TIMEOUT;
+    loop {
+        if config.socket.exists() {
+            return Ok(EmbeddedCuaDriver {
+                child,
+                socket: config.socket.clone(),
+            });
+        }
+        if let Some(status) = child.try_wait().map_err(|err| err.to_string())? {
+            return Err(format!(
+                "embedded CUA driver exited during startup: {status}"
+            ));
+        }
+        if tokio::time::Instant::now() >= deadline {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(format!(
+                "embedded CUA driver did not create its private socket within {CUA_BOOT_TIMEOUT:?}"
+            ));
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Start at most one driver for the current Sani process.  A dead generation
+/// is replaced once at the next core launch; a healthy generation is reused.
+async fn ensure_embedded_cua_driver(
+    app: &AppHandle,
+    config: &EmbeddedCuaConfig,
+) -> Result<(), String> {
+    let stale = {
+        let state = app.state::<SaniCoreState>();
+        let mut guard = state
+            .cua_driver
+            .lock()
+            .map_err(|_| "embedded CUA driver state poisoned".to_string())?;
+        let healthy = guard.as_mut().is_some_and(|driver| {
+            driver.socket == config.socket
+                && driver.socket.exists()
+                && matches!(driver.child.try_wait(), Ok(None))
+        });
+        if healthy {
+            return Ok(());
+        }
+        guard.take()
+    };
+    if let Some(driver) = stale {
+        stop_embedded_cua_driver(driver).await;
+    }
+    let driver = spawn_embedded_cua_driver(config).await?;
+    let state = app.state::<SaniCoreState>();
+    state
+        .cua_driver
+        .lock()
+        .map_err(|_| "embedded CUA driver state poisoned".to_string())?
+        .replace(driver);
+    log::info!("embedded bounded CUA driver started");
+    Ok(())
+}
+
+/// Best-effort orderly cleanup on Sani exit.  The child is also configured to
+/// die with its host, but closing it here removes the private socket promptly.
+pub fn shutdown_embedded_cua_driver(app: &AppHandle) {
+    let driver = app
+        .state::<SaniCoreState>()
+        .cua_driver
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+    if let Some(driver) = driver {
+        tauri::async_runtime::spawn(stop_embedded_cua_driver(driver));
+    }
+}
+
 // ------------------------------------------------------------------ commands
 
 /// Spawn the sani-core sidecar and remember it. If one is already running
@@ -703,7 +909,21 @@ pub async fn core_start(app: AppHandle) -> Result<Value, String> {
 }
 
 async fn start_unlocked(app: &AppHandle) -> Result<Value, String> {
-    let config = SaniCoreConfig::resolve(&app)?;
+    let mut config = SaniCoreConfig::resolve(&app)?;
+    let cua = config.cua.clone();
+    match cua.as_ref() {
+        Some(cua) => match ensure_embedded_cua_driver(app, cua).await {
+            Ok(()) => config.configure_cua(Some(cua)),
+            Err(err) => {
+                // A denied OS permission or failed driver must not make
+                // ordinary text/voice reasoning disappear.  The core reports
+                // Computer Control unavailable through its real status path.
+                log::error!("embedded CUA unavailable: {err}");
+                config.configure_cua(None);
+            }
+        },
+        None => config.configure_cua(None),
+    }
     let client = SaniCoreClient::spawn(&config).await?;
     let state = app.state::<SaniCoreState>();
     let previous = {
@@ -778,12 +998,16 @@ async fn list_agents_with_recovery(app: &AppHandle) -> Result<Vec<Value>, String
     start_unlocked(app).await?;
     list_agents_once(app)
         .await
-        .and_then(|agents| if agents.is_empty() {
-            Err("sani-core registry returned no agents after recovery".into())
-        } else {
-            Ok(agents)
+        .and_then(|agents| {
+            if agents.is_empty() {
+                Err("sani-core registry returned no agents after recovery".into())
+            } else {
+                Ok(agents)
+            }
         })
-        .map_err(|second_error| format!("sani-core registry unavailable after one recovery: {second_error}"))
+        .map_err(|second_error| {
+            format!("sani-core registry unavailable after one recovery: {second_error}")
+        })
 }
 
 fn registry_needs_recovery(result: &Result<Vec<Value>, String>) -> bool {

@@ -28,3 +28,4 @@ sani/src-tauri/gen/
 sani/.stt-venv/
 sani/.sidecar-build/
 sani/src-tauri/binaries/
+sani/.cua-build/

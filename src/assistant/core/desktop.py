@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
+import os
 import shutil
+import stat
 from dataclasses import dataclass
 from typing import Any
 
@@ -108,6 +110,30 @@ async def probe_driver(settings: Settings) -> DriverStatus:
             found=False,
             bounded_ok=False,
             detail="CUA is disabled (CUA_ENABLED=false); computer control unavailable",
+        )
+    if settings.cua_socket:
+        # The native Sani host owns this endpoint and only publishes it after
+        # the embedded daemon bound with bounded mode plus the reviewed
+        # manifest.  A global `cua-driver status` would inspect a different
+        # standalone service, so its result is not relevant here.
+        try:
+            socket_mode = os.stat(settings.cua_socket).st_mode
+        except OSError as exc:
+            return DriverStatus(
+                found=True,
+                bounded_ok=False,
+                detail=f"Sani embedded CuaDriver socket is unavailable: {exc}",
+            )
+        if not stat.S_ISSOCK(socket_mode):
+            return DriverStatus(
+                found=True,
+                bounded_ok=False,
+                detail="Sani embedded CuaDriver endpoint is not a Unix socket",
+            )
+        return DriverStatus(
+            found=True,
+            bounded_ok=True,
+            detail="Sani embedded bounded CuaDriver is listening; check the live permission results below",
         )
     executable = shutil.which(settings.cua_command)
     if executable is None:

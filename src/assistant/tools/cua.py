@@ -14,6 +14,8 @@ Two ways to talk to the driver:
 from __future__ import annotations
 
 import logging
+import os
+import stat
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -66,6 +68,19 @@ def _require_manifest(settings: Settings) -> Path:
             "installed Cua Driver schema and start the driver in bounded mode."
         )
     return manifest
+
+
+def driver_mcp_args(settings: Settings) -> list[str]:
+    """Return the only MCP launch shape allowed for this driver instance.
+
+    Installed Sani starts an embedded, bounded daemon itself.  Its MCP proxy
+    must select that private socket explicitly: a bare macOS ``mcp`` command
+    may otherwise revive a standalone standard-mode daemon.  Development
+    retains the standalone command when no socket was supplied.
+    """
+    if not settings.cua_socket:
+        return ["mcp"]
+    return ["mcp", "--embedded", "--socket", settings.cua_socket]
 
 
 def _evaluate_daemon_status(output: str) -> str | None:
@@ -121,6 +136,23 @@ async def _assert_bounded_daemon(settings: Settings) -> None:
     """Verify the live daemon posture before any CUA tool is exposed."""
     import asyncio
     import shutil
+
+    if settings.cua_socket:
+        # The packaged Sani host created this endpoint itself with the exact
+        # bounded manifest arguments, then waited for it before starting core.
+        # Do not call bare `status` here: on macOS that command addresses the
+        # global standalone daemon, not Sani's private embedded endpoint.
+        try:
+            is_socket = stat.S_ISSOCK(os.stat(settings.cua_socket).st_mode)
+        except OSError as exc:
+            raise RuntimeError(
+                f"embedded CuaDriver socket is unavailable at {settings.cua_socket}: {exc}"
+            ) from exc
+        if not is_socket:
+            raise RuntimeError(
+                f"embedded CuaDriver endpoint is not a socket: {settings.cua_socket}"
+            )
+        return
 
     executable = shutil.which(settings.cua_command)
     if executable is None:
@@ -197,7 +229,7 @@ async def load_cua_tools(settings: Settings) -> CuaConnection:
         {
             "cua": {
                 "command": settings.cua_command,
-                "args": ["mcp"],
+                "args": driver_mcp_args(settings),
                 "transport": "stdio",
             }
         }
@@ -223,7 +255,10 @@ async def open_cua_connection(settings: Settings) -> AsyncIterator[CuaConnection
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
-    server_params = StdioServerParameters(command=settings.cua_command, args=["mcp"])
+    server_params = StdioServerParameters(
+        command=settings.cua_command,
+        args=driver_mcp_args(settings),
+    )
 
     async with stdio_client(server_params) as (read_stream, write_stream):
         session = ClientSession(read_stream, write_stream)

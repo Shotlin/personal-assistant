@@ -32,7 +32,7 @@
       "../../src/assistant/skills": "skills",
       "release-manifest.json": "release-manifest.json"
     },
-    "externalBin": ["binaries/sani-stt", "binaries/sani-core"],
+    "externalBin": ["binaries/sani-stt", "binaries/sani-core", "binaries/cua-driver"],
     "macOS": {
       "minimumSystemVersion": "12.0",
       "infoPlist": "Info.plist"

@@ -213,6 +213,7 @@ fn main() {
             // overlays sitting somewhere that was never saved.
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 windows::cancel_preview(app_handle);
+                sani_core::shutdown_embedded_cua_driver(app_handle);
             }
             // RC-01: opening Sani again while it already runs (Finder/Dock)
             // must reveal the hidden overlays (or the setup window, while
