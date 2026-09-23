@@ -11,7 +11,7 @@
 //! on the next save, so upgrading is automatic and never destructive.
 
 use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -120,10 +120,12 @@ pub struct Settings {
     pub velo_provider: String,
     #[serde(default = "default_velo_model")]
     pub velo_model: String,
-    /// Which agent takes a turn: "auto" for smart routing, or a registered
-    /// agent id from the sani-core registry. The registry, not this field,
-    /// decides which ids are real.
-    #[serde(default = "default_agent_mode")]
+    /// Which registered agent takes a turn. `auto` was a legacy pseudo-agent;
+    /// persisted copies are migrated to Velo during deserialization.
+    #[serde(
+        default = "default_agent_mode",
+        deserialize_with = "deserialize_agent_mode"
+    )]
     pub agent_mode: String,
     /// Normal main-window geometry and its independent maximized intent.
     /// Coordinates are logical points relative to the persisted display's
@@ -138,6 +140,25 @@ pub struct Settings {
 
 fn default_agent_mode() -> String {
     "velo".into()
+}
+
+/// Canonicalize only legacy/default agent selections. Unknown non-empty IDs
+/// intentionally survive so dispatch can reject an explicit bad selection
+/// rather than silently routing a user's turn elsewhere.
+pub fn canonical_agent_mode(mode: &str) -> String {
+    let trimmed = mode.trim();
+    if trimmed.is_empty() || trimmed == "auto" {
+        default_agent_mode()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn deserialize_agent_mode<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(canonical_agent_mode(&String::deserialize(deserializer)?))
 }
 
 fn default_reasoning_provider() -> String {
@@ -229,10 +250,38 @@ pub fn settings_path(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 pub fn load(app: &tauri::AppHandle) -> Settings {
-    settings_path(app)
-        .and_then(|path| fs::read_to_string(path).ok())
-        .and_then(|raw| serde_json::from_str::<Settings>(&raw).ok())
-        .unwrap_or_default()
+    let Some(path) = settings_path(app) else {
+        return Settings::default();
+    };
+    let Ok(raw) = fs::read_to_string(&path) else {
+        return Settings::default();
+    };
+
+    // Rewrite only the migrated field in the original JSON object. This keeps
+    // settings added by a newer build intact rather than using migration as an
+    // excuse to discard them during an older build's launch.
+    if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&raw) {
+        if let Some(object) = value.as_object_mut() {
+            let persisted = object
+                .get("agent_mode")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let canonical = canonical_agent_mode(persisted);
+            if object.get("agent_mode").and_then(serde_json::Value::as_str) != Some(canonical.as_str()) {
+                object.insert("agent_mode".into(), serde_json::Value::String(canonical));
+                match serde_json::to_string_pretty(&value) {
+                    Ok(updated) => {
+                        if let Err(err) = fs::write(&path, updated) {
+                            log::warn!("could not persist agent-mode migration: {err}");
+                        }
+                    }
+                    Err(err) => log::warn!("could not encode agent-mode migration: {err}"),
+                }
+            }
+        }
+    }
+
+    serde_json::from_str::<Settings>(&raw).unwrap_or_default()
 }
 
 pub fn save(app: &tauri::AppHandle, settings: &Settings) -> Result<(), String> {
@@ -435,7 +484,13 @@ mod tests {
         assert_eq!(missing.agent_mode, "velo");
         assert_eq!(deep.agent_mode, "deep");
         assert_eq!(velo.agent_mode, "velo");
-        assert_eq!(auto.agent_mode, "auto");
+        assert_eq!(auto.agent_mode, "velo");
+    }
+
+    #[test]
+    fn empty_agent_mode_is_migrated_to_velo() {
+        let empty: Settings = serde_json::from_str(r#"{"agent_mode":"   "}"#).unwrap();
+        assert_eq!(empty.agent_mode, "velo");
     }
 
     #[test]

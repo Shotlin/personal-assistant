@@ -688,8 +688,8 @@ fn begin_turn(app: &AppHandle, final_text: String) {
     tauri::async_runtime::spawn(async move {
         // The registry decides who takes the turn; the host only asks.
         let (agent_id, agent_name) = match crate::runtime::resolve_agent(&app_handle).await {
-            Some(pair) => pair,
-            None => {
+            Ok(pair) => pair,
+            Err(error) => {
                 agent_finished(
                     &app_handle,
                     &message_id,
@@ -697,7 +697,7 @@ fn begin_turn(app: &AppHandle, final_text: String) {
                     "",
                     false,
                     "failed",
-                    "The assistant runtime has no agents available.".to_string(),
+                    error,
                     "",
                     "",
                 );

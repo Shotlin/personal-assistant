@@ -311,19 +311,6 @@ fn field(agent: &Value, key: &str) -> Option<String> {
     agent.get(key).and_then(Value::as_str).map(String::from)
 }
 
-fn capability_list(agent: &Value) -> Vec<String> {
-    agent
-        .get("capabilities")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 /// The sidecar registry's descriptors. The frontend may cache this, but it is
 /// never the origin of who exists.
 pub async fn agents(app: &AppHandle) -> Result<Vec<Value>, String> {
@@ -337,42 +324,34 @@ pub async fn agents(app: &AppHandle) -> Result<Vec<Value>, String> {
 
 /// Pick the agent that takes this turn, as `(id, name)`.
 ///
-/// "auto" is an execution mode, not an agent: it resolves to the registered
-/// agent that reasons, so new specialists need no code change here. A stored
-/// id the registry no longer knows falls back to auto rather than failing the
-/// turn, because the setting is older than the runtime, not the other way round.
+/// The registry is authoritative. A persisted but unknown id is an explicit
+/// bad selection, never an excuse to silently run another agent.
 pub fn select_agent(mode: &str, roster: &[Value]) -> Option<(String, String)> {
-    if mode != "auto" {
-        if let Some(chosen) = roster
-            .iter()
-            .find(|agent| field(agent, "id").as_deref() == Some(mode))
-        {
-            return Some((mode.to_string(), field(chosen, "name").unwrap_or_default()));
-        }
-    }
-    let general = roster
+    let chosen = roster
         .iter()
-        .find(|agent| capability_list(agent).iter().any(|c| c == "reasoning"))
-        .or_else(|| roster.first())?;
-    Some((
-        field(general, "id")?,
-        field(general, "name").unwrap_or_default(),
-    ))
+        .find(|agent| field(agent, "id").as_deref() == Some(mode))?;
+    Some((mode.to_string(), field(chosen, "name").unwrap_or_default()))
 }
 
-/// `auto` is retained only for older explicit settings. Every new selectable
-/// value must be an id reported by the currently running core registry.
+/// Every selectable value must be an id reported by the currently running
+/// core registry.
 pub fn selectable_agent_mode(mode: &str, roster: &[Value]) -> bool {
-    mode == "auto"
-        || roster
-            .iter()
-            .any(|agent| field(agent, "id").as_deref() == Some(mode))
+    roster
+        .iter()
+        .any(|agent| field(agent, "id").as_deref() == Some(mode))
 }
 
 /// Which registered agent takes this turn.
-pub async fn resolve_agent(app: &AppHandle) -> Option<(String, String)> {
+pub async fn resolve_agent(app: &AppHandle) -> Result<(String, String), String> {
     let mode = app_state::settings(app).read().agent_mode.clone();
-    select_agent(&mode, &agents(app).await.ok()?)
+    let roster = agents(app)
+        .await
+        .map_err(|err| format!("Sani agent registry is unavailable: {err}"))?;
+    select_agent(&mode, &roster).ok_or_else(|| {
+        format!(
+            "The selected agent '{mode}' is not registered by the running Sani core. Select Velo or Deep Agent."
+        )
+    })
 }
 
 #[cfg(test)]
@@ -400,18 +379,16 @@ mod tests {
     }
 
     #[test]
-    fn legacy_auto_is_compatibility_selection_not_a_new_agent() {
-        assert_eq!(
-            select_agent("auto", &roster()),
-            Some(("deep".into(), "Deep Agent".into()))
-        );
+    fn legacy_auto_and_unknown_ids_do_not_silently_route_to_another_agent() {
+        assert_eq!(select_agent("auto", &roster()), None);
+        assert_eq!(select_agent("invented", &roster()), None);
     }
 
     #[test]
-    fn only_registry_ids_or_legacy_auto_are_selectable() {
+    fn only_registry_ids_are_selectable() {
         assert!(selectable_agent_mode("velo", &roster()));
         assert!(selectable_agent_mode("deep", &roster()));
-        assert!(selectable_agent_mode("auto", &roster()));
+        assert!(!selectable_agent_mode("auto", &roster()));
         assert!(!selectable_agent_mode("invented", &roster()));
     }
 }

@@ -476,9 +476,7 @@ fn save_settings_cmd(
             s.theme = theme.clone();
         }
         if let Some(mode) = &agent_mode {
-            // Accepted verbatim: the registry, not this field, decides which
-            // ids exist, and an unknown id resolves to automatic at dispatch.
-            s.agent_mode = mode.clone();
+            s.agent_mode = settings::canonical_agent_mode(mode);
         }
         settings::save(&app, &s)?;
     }

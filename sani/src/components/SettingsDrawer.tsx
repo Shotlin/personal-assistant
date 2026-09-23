@@ -114,7 +114,6 @@ export default function SettingsDrawer({ onClose }: SettingsDrawerProps) {
         <label className="settings-row">
           <span>Next-turn agent</span>
           <select value={settings.agent_mode} disabled={!agentsAvailable} onChange={(e) => void selectAgent(e.target.value)}>
-            {!agents.some((agent) => agent.id === settings.agent_mode) && <option value={settings.agent_mode}>{settings.agent_mode} (unavailable)</option>}
             {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
           </select>
         </label>

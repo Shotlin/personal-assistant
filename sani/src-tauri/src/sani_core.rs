@@ -21,7 +21,7 @@
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -649,6 +649,15 @@ impl RunControl {
 pub struct SaniCoreState {
     client: Mutex<Option<SaniCoreClient>>,
     live: Mutex<Option<RunControl>>,
+    /// All ownership-changing IPC operations are serialized. Three WebViews
+    /// ask for the registry during launch; without this gate, one could take
+    /// the client while another concluded it had died and spawned a second
+    /// core process.
+    operation: Arc<tokio::sync::Mutex<()>>,
+}
+
+async fn operation_guard(app: &AppHandle) -> tokio::sync::OwnedMutexGuard<()> {
+    app.state::<SaniCoreState>().operation.clone().lock_owned().await
 }
 
 fn take_client(app: &AppHandle) -> Result<Option<SaniCoreClient>, String> {
@@ -667,10 +676,6 @@ fn restore_client(app: &AppHandle, client: SaniCoreClient) {
     };
 }
 
-fn running_client(app: &AppHandle) -> Result<SaniCoreClient, String> {
-    take_client(app)?.ok_or_else(|| "sani-core is not running".to_string())
-}
-
 fn live_control(app: &AppHandle) -> Option<RunControl> {
     app.state::<SaniCoreState>()
         .live
@@ -685,6 +690,11 @@ fn live_control(app: &AppHandle) -> Option<RunControl> {
 /// it is shut down cleanly and replaced (the sidecar is single-owner).
 #[tauri::command]
 pub async fn core_start(app: AppHandle) -> Result<Value, String> {
+    let _operation = operation_guard(&app).await;
+    start_unlocked(&app).await
+}
+
+async fn start_unlocked(app: &AppHandle) -> Result<Value, String> {
     let config = SaniCoreConfig::resolve(&app)?;
     let client = SaniCoreClient::spawn(&config).await?;
     let state = app.state::<SaniCoreState>();
@@ -706,28 +716,87 @@ pub async fn core_start(app: AppHandle) -> Result<Value, String> {
 /// Shut the sidecar down and forget it. Safe to call when not running.
 #[tauri::command]
 pub async fn core_stop(app: AppHandle) -> Result<Value, String> {
-    if let Some(client) = take_client(&app)? {
+    let _operation = operation_guard(&app).await;
+    stop_unlocked(&app).await;
+    Ok(json!({"status": "stopped"}))
+}
+
+async fn stop_unlocked(app: &AppHandle) {
+    if let Ok(Some(client)) = take_client(app) {
         client.shutdown().await;
     }
-    Ok(json!({"status": "stopped"}))
 }
 
 /// List the sidecar's registered agents.
 #[tauri::command]
 pub async fn core_agents(app: AppHandle) -> Result<Value, String> {
-    let mut client = running_client(&app)?;
-    let result = client
-        .list_agents()
+    let _operation = operation_guard(&app).await;
+    list_agents_with_recovery(&app)
         .await
-        .map(|agents| json!({ "agents": agents }));
-    restore_client(&app, client);
+        .map(|agents| json!({ "agents": agents }))
+}
+
+async fn list_agents_once(app: &AppHandle) -> Result<Vec<Value>, String> {
+    match take_client(app)? {
+        Some(client) => {
+            // Put the ownership probe back: the operation gate guarantees no
+            // other request can observe this short handoff as a dead core.
+            restore_client(app, client);
+        }
+        None => {
+            log::warn!("sani-core is not running; starting it");
+            start_unlocked(app).await?;
+        }
+    }
+    let mut client = take_client(app)?.ok_or_else(|| "sani-core did not start".to_string())?;
+    let result = client.list_agents().await;
+    restore_client(app, client);
     result
+}
+
+/// One bounded restart is enough to recover a stale child or launch race. A
+/// second failure is surfaced to the user; no retry loop may create a herd of
+/// hidden sidecars or leave the UI permanently on an old unavailable result.
+async fn list_agents_with_recovery(app: &AppHandle) -> Result<Vec<Value>, String> {
+    let first = list_agents_once(app).await;
+    if !registry_needs_recovery(&first) {
+        return first;
+    }
+    let first_error = first
+        .err()
+        .unwrap_or_else(|| "sani-core registry returned no agents".into());
+    log::warn!("sani-core registry failed; performing one bounded restart: {first_error}");
+    stop_unlocked(app).await;
+    start_unlocked(app).await?;
+    list_agents_once(app)
+        .await
+        .and_then(|agents| if agents.is_empty() {
+            Err("sani-core registry returned no agents after recovery".into())
+        } else {
+            Ok(agents)
+        })
+        .map_err(|second_error| format!("sani-core registry unavailable after one recovery: {second_error}"))
+}
+
+fn registry_needs_recovery(result: &Result<Vec<Value>, String>) -> bool {
+    match result {
+        Err(_) => true,
+        Ok(agents) => agents.is_empty(),
+    }
 }
 
 /// `system.status`: the sidecar's own view of its subsystems.
 #[tauri::command]
 pub async fn core_status(app: AppHandle) -> Result<Value, String> {
-    let mut client = running_client(&app)?;
+    let _operation = operation_guard(&app).await;
+    match take_client(&app)? {
+        Some(client) => restore_client(&app, client),
+        None => {
+            log::warn!("sani-core is not running; starting it");
+            start_unlocked(&app).await?;
+        }
+    }
+    let mut client = take_client(&app)?.ok_or_else(|| "sani-core did not start".to_string())?;
     let result = client
         .request(
             "system.status",
@@ -751,7 +820,8 @@ pub async fn run_turn(
     thread_id: &str,
     mut on_event: impl FnMut(Value) + Send,
 ) -> Result<Value, String> {
-    let mut client = running_client(app)?;
+    let _operation = operation_guard(app).await;
+    let mut client = take_client(app)?.ok_or_else(|| "sani-core is not running".to_string())?;
     let run_id = uuid::Uuid::new_v4().simple().to_string();
     let (control, cancel) = RunControl::new(run_id.clone());
     {
@@ -820,7 +890,8 @@ pub async fn core_cancel(app: AppHandle, run_id: String) -> Result<Value, String
             return Ok(json!({"status": "cancelling", "run_id": run_id}));
         }
     }
-    let mut client = running_client(&app)?;
+    let _operation = operation_guard(&app).await;
+    let mut client = take_client(&app)?.ok_or_else(|| "sani-core is not running".to_string())?;
     let result = client.cancel_run(&run_id).await;
     restore_client(&app, client);
     result
@@ -829,13 +900,10 @@ pub async fn core_cancel(app: AppHandle, run_id: String) -> Result<Value, String
 /// Health check: one `agents.list` round trip against the live sidecar.
 #[tauri::command]
 pub async fn core_ping(app: AppHandle) -> Result<Value, String> {
-    let mut client = running_client(&app)?;
-    let result = client
-        .list_agents()
+    let _operation = operation_guard(&app).await;
+    list_agents_with_recovery(&app)
         .await
-        .map(|agents| json!({"status": "ok", "agents": agents.len()}));
-    restore_client(&app, client);
-    result
+        .map(|agents| json!({"status": "ok", "agents": agents.len()}))
 }
 
 /// Apply persisted launch inputs to sani-core. The caller must already have
@@ -845,9 +913,10 @@ pub async fn reload_for_settings(app: AppHandle) -> Result<(), String> {
     if is_run_live(&app) {
         return Err("a run is active".into());
     }
-    core_stop(app.clone()).await?;
-    core_start(app.clone()).await?;
-    core_ping(app).await.map(|_| ())
+    let _operation = operation_guard(&app).await;
+    stop_unlocked(&app).await;
+    start_unlocked(&app).await?;
+    list_agents_with_recovery(&app).await.map(|_| ())
 }
 
 // --------------------------------------------------------------- supervision
@@ -857,14 +926,6 @@ pub const RUNTIME_STATUS: &str = "sani://agent-status";
 
 /// How often the supervisor checks the sidecar.
 const SUPERVISOR_INTERVAL: Duration = Duration::from_secs(20);
-
-fn has_client(app: &AppHandle) -> bool {
-    app.state::<SaniCoreState>()
-        .client
-        .lock()
-        .map(|guard| guard.is_some())
-        .unwrap_or(false)
-}
 
 /// True while a run is streaming.
 pub fn is_run_live(app: &AppHandle) -> bool {
@@ -914,10 +975,6 @@ pub fn spawn_supervisor(app: AppHandle) {
 }
 
 async fn ensure_running(app: AppHandle) -> Result<(), String> {
-    if !has_client(&app) {
-        log::warn!("sani-core is not running; starting it");
-        core_start(app.clone()).await?;
-    }
     core_ping(app).await.map(|_| ())
 }
 
@@ -1026,6 +1083,13 @@ mod tests {
         buffer.extend_from_slice(body);
         let err = read_frame(&mut Cursor::new(buffer)).await.unwrap_err();
         assert_eq!(err.kind(), tokio::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn unavailable_or_empty_registry_gets_exactly_one_recovery_attempt() {
+        assert!(registry_needs_recovery(&Err("sidecar exited".into())));
+        assert!(registry_needs_recovery(&Ok(Vec::new())));
+        assert!(!registry_needs_recovery(&Ok(vec![json!({"id": "velo"})])));
     }
 
     #[tokio::test]
