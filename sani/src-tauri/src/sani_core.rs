@@ -808,6 +808,18 @@ pub async fn core_ping(app: AppHandle) -> Result<Value, String> {
     result
 }
 
+/// Apply persisted launch inputs to sani-core. The caller must already have
+/// rejected active runs: replacing a child process while it streams would
+/// break a user turn. This function does not attempt any provider fallback.
+pub async fn reload_for_settings(app: AppHandle) -> Result<(), String> {
+    if is_run_live(&app) {
+        return Err("a run is active".into());
+    }
+    core_stop(app.clone()).await?;
+    core_start(app.clone()).await?;
+    core_ping(app).await.map(|_| ())
+}
+
 // --------------------------------------------------------------- supervision
 
 /// Frontend event carrying whether the assistant runtime is reachable.

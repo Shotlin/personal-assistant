@@ -8,6 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -15,6 +17,52 @@ use crate::{app_state, permissions, settings, setup, system_permissions};
 
 pub const OPENROUTER_KEY_SERVICE: &str = "sani-openrouter-key";
 pub const TYPESAFE_KEY_SERVICE: &str = "sani-typesafe-key";
+
+/// Non-secret distinction between what the user saved and what the current
+/// sidecar has actually accepted. Each WebView reads it from native state.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyStatus {
+    Saved,
+    Applying,
+    Ready,
+    FailedToApply,
+}
+
+impl Default for ApplyStatus {
+    fn default() -> Self {
+        Self::Saved
+    }
+}
+
+#[derive(Default)]
+pub struct SettingsApplicationState {
+    status: Mutex<ApplyStatus>,
+    version: AtomicU64,
+}
+
+fn apply_status(app: &AppHandle) -> ApplyStatus {
+    app.state::<SettingsApplicationState>()
+        .status
+        .lock()
+        .map(|state| state.clone())
+        .unwrap_or(ApplyStatus::FailedToApply)
+}
+
+fn set_apply_status(app: &AppHandle, status: ApplyStatus) {
+    if let Ok(mut state) = app.state::<SettingsApplicationState>().status.lock() {
+        *state = status;
+    }
+    app.state::<SettingsApplicationState>()
+        .version
+        .fetch_add(1, Ordering::Relaxed);
+}
+
+fn settings_version(app: &AppHandle) -> u64 {
+    app.state::<SettingsApplicationState>()
+        .version
+        .load(Ordering::Relaxed)
+}
 
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -149,6 +197,85 @@ pub struct AiConfig {
     pub has_typesafe: bool,
 }
 
+/// The complete non-secret settings source consumed by both settings WebViews.
+/// Key values, candidate inputs, and diagnostics are deliberately absent.
+#[derive(Clone, Serialize)]
+pub struct FullSettingsSnapshot {
+    pub version: u64,
+    pub hotkey: String,
+    pub mic_device: String,
+    pub launch_at_login: bool,
+    pub theme: String,
+    pub stt_model: String,
+    pub stt_ready: bool,
+    pub agent_mode: String,
+    pub reasoning_provider: String,
+    pub reasoning_model: String,
+    pub velo_provider: String,
+    pub velo_model: String,
+    pub openrouter_key: String,
+    pub typesafe_key: String,
+    pub runtime_status: ApplyStatus,
+    pub microphone_permission: String,
+    pub accessibility_permission: String,
+    pub screen_recording_permission: String,
+    pub storage_path: String,
+}
+
+fn full_settings_snapshot(app: &AppHandle) -> FullSettingsSnapshot {
+    let s = app_state::settings(app).read().clone();
+    let stt_ready = app
+        .state::<app_state::SaniState>()
+        .speech
+        .lock()
+        .as_ref()
+        .map(|h| h.is_ready())
+        .unwrap_or(false);
+    let storage_path = app
+        .path()
+        .app_data_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    FullSettingsSnapshot {
+        version: settings_version(app),
+        hotkey: s.hotkey,
+        mic_device: s.mic_device,
+        launch_at_login: s.launch_at_login,
+        theme: s.theme,
+        stt_model: s.stt_model,
+        stt_ready,
+        agent_mode: s.agent_mode,
+        reasoning_provider: s.reasoning_provider,
+        reasoning_model: s.reasoning_model,
+        velo_provider: s.velo_provider,
+        velo_model: s.velo_model,
+        openrouter_key: if settings::secret_read(OPENROUTER_KEY_SERVICE).is_some() {
+            "stored".into()
+        } else {
+            "absent".into()
+        },
+        typesafe_key: if settings::secret_read(TYPESAFE_KEY_SERVICE).is_some() {
+            "stored".into()
+        } else {
+            "absent".into()
+        },
+        runtime_status: apply_status(app),
+        microphone_permission: permissions::status().as_str().into(),
+        accessibility_permission: system_permissions::accessibility().as_str().into(),
+        screen_recording_permission: system_permissions::screen_recording().as_str().into(),
+        storage_path,
+    }
+}
+
+fn emit_settings_changed(app: &AppHandle) {
+    let _ = app.emit("settings://changed", full_settings_snapshot(app));
+}
+
+#[tauri::command]
+pub fn get_full_settings(app: AppHandle) -> FullSettingsSnapshot {
+    full_settings_snapshot(&app)
+}
+
 #[tauri::command]
 pub fn get_ai_config(app: AppHandle) -> AiConfig {
     let s = app_state::settings(&app).read().clone();
@@ -170,34 +297,69 @@ pub struct AiConfigPatch {
     pub velo_model: Option<String>,
 }
 
+fn validate_ai_patch(patch: &AiConfigPatch) -> Result<(), String> {
+    if let Some(provider) = &patch.reasoning_provider {
+        if provider != "openrouter" {
+            return Err("Deep Agent provider is fixed to OpenRouter".into());
+        }
+    }
+    if let Some(provider) = &patch.velo_provider {
+        if provider != "openrouter" && provider != "typesafe" {
+            return Err("Velo provider must be OpenRouter or TypeSafe".into());
+        }
+    }
+    if patch.reasoning_model.as_ref().is_some_and(|m| m.trim().is_empty()) {
+        return Err("Deep Agent model ID cannot be empty".into());
+    }
+    if patch.velo_model.as_ref().is_some_and(|m| m.trim().is_empty()) {
+        return Err("Velo model ID cannot be empty".into());
+    }
+    Ok(())
+}
+
+/// Persist desired AI configuration and only mark it ready after the restarted
+/// sidecar answers a bounded health check. A failed restart leaves the desired
+/// values intact so the user can correct and retry rather than being lied to
+/// about a silently restored old runtime.
 #[tauri::command]
-pub fn save_ai_config(app: AppHandle, patch: AiConfigPatch) -> Result<AiConfig, String> {
-    let settings_arc = app_state::settings(&app);
-    let config = {
+pub async fn apply_ai_settings(
+    app: AppHandle,
+    patch: AiConfigPatch,
+) -> Result<FullSettingsSnapshot, String> {
+    validate_ai_patch(&patch)?;
+    if crate::sani_core::is_run_live(&app) {
+        return Err("Finish the current task before changing AI settings.".into());
+    }
+    {
+        let settings_arc = app_state::settings(&app);
         let mut s = settings_arc.write();
-        if let Some(v) = patch.reasoning_provider {
-            s.reasoning_provider = v;
-        }
-        if let Some(v) = patch.reasoning_model {
-            s.reasoning_model = v;
-        }
-        if let Some(v) = patch.velo_provider {
-            s.velo_provider = v;
-        }
-        if let Some(v) = patch.velo_model {
-            s.velo_model = v;
-        }
+        if let Some(v) = patch.reasoning_provider { s.reasoning_provider = v; }
+        if let Some(v) = patch.reasoning_model { s.reasoning_model = v; }
+        if let Some(v) = patch.velo_provider { s.velo_provider = v; }
+        if let Some(v) = patch.velo_model { s.velo_model = v; }
         settings::save(&app, &s)?;
-        AiConfig {
-            reasoning_provider: s.reasoning_provider.clone(),
-            reasoning_model: s.reasoning_model.clone(),
-            velo_provider: s.velo_provider.clone(),
-            velo_model: s.velo_model.clone(),
-            has_openrouter: settings::secret_read(OPENROUTER_KEY_SERVICE).is_some(),
-            has_typesafe: settings::secret_read(TYPESAFE_KEY_SERVICE).is_some(),
+    }
+    set_apply_status(&app, ApplyStatus::Saved);
+    emit_settings_changed(&app);
+    set_apply_status(&app, ApplyStatus::Applying);
+    emit_settings_changed(&app);
+    match crate::sani_core::reload_for_settings(app.clone()).await {
+        Ok(()) => set_apply_status(&app, ApplyStatus::Ready),
+        Err(error) => {
+            // The error is deliberately not returned: it can contain runtime
+            // transport detail. The stable state is enough for UI retry.
+            log::warn!("settings runtime failed to apply: {}", error);
+            set_apply_status(&app, ApplyStatus::FailedToApply);
         }
-    };
-    Ok(config)
+    }
+    emit_settings_changed(&app);
+    Ok(full_settings_snapshot(&app))
+}
+
+#[tauri::command]
+pub async fn save_ai_config(app: AppHandle, patch: AiConfigPatch) -> Result<AiConfig, String> {
+    apply_ai_settings(app.clone(), patch).await?;
+    Ok(get_ai_config(app))
 }
 
 #[derive(Serialize)]

@@ -44,6 +44,7 @@ fn main() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(hotkey::HotkeyState::default())
         .manage(sani_core::SaniCoreState::default())
+        .manage(onboarding::SettingsApplicationState::default())
         .manage(windows::OverlayPreviewState::default())
         .setup(|app| {
             let handle = app.handle().clone();
@@ -177,6 +178,8 @@ fn main() {
             onboarding::complete_onboarding,
             onboarding::reset_onboarding,
             onboarding::get_ai_config,
+            onboarding::get_full_settings,
+            onboarding::apply_ai_settings,
             onboarding::save_ai_config,
             onboarding::store_provider_key,
             onboarding::validate_provider_key,
