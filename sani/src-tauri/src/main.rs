@@ -142,6 +142,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_state,
             get_settings,
+            voice_models,
             save_settings_cmd,
             set_agent_mode,
             list_mics,
@@ -396,6 +397,13 @@ fn get_settings(app: tauri::AppHandle) -> SettingsOut {
         stt_ready,
         agent_mode: s.agent_mode,
     }
+}
+
+/// Exact STT catalog from the sidecar plus real cache state. This never invents
+/// a model ID in the native or renderer layer.
+#[tauri::command]
+fn voice_models(app: tauri::AppHandle) -> Result<Vec<speech::VoiceModelDescriptor>, String> {
+    speech::voice_models(&app)
 }
 
 #[tauri::command]

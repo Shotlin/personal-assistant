@@ -546,7 +546,7 @@ fn op_stt_runtime(app: &AppHandle) -> Outcome {
 /// Resolve the Moonshine Voice model cache root exactly as the sidecar does:
 /// `MOONSHINE_VOICE_CACHE` overrides, otherwise the platform user-cache dir for
 /// app name `moonshine_voice` (macOS: ~/Library/Caches/moonshine_voice).
-fn moonshine_cache_root() -> Option<PathBuf> {
+pub(crate) fn moonshine_cache_root() -> Option<PathBuf> {
     if let Ok(v) = std::env::var("MOONSHINE_VOICE_CACHE") {
         if !v.trim().is_empty() {
             return Some(PathBuf::from(v));
@@ -591,6 +591,25 @@ fn model_files(dir: &Path, depth: u8, out: &mut Vec<String>) {
     }
 }
 
+/// Whether the sidecar's owned cache contains a complete Moonshine model.
+/// This is intentionally conservative: a partial download is always treated
+/// as absent, so the model loader can safely resume it on next use.
+pub(crate) fn voice_model_cached(model: &str) -> bool {
+    let Some(root) = moonshine_cache_root() else {
+        return false;
+    };
+    let model_dir = root
+        .join("download.moonshine.ai")
+        .join("model")
+        .join(model);
+    if !model_dir.is_dir() {
+        return false;
+    }
+    let mut files = Vec::new();
+    model_files(&model_dir, 3, &mut files);
+    files.iter().any(|f| f == "encoder.ort") && files.iter().any(|f| f == "tokenizer.bin")
+}
+
 /// The configured voice model id (settings.stt_model), never empty.
 fn configured_voice_model(app: &AppHandle) -> String {
     let m = crate::app_state::settings(app).read().stt_model.clone();
@@ -607,22 +626,7 @@ fn op_stt_model(app: &AppHandle) -> Outcome {
     // the step reflects reality instead of always claiming a pending download.
     let model = configured_voice_model(app);
     let note = format!("{} downloads on first use", model);
-    let Some(root) = moonshine_cache_root() else {
-        return Outcome::skipped(note);
-    };
-    let model_dir = root
-        .join("download.moonshine.ai")
-        .join("model")
-        .join(&model);
-    if !model_dir.is_dir() {
-        return Outcome::skipped(note);
-    }
-    let mut files = Vec::new();
-    model_files(&model_dir, 3, &mut files);
-    // Require the encoder + tokenizer: enough to prove the download finished.
-    let complete =
-        files.iter().any(|f| f == "encoder.ort") && files.iter().any(|f| f == "tokenizer.bin");
-    if complete {
+    if voice_model_cached(&model) {
         Outcome::complete(format!("{} · cached", model))
     } else {
         // Present but incomplete: do not mark it ready — first use resumes it.

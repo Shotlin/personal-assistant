@@ -6,7 +6,7 @@
 //! final text triggers exactly one agent turn.
 
 use parking_lot::{Mutex, RwLock};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -15,6 +15,19 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 use crate::settings::stt_python_path;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VoiceModelDescriptor {
+    pub id: String,
+    pub installed: bool,
+    pub active: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct VoiceCatalogWire {
+    models: Vec<String>,
+    default: String,
+}
 
 #[derive(Debug, Deserialize, Clone)]
 #[allow(dead_code)] // fields are read selectively per event kind
@@ -141,6 +154,57 @@ fn packaged_sidecar() -> Option<std::path::PathBuf> {
     None
 }
 
+/// Build the command prefix for both the streaming sidecar and its lightweight
+/// metadata mode. Keeping this in one place prevents dev and packaged builds
+/// from accidentally reporting different model catalogs.
+fn sidecar_command(app: &AppHandle) -> Result<(std::path::PathBuf, Vec<String>), String> {
+    match packaged_sidecar() {
+        Some(bin) => Ok((bin, Vec::new())),
+        None => {
+            let python = stt_python_path(app, &crate::app_state::settings(app).read().clone())
+                .ok_or("STT_NOT_SET_UP")?;
+            let script = crate::settings::stt_script_path(app).ok_or("STT_SCRIPT_MISSING")?;
+            Ok((python, vec![script.to_string_lossy().to_string()]))
+        }
+    }
+}
+
+fn parse_voice_catalog(output: &[u8]) -> Result<VoiceCatalogWire, String> {
+    let catalog: VoiceCatalogWire = serde_json::from_slice(output)
+        .map_err(|_| "Voice model catalog could not be read.".to_string())?;
+    if catalog.models.is_empty() || !catalog.models.iter().any(|model| model == &catalog.default) {
+        return Err("Voice model catalog is invalid.".to_string());
+    }
+    Ok(catalog)
+}
+
+/// Read the exact supported model list from the installed STT sidecar and
+/// combine it with native cache ownership. The sidecar is the single source of
+/// supported IDs; settings and either WebView never maintain a duplicate list.
+pub fn voice_models(app: &AppHandle) -> Result<Vec<VoiceModelDescriptor>, String> {
+    let (program, lead_args) = sidecar_command(app)?;
+    let output = Command::new(program)
+        .args(lead_args)
+        .arg("--list-models")
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|_| "Voice model catalog is unavailable.".to_string())?;
+    if !output.status.success() {
+        return Err("Voice model catalog is unavailable.".to_string());
+    }
+    let catalog = parse_voice_catalog(&output.stdout)?;
+    let selected = crate::app_state::settings(app).read().stt_model.clone();
+    Ok(catalog
+        .models
+        .into_iter()
+        .map(|id| VoiceModelDescriptor {
+            installed: crate::setup::voice_model_cached(&id),
+            active: id == selected,
+            id,
+        })
+        .collect())
+}
+
 /// Locate the voice engine for first-run setup *without* starting it. Returns a
 /// diagnostic describing what was found, or an error the setup UI can show.
 pub fn locate_for_setup(app: &AppHandle) -> Result<String, String> {
@@ -185,22 +249,20 @@ fn sidecar_stderr(app: &AppHandle) -> Stdio {
 pub fn start(app: AppHandle, model: &str, turn_end_ms: u32) -> Result<Arc<SpeechHandle>, String> {
     // Prefer the packaged sidecar; fall back to the dev venv + script so
     // `tauri dev` inside the repository keeps working.
-    let (program, lead_args) = match packaged_sidecar() {
-        Some(bin) => {
+    let (program, lead_args) = match sidecar_command(&app) {
+        Ok((bin, args)) if args.is_empty() => {
             log::info!("STT sidecar (packaged): {}", bin.display());
-            (bin, Vec::new())
+            (bin, args)
         }
-        None => {
-            let python = stt_python_path(&app, &crate::app_state::settings(&app).read().clone())
-                .ok_or("STT_NOT_SET_UP")?;
-            let script = crate::settings::stt_script_path(&app).ok_or("STT_SCRIPT_MISSING")?;
+        Ok((python, args)) => {
             log::info!(
                 "STT sidecar (dev venv): {} {}",
                 python.display(),
-                script.display()
+                args.first().map(String::as_str).unwrap_or_default()
             );
-            (python, vec![script.to_string_lossy().to_string()])
+            (python, args)
         }
+        Err(e) => return Err(e),
     };
 
     let mut command = Command::new(&program);
@@ -308,4 +370,24 @@ pub fn setup_hint(err: &str) -> String {
         return "Voice engine failed to start. Check the STT environment.".into();
     }
     err.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_voice_catalog;
+
+    #[test]
+    fn accepts_the_sidecars_catalog_shape() {
+        let catalog = parse_voice_catalog(
+            br#"{"models":["tiny-streaming-en","small-streaming-en"],"default":"small-streaming-en"}"#,
+        )
+        .expect("catalog");
+        assert_eq!(catalog.models.len(), 2);
+        assert_eq!(catalog.default, "small-streaming-en");
+    }
+
+    #[test]
+    fn rejects_a_catalog_whose_default_is_not_supported() {
+        assert!(parse_voice_catalog(br#"{"models":["tiny-streaming-en"],"default":"missing"}"#).is_err());
+    }
 }

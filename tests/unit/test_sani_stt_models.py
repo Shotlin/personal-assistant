@@ -1,0 +1,35 @@
+"""Authoritative Moonshine model catalog contract for the Sani STT sidecar."""
+
+import importlib.util
+from pathlib import Path
+import sys
+
+
+def load_sidecar():
+    path = Path(__file__).parents[2] / "sani/src-tauri/python/sani_stt.py"
+    spec = importlib.util.spec_from_file_location("sani_stt", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_supported_models_are_exact_and_small_is_default() -> None:
+    sidecar = load_sidecar()
+
+    assert sidecar.SUPPORTED_MODELS == (
+        "tiny-streaming-en",
+        "base-streaming-en",
+        "small-streaming-en",
+        "medium-streaming-en",
+    )
+    assert sidecar.DEFAULT_MODEL == "small-streaming-en"
+
+
+def test_list_models_is_a_machine_readable_catalog() -> None:
+    sidecar = load_sidecar()
+    parser = sidecar.build_parser()
+    args = parser.parse_args(["--list-models"])
+
+    assert args.list_models is True

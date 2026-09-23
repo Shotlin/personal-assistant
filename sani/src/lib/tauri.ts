@@ -69,6 +69,13 @@ export interface AgentDescriptor {
   capabilities: string[];
 }
 
+/** Sidecar-supported voice model together with native cache/selection state. */
+export interface VoiceModelDescriptor {
+  id: string;
+  installed: boolean;
+  active: boolean;
+}
+
 /** One raw sani-core event frame, relayed verbatim from the sidecar. */
 export interface CoreEvent {
   type: "event";
@@ -230,6 +237,7 @@ export const onCoreEvent = (cb: (e: CoreEvent) => void) =>
 
 export const getState = () => invoke<{ state: UiState; stt_ready: boolean; stt_model: string; partial: string; mic_permission: MicPermission }>("get_state");
 export const getSettings = () => invoke<SettingsShape>("get_settings");
+export const voiceModels = () => invoke<VoiceModelDescriptor[]>("voice_models");
 export const getFullSettings = () => invoke<FullSettingsSnapshot>("get_full_settings");
 export const applyAiSettings = (patch: {
   reasoning_provider?: "openrouter";

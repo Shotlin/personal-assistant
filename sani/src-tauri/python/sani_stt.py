@@ -67,6 +67,10 @@ MODEL_CHOICES = {
     "medium-streaming-en": "MEDIUM_STREAMING",  # default
 }
 
+# The sole supported-model catalog. Native code and the UI query this sidecar
+# contract rather than maintaining another potentially divergent list.
+SUPPORTED_MODELS = tuple(MODEL_CHOICES)
+
 # Deliberately unchanged by the endpointing work: landing a new model and a new
 # turn boundary together makes an accuracy regression impossible to attribute.
 # Flipping this to medium-streaming-en is its own change, after the boundaries
@@ -994,6 +998,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Sani Moonshine streaming STT sidecar"
     )
     parser.add_argument("--model", default=DEFAULT_MODEL, choices=sorted(MODEL_CHOICES))
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="print the authoritative supported-model catalog as JSON and exit",
+    )
     parser.add_argument("--language", default="en")
     parser.add_argument("--update-interval", type=float, default=0.25)
     parser.add_argument(
@@ -1030,6 +1039,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.list_models:
+        # This deliberately happens before creating Sink or importing
+        # moonshine_voice. Native callers can therefore inspect the supported
+        # catalog even while no model is installed yet.
+        print(
+            json.dumps(
+                {"models": list(SUPPORTED_MODELS), "default": DEFAULT_MODEL},
+                separators=(",", ":"),
+            )
+        )
+        return 0
     sink = Sink()
     if args.finalize_silence is not None:
         sink.note("deprecated-flag", message="--finalize-silence, use --turn-end-ms")
