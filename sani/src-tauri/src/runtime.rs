@@ -289,8 +289,49 @@ pub fn select_agent(mode: &str, roster: &[Value]) -> Option<(String, String)> {
     ))
 }
 
+/// `auto` is retained only for older explicit settings. Every new selectable
+/// value must be an id reported by the currently running core registry.
+pub fn selectable_agent_mode(mode: &str, roster: &[Value]) -> bool {
+    mode == "auto"
+        || roster
+            .iter()
+            .any(|agent| field(agent, "id").as_deref() == Some(mode))
+}
+
 /// Which registered agent takes this turn.
 pub async fn resolve_agent(app: &AppHandle) -> Option<(String, String)> {
     let mode = app_state::settings(app).read().agent_mode.clone();
     select_agent(&mode, &agents(app).await.ok()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn roster() -> Vec<Value> {
+        vec![
+            json!({"id":"velo","name":"Velo","capabilities":["computer-control"]}),
+            json!({"id":"deep","name":"Deep Agent","capabilities":["reasoning"]}),
+        ]
+    }
+
+    #[test]
+    fn explicit_agent_modes_select_the_matching_registry_entry() {
+        assert_eq!(select_agent("velo", &roster()), Some(("velo".into(), "Velo".into())));
+        assert_eq!(select_agent("deep", &roster()), Some(("deep".into(), "Deep Agent".into())));
+    }
+
+    #[test]
+    fn legacy_auto_is_compatibility_selection_not_a_new_agent() {
+        assert_eq!(select_agent("auto", &roster()), Some(("deep".into(), "Deep Agent".into())));
+    }
+
+    #[test]
+    fn only_registry_ids_or_legacy_auto_are_selectable() {
+        assert!(selectable_agent_mode("velo", &roster()));
+        assert!(selectable_agent_mode("deep", &roster()));
+        assert!(selectable_agent_mode("auto", &roster()));
+        assert!(!selectable_agent_mode("invented", &roster()));
+    }
 }

@@ -143,6 +143,7 @@ fn main() {
             get_state,
             get_settings,
             save_settings_cmd,
+            set_agent_mode,
             list_mics,
             start_listening_cmd,
             stop_listening_cmd,
@@ -448,6 +449,25 @@ fn save_settings_cmd(
     }
     // Settings renderers are distinct WebViews. Notify both only after the
     // native mutation succeeded, so neither relies on a second React store.
+    onboarding::emit_settings_changed(&app);
+    Ok(())
+}
+
+/// Select the registered agent for future turns. This is a settings-only
+/// mutation: a live sani-core already owns both registry entries, so no core
+/// restart is necessary or desirable.
+#[tauri::command]
+async fn set_agent_mode(app: tauri::AppHandle, agent_mode: String) -> Result<(), String> {
+    let roster = runtime::agents(&app).await?;
+    if !runtime::selectable_agent_mode(&agent_mode, &roster) {
+        return Err("That agent is not currently available.".into());
+    }
+    {
+        let settings_arc = app_state::settings(&app);
+        let mut settings = settings_arc.write();
+        settings.agent_mode = agent_mode;
+        settings::save(&app, &settings)?;
+    }
     onboarding::emit_settings_changed(&app);
     Ok(())
 }

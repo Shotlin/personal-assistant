@@ -131,7 +131,7 @@ pub struct Settings {
 }
 
 fn default_agent_mode() -> String {
-    "auto".into()
+    "velo".into()
 }
 
 fn default_reasoning_provider() -> String {
@@ -414,6 +414,19 @@ mod tests {
 
         assert!(settings.main_window.is_none());
         assert_eq!(settings.theme, "dark");
+    }
+
+    #[test]
+    fn missing_agent_mode_defaults_to_velo_without_rewriting_explicit_modes() {
+        let missing: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        let deep: Settings = serde_json::from_str(r#"{"agent_mode":"deep"}"#).unwrap();
+        let velo: Settings = serde_json::from_str(r#"{"agent_mode":"velo"}"#).unwrap();
+        let auto: Settings = serde_json::from_str(r#"{"agent_mode":"auto"}"#).unwrap();
+
+        assert_eq!(missing.agent_mode, "velo");
+        assert_eq!(deep.agent_mode, "deep");
+        assert_eq!(velo.agent_mode, "velo");
+        assert_eq!(auto.agent_mode, "auto");
     }
 
     #[test]
