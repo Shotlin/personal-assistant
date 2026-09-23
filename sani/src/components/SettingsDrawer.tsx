@@ -1,39 +1,26 @@
 import { useEffect, useState } from "react";
-import {
-  getSettings,
-  listMics,
-  saveSettings,
-  type SettingsShape,
-} from "../lib/tauri";
+import { invoke } from "@tauri-apps/api/core";
+import { useSettings } from "../app/settings/SettingsContext";
 
 interface SettingsDrawerProps {
   onClose: () => void;
 }
 
 export default function SettingsDrawer({ onClose }: SettingsDrawerProps) {
-  const [settings, setSettings] = useState<SettingsShape | null>(null);
-  const [mics, setMics] = useState<string[]>([]);
+  const { snapshot: settings, microphones: mics, error, saveGeneral, saveAi } = useSettings();
   const [hotkeyDraft, setHotkeyDraft] = useState("");
   const [capturing, setCapturing] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    void (async () => {
-      const s = await getSettings();
-      setSettings(s);
-      setHotkeyDraft(s.hotkey);
-      setMics(await listMics());
-    })();
-  }, []);
+  useEffect(() => { if (settings) setHotkeyDraft(settings.hotkey); }, [settings]);
 
   const flashSaved = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 1200);
   };
 
-  const patch = async (p: Parameters<typeof saveSettings>[0]) => {
-    await saveSettings(p);
-    setSettings(await getSettings());
+  const patch = async (p: Parameters<typeof saveGeneral>[0]) => {
+    await saveGeneral(p);
     flashSaved();
   };
 
@@ -77,6 +64,7 @@ export default function SettingsDrawer({ onClose }: SettingsDrawerProps) {
       </div>
       <div className="drawer-body settings-body">
         {saved && <div className="saved-flash">Saved</div>}
+        {error && <div className="panel-notice">{error}</div>}
 
         <div className="settings-group">General</div>
         <label className="settings-row">
@@ -121,6 +109,28 @@ export default function SettingsDrawer({ onClose }: SettingsDrawerProps) {
               : "Preparing voice model…"}
           </span>
         </div>
+
+        <div className="settings-group">AI &amp; Models</div>
+        <label className="settings-row">
+          <span>Deep Agent model</span>
+          <input
+            defaultValue={settings.reasoning_model}
+            aria-label="Deep Agent model ID"
+            onBlur={(e) => void saveAi({ reasoning_model: e.target.value })}
+          />
+        </label>
+        <label className="settings-row">
+          <span>Velo provider</span>
+          <select value={settings.velo_provider} onChange={(e) => void saveAi({ velo_provider: e.target.value as "openrouter" | "typesafe" })}>
+            <option value="openrouter">OpenRouter</option>
+            <option value="typesafe">TypeSafe</option>
+          </select>
+        </label>
+        <label className="settings-row">
+          <span>Velo model</span>
+          <input defaultValue={settings.velo_model} aria-label="Velo model ID" onBlur={(e) => void saveAi({ velo_model: e.target.value })} />
+        </label>
+        <button className="mini-btn" onClick={() => void invoke("show_main_settings")}>Open Full Settings</button>
 
         <div className="settings-group">Shortcut</div>
         <div className="settings-row">

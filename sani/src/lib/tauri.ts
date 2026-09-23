@@ -97,6 +97,27 @@ export interface SettingsShape {
   agent_mode: string;
 }
 
+export type ApplyStatus = "saved" | "applying" | "ready" | "failed_to_apply";
+export type KeyPresence = "absent" | "stored";
+export type KeyValidation = "absent" | "connected" | "invalid" | "offline";
+
+/** Native, non-secret settings authority shared by the independent main and
+ * overlay WebViews. Neither renderer persists this object itself. */
+export interface FullSettingsSnapshot extends SettingsShape {
+  version: number;
+  reasoning_provider: "openrouter" | string;
+  reasoning_model: string;
+  velo_provider: "openrouter" | "typesafe" | string;
+  velo_model: string;
+  openrouter_key: KeyPresence;
+  typesafe_key: KeyPresence;
+  runtime_status: ApplyStatus;
+  microphone_permission: MicPermission;
+  accessibility_permission: string;
+  screen_recording_permission: string;
+  storage_path: string;
+}
+
 // ------------------------------------------------------- overlay layout editor
 
 /** Normalized top-left position plus a logical-point size. The mixed units are
@@ -209,6 +230,19 @@ export const onCoreEvent = (cb: (e: CoreEvent) => void) =>
 
 export const getState = () => invoke<{ state: UiState; stt_ready: boolean; stt_model: string; partial: string; mic_permission: MicPermission }>("get_state");
 export const getSettings = () => invoke<SettingsShape>("get_settings");
+export const getFullSettings = () => invoke<FullSettingsSnapshot>("get_full_settings");
+export const applyAiSettings = (patch: {
+  reasoning_provider?: "openrouter";
+  reasoning_model?: string;
+  velo_provider?: "openrouter" | "typesafe";
+  velo_model?: string;
+}) => invoke<FullSettingsSnapshot>("apply_ai_settings", { patch });
+export const storeProviderKey = (provider: "openrouter" | "typesafe", key: string) =>
+  invoke<{ stored: boolean; has_openrouter: boolean; has_typesafe: boolean; runtime_status: ApplyStatus }>("store_provider_key", { provider, key });
+export const validateStoredProviderKey = (provider: "openrouter" | "typesafe") =>
+  invoke<KeyValidation>("validate_stored_provider_key", { provider });
+export const onSettingsChanged = (cb: (snapshot: FullSettingsSnapshot) => void) =>
+  listen<FullSettingsSnapshot>("settings://changed", (e) => cb(e.payload));
 export const saveSettings = (patch: {
   hotkey?: string;
   mic_device?: string;

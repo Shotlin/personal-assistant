@@ -1,4 +1,5 @@
 import PanelApp from "./PanelApp";
+import { SettingsProvider } from "./settings/SettingsContext";
 import { mountApp } from "../lib/boot";
 
-mountApp(<PanelApp />, "panel");
+mountApp(<SettingsProvider><PanelApp /></SettingsProvider>, "panel");

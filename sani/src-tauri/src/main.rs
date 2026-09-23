@@ -149,6 +149,7 @@ fn main() {
             escape_cmd,
             hide_panel,
             toggle_panel,
+            show_main_settings,
             list_conversations,
             get_messages,
             new_conversation,
@@ -489,6 +490,14 @@ fn toggle_panel(app: tauri::AppHandle) {
             }
         }
     }
+}
+
+/// Quick Settings lives in the overlay; this opens the already-existing main
+/// desktop window, where Full Settings is selected by the renderer route.
+#[tauri::command]
+fn show_main_settings(app: tauri::AppHandle) -> Result<(), String> {
+    windows::show_main(&app).map_err(|error| error.to_string())?;
+    app.emit("settings://open-full", ()).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
