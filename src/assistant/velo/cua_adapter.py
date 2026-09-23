@@ -265,7 +265,10 @@ class VeloCuaAdapter:
         if action is VeloActionKind.PRESS_KEY:
             return "press_key", {"key": decision.key}
         if action is VeloActionKind.HOTKEY:
-            return "hotkey", {"combo": decision.combo}
+            # The driver takes `keys` as a list; `combo` is not one of its
+            # arguments at all, and _filter_kwargs would silently drop it and
+            # send an empty call.
+            return "hotkey", {"keys": [part for part in decision.combo.split("+") if part]}
         if action is VeloActionKind.SCROLL:
             kwargs = {"direction": decision.direction, "amount": 5}
             if target is not None and target.element_token:

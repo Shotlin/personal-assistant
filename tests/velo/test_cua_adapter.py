@@ -515,3 +515,60 @@ def test_fallback_target_is_allowlisted_and_recent_not_just_first(cua_tools) -> 
     # With no allowlist configured, a running app is still returned.
     assert _fallback_app(apps, {})["bundle_id"] == "com.apple.Safari"
     assert _fallback_app([], allowed) is None
+
+
+#: Argument names and required fields as reported by `cua-driver describe
+#: <tool>` against the pinned 0.28.2 binary. `_filter_kwargs` drops any key the
+#: schema does not declare, so a name that is merely wrong disappears and the
+#: call goes out missing its required fields -- which is exactly how the
+#: `combo` hotkey argument failed for every HOTKEY decision.
+DRIVER_SCHEMAS = {
+    "launch_app": {"bundle_id", "name", "urls", "additional_arguments"},
+    "click": {"pid", "window_id", "element_token", "element_index", "snapshot_id",
+              "x", "y", "button", "count", "action", "delivery_mode", "scope",
+              "session", "target", "from_zoom", "modifier", "debug_image_out"},
+    "type_text": {"pid", "window_id", "text", "element_token", "element_index",
+                  "snapshot_id", "x", "y", "delay_ms", "delivery_mode", "scope",
+                  "session", "target"},
+    "press_key": {"pid", "window_id", "key", "modifiers", "element_token",
+                  "element_index", "snapshot_id", "x", "y", "delivery_mode",
+                  "scope", "session", "target"},
+    "hotkey": {"pid", "window_id", "keys", "element_token", "element_index",
+               "snapshot_id", "x", "y", "delivery_mode", "scope", "session", "target"},
+    "scroll": {"pid", "window_id", "direction", "amount", "by", "element_token",
+               "element_index", "snapshot_id", "x", "y", "delivery_mode", "scope",
+               "session", "target"},
+}
+DRIVER_REQUIRED = {"type_text": {"text"}, "press_key": {"key"}, "hotkey": {"keys"},
+                   "scroll": {"direction"}, "click": set(), "launch_app": set()}
+
+
+async def test_emitted_arguments_exist_in_the_driver_schema(cua_tools) -> None:
+    adapter, _ = build_adapter(cua_tools)
+    obs = observation(target("tok-1", "Rahul", token="tok-1"))
+    cases = [
+        (act(VeloActionKind.LAUNCH_APP, app_name="Chrome"), set()),
+        (act(VeloActionKind.CLICK, target_id="tok-1"), {"element_token"}),
+        (act(VeloActionKind.PRESS_KEY, key="Return"), {"key"}),
+        (act(VeloActionKind.HOTKEY, combo="cmd+t"), {"keys"}),
+        (act(VeloActionKind.SCROLL, direction="down"), {"direction"}),
+    ]
+    for decision, expected in cases:
+        tool_name, kwargs = adapter._build_tool_call(decision, obs, None)
+        assert kwargs, f"{tool_name} emitted no arguments"
+        assert set(kwargs) <= DRIVER_SCHEMAS[tool_name], (
+            f"{tool_name} sent undeclared keys {set(kwargs) - DRIVER_SCHEMAS[tool_name]}"
+        )
+        assert set(kwargs) >= expected | DRIVER_REQUIRED[tool_name], (
+            f"{tool_name} missing required keys {expected - set(kwargs)}"
+        )
+
+
+async def test_hotkey_combo_is_split_into_key_list(cua_tools) -> None:
+    adapter, _ = build_adapter(cua_tools)
+    obs = observation(target("tok-1", "Rahul", token="tok-1"))
+    tool_name, kwargs = adapter._build_tool_call(
+        act(VeloActionKind.HOTKEY, combo="cmd+shift+4"), obs, None
+    )
+    assert tool_name == "hotkey"
+    assert kwargs == {"keys": ["cmd", "shift", "4"]}

@@ -109,7 +109,7 @@ def main() -> int:
     if not pid:
         return fail("launch", f"TextEdit did not start: {json.dumps(launch)[:200]}")
 
-    call("hotkey", {"pid": pid, "keys": ["command", "n"]})
+    call("hotkey", {"pid": pid, "keys": ["cmd", "n"]})
     time.sleep(1.5)
     windows = [w for w in call("list_windows", {"pid": pid}).get("windows", [])
                if w.get("is_on_screen")]
