@@ -82,8 +82,16 @@ impl SaniCoreConfig {
     /// Build the launch configuration from live app state. Errors only when
     /// there is no runtime to launch at all.
     pub fn resolve(app: &AppHandle) -> Result<Self, String> {
-        let python = crate::setup::core_python()
-            .ok_or_else(|| "sani-core runtime unavailable: no bundled interpreter".to_string())?;
+        let bundled_core = packaged_core();
+        let is_bundled_core = bundled_core.is_some();
+        let python = if bundled_core.is_none() && !running_from_bundle() {
+            crate::setup::core_python()
+        } else {
+            None
+        };
+        let command = bundled_core.or(python).ok_or_else(|| {
+            "sani-core runtime unavailable: bundled core component missing".to_string()
+        })?;
         let data_dir = app
             .path()
             .app_data_dir()
@@ -91,11 +99,13 @@ impl SaniCoreConfig {
         std::fs::create_dir_all(&data_dir).map_err(|err| err.to_string())?;
 
         let mut env: Vec<(String, String)> = Vec::new();
-        if let Some(root) = crate::setup::find_repo_root() {
+        if !is_bundled_core {
+            if let Some(root) = crate::setup::find_repo_root() {
             env.push((
                 "PYTHONPATH".to_string(),
                 root.join("src").to_string_lossy().into_owned(),
             ));
+            }
         }
         // Embedded SQLite only: the shipping path has no server to reach.
         env.push(("MEMORY_BACKEND".to_string(), "sqlite".to_string()));
@@ -169,14 +179,34 @@ impl SaniCoreConfig {
         );
 
         Ok(Self {
-            command: python,
-            args: vec!["-m".to_string(), "assistant.core".to_string()],
+            command,
+            args: if is_bundled_core { Vec::new() } else { vec!["-m".to_string(), "assistant.core".to_string()] },
             env,
             // A deterministic working dir: the sidecar must not quietly pick up
             // a developer's `.env` and disagree with what the app configured.
             working_dir: Some(data_dir),
         })
     }
+}
+
+/// Resolve only the exact, architecture-compatible core bundled alongside the
+/// Tauri executable. Development discovery remains an explicit fallback for
+/// unbundled builds; a release never borrows a checkout interpreter.
+pub(crate) fn running_from_bundle() -> bool {
+    std::env::current_exe()
+        .ok()
+        .is_some_and(|path| path.ancestors().any(|parent| parent.extension().is_some_and(|ext| ext == "app")))
+}
+
+fn packaged_core() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let target = match std::env::consts::ARCH {
+        "aarch64" => "sani-core-aarch64-apple-darwin",
+        "x86_64" => "sani-core-x86_64-apple-darwin",
+        _ => return None,
+    };
+    [target, "sani-core"].into_iter().map(|name| dir.join(name)).find(|path| path.is_file())
 }
 
 // ------------------------------------------------------------------- framing

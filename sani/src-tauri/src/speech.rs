@@ -135,22 +135,18 @@ fn write_frame(stdin: &mut ChildStdin, frame_type: u8, payload: &[u8]) -> std::i
 fn packaged_sidecar() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    for name in [
-        "sani-stt-aarch64-apple-darwin",
-        "sani-stt-x86_64-apple-darwin",
-        "sani-stt",
-    ] {
+    let target = match std::env::consts::ARCH {
+        "aarch64" => "sani-stt-aarch64-apple-darwin",
+        "x86_64" => "sani-stt-x86_64-apple-darwin",
+        _ => return None,
+    };
+    // Tauri may rename its architecture-qualified externalBin to the logical
+    // sidecar name inside Contents/MacOS. Both names are deliberate; never
+    // launch an arbitrary similarly named file from the bundle directory.
+    for name in [target, "sani-stt"] {
         let p = dir.join(name);
-        if p.exists() {
+        if p.is_file() {
             return Some(p);
-        }
-    }
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with("sani-stt") && entry.path().is_file() {
-                return Some(entry.path());
-            }
         }
     }
     None
@@ -180,21 +176,57 @@ fn parse_voice_catalog(output: &[u8]) -> Result<VoiceCatalogWire, String> {
     Ok(catalog)
 }
 
+/// Stable, non-secret diagnosis for the catalogue boundary. The stale worker
+/// case is deliberately distinct from a missing model: it can be repaired
+/// only by replacing the package, never by downloading a model or granting a
+/// microphone permission.
+fn voice_catalogue_error(exit_code: i32, stderr: &str) -> &'static str {
+    if exit_code == 2 && stderr.contains("unrecognized arguments: --list-models") {
+        "VOICE_ENGINE_STALE"
+    } else {
+        "VOICE_ENGINE_CATALOGUE_FAILED"
+    }
+}
+
+fn bounded_catalogue(program: &Path, lead_args: &[String]) -> Result<Vec<u8>, String> {
+    let mut child = Command::new(program)
+        .args(lead_args)
+        .arg("--list-models")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|_| "VOICE_ENGINE_SPAWN_FAILED".to_string())?;
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(25)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("VOICE_ENGINE_CATALOGUE_TIMEOUT".to_string());
+            }
+            Err(_) => return Err("VOICE_ENGINE_CATALOGUE_FAILED".to_string()),
+        }
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|_| "VOICE_ENGINE_CATALOGUE_FAILED".to_string())?;
+    if output.status.success() {
+        return Ok(output.stdout);
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(voice_catalogue_error(output.status.code().unwrap_or(-1), &stderr).to_string())
+}
+
 /// Read the exact supported model list from the installed STT sidecar and
 /// combine it with native cache ownership. The sidecar is the single source of
 /// supported IDs; settings and either WebView never maintain a duplicate list.
 pub fn voice_models(app: &AppHandle) -> Result<Vec<VoiceModelDescriptor>, String> {
     let (program, lead_args) = sidecar_command(app)?;
-    let output = Command::new(program)
-        .args(lead_args)
-        .arg("--list-models")
-        .stderr(Stdio::null())
-        .output()
-        .map_err(|_| "Voice model catalog is unavailable.".to_string())?;
-    if !output.status.success() {
-        return Err("Voice model catalog is unavailable.".to_string());
-    }
-    let catalog = parse_voice_catalog(&output.stdout)?;
+    let output = bounded_catalogue(&program, &lead_args)?;
+    let catalog = parse_voice_catalog(&output).map_err(|_| "VOICE_ENGINE_CATALOGUE_INVALID".to_string())?;
     let selected = crate::app_state::settings(app).read().stt_model.clone();
     Ok(catalog
         .models
@@ -513,7 +545,9 @@ pub fn setup_hint(err: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{owned_cache_model_path, parse_voice_catalog, voice_mutation_allowed};
+    use super::{
+        owned_cache_model_path, parse_voice_catalog, voice_catalogue_error, voice_mutation_allowed,
+    };
     use crate::app_state::UiState;
 
     #[test]
@@ -531,6 +565,14 @@ mod tests {
         assert!(
             parse_voice_catalog(br#"{"models":["tiny-streaming-en"],"default":"missing"}"#)
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn stale_worker_contract_has_a_specific_repairable_error() {
+        assert_eq!(
+            voice_catalogue_error(2, "sani-stt: error: unrecognized arguments: --list-models"),
+            "VOICE_ENGINE_STALE"
         );
     }
 

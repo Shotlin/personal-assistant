@@ -307,3 +307,9 @@ html,body,#root{background:var(--bg-solid);overflow:hidden}#boot-fallback{height
 @media (max-width: 760px) {
   .voice-model-grid { grid-template-columns: 1fr; }
 }
+
+/* Main-window text entry shares the native turn gate with manual voice. */
+.desktop-composer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: end; padding: 12px; }
+.desktop-composer button { border: 1px solid var(--border-soft); border-radius: 8px; padding: 9px 11px; background: var(--surface-strong); color: var(--text); }
+.desktop-composer textarea { min-width: 0; min-height: 40px; max-height: 120px; resize: vertical; border: 1px solid var(--border-soft); border-radius: 8px; padding: 9px 10px; background: var(--surface); color: var(--text); font: inherit; }
+.composer-error { grid-column: 2 / -1; margin: 0; color: var(--error); font-size: 12px; }

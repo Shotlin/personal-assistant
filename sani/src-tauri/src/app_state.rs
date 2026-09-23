@@ -393,11 +393,18 @@ pub fn finish_listening(app: &AppHandle) {
     let state = app.state::<SaniState>();
     match current_state(app) {
         // Already committed and in flight — nothing left to finish.
-        UiState::Finalizing => cancel_listening(app),
+        // Finish is idempotent. Only Escape/Cancel may discard a transcript
+        // after explicit finalization has begun.
+        UiState::Finalizing => {}
         UiState::Listening | UiState::Preparing => {
+            state.pending_listen.store(false, Ordering::Relaxed);
             if let Some(audio) = state.audio.lock().as_ref() {
                 audio.gate.store(false, Ordering::Relaxed);
             }
+            // Enter Finalizing *before* asking the decoder to drain. A
+            // decoder is allowed to synchronously publish its last words
+            // during flush/reset, and those words must still be accepted.
+            set_state(app, UiState::Finalizing);
             if let Some(speech) = state.speech.lock().as_ref() {
                 speech.control(&json!({"cmd": "flush"}));
             }
@@ -407,7 +414,7 @@ pub fn finish_listening(app: &AppHandle) {
             let app2 = app.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(Duration::from_millis(1500));
-                if current_state(&app2) != UiState::Listening {
+                if current_state(&app2) != UiState::Finalizing {
                     return;
                 }
                 log::warn!("[turn] flush produced no final within 1500ms; returning to idle");
@@ -520,8 +527,10 @@ pub fn on_stt_note(app: &AppHandle, ev: &crate::speech::SttEvent) {
 pub fn on_final(app: &AppHandle, text: String) {
     let state = app.state::<SaniState>();
     let trimmed = text.trim().to_string();
-    // A final only counts while we are actually listening.
-    if current_state(app) != UiState::Listening {
+    // A final counts while capture is live or while an explicit Finish is
+    // draining the decoder. Late results after Cancel/Idle/Working are never
+    // allowed to create a run.
+    if !matches!(current_state(app), UiState::Listening | UiState::Finalizing) {
         log::info!(
             "[turn] late final dropped state={} chars={}",
             current_state(app).as_str(),
@@ -533,15 +542,15 @@ pub fn on_final(app: &AppHandle, text: String) {
         audio.gate.store(false, Ordering::Relaxed);
     }
     if trimmed.is_empty() {
-        // Never send empty text: keep listening. Safe to reopen now that the
-        // Listening check above has passed.
+        // An explicit empty Finish is a clean no-speech result, not a hidden
+        // resume of capture and never an agent request.
         if let Some(speech) = state.speech.lock().as_ref() {
             speech.control(&json!({"cmd": "discard"}));
         }
-        if let Some(audio) = state.audio.lock().as_ref() {
-            audio.gate.store(true, Ordering::Relaxed);
-        }
-        log::info!("[turn] empty final; discarding and continuing to listen");
+        *state.partial.lock() = String::new();
+        let _ = app.emit("sani://partial", "");
+        set_state(app, UiState::Idle);
+        log::info!("[turn] empty final; returning to idle without a run");
         return;
     }
 
@@ -567,6 +576,26 @@ pub fn on_final(app: &AppHandle, text: String) {
             set_state(&app_handle, UiState::Error);
         }
     });
+}
+
+fn can_admit_text(state: UiState) -> bool {
+    matches!(state, UiState::Idle | UiState::Error)
+}
+
+/// Typed turns use the exact same admission, persistence and runtime path as
+/// explicitly finalized speech. The native state is the single authority, so
+/// separate WebViews can observe a run without creating a second one.
+pub fn submit_text(app: &AppHandle, text: String) -> Result<(), String> {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Err("Enter a message before sending.".to_string());
+    }
+    if !can_admit_text(current_state(app)) {
+        return Err("Finish, cancel, or wait for the current request before sending another message."
+            .to_string());
+    }
+    begin_turn(app, text);
+    Ok(())
 }
 
 /// Delayed handoff guard: only begin the turn if this finalization is still the
@@ -686,6 +715,19 @@ fn begin_turn(app: &AppHandle, final_text: String) {
         )
         .await;
     });
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::{can_admit_text, UiState};
+
+    #[test]
+    fn text_admission_only_accepts_idle_state() {
+        assert!(can_admit_text(UiState::Idle));
+        assert!(!can_admit_text(UiState::Listening));
+        assert!(!can_admit_text(UiState::Finalizing));
+        assert!(!can_admit_text(UiState::Working));
+    }
 }
 
 /// Terminal path of one agent run (from `runtime::stream_turn`).

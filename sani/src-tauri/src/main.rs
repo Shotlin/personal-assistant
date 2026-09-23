@@ -152,6 +152,7 @@ fn main() {
             start_listening_cmd,
             stop_listening_cmd,
             escape_cmd,
+            submit_text_cmd,
             hide_panel,
             toggle_panel,
             show_main_settings,
@@ -531,6 +532,11 @@ fn stop_listening_cmd(app: tauri::AppHandle) {
 #[tauri::command]
 fn escape_cmd(app: tauri::AppHandle) {
     app_state::handle_escape(&app);
+}
+
+#[tauri::command]
+fn submit_text_cmd(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    app_state::submit_text(&app, text)
 }
 
 /// Hide the panel without destroying it (replaces the browser window.close()).

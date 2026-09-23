@@ -276,6 +276,8 @@ export const listMics = () => invoke<string[]>("list_mics");
 export const startListening = () => invoke<void>("start_listening_cmd");
 export const stopListening = () => invoke<void>("stop_listening_cmd");
 export const pressEscape = () => invoke<void>("escape_cmd");
+/** Typed and finalized-speech requests share the native admission gate. */
+export const submitText = (text: string) => invoke<void>("submit_text_cmd", { text });
 export const listConversations = () => invoke<Conversation[]>("list_conversations");
 export const getMessages = (conversationId: string) =>
   invoke<ChatMessage[]>("get_messages", { conversationId });

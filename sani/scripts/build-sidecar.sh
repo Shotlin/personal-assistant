@@ -56,9 +56,8 @@ cp "$BUILD/dist/sani-stt" "$OUT/sani-stt-$TRIPLE"
 chmod +x "$OUT/sani-stt-$TRIPLE"
 
 echo "Sidecar ready: $OUT/sani-stt-$TRIPLE ($(du -h "$OUT/sani-stt-$TRIPLE" | cut -f1))"
-echo "Sanity check:"
-# Write to a file, never `| head`: closing the pipe kills the worker mid-load.
-"$OUT/sani-stt-$TRIPLE" --model small-streaming-en </dev/null >"$BUILD/sanity.out" 2>"$BUILD/sanity.err" || true
-grep -m1 '"type":"ready"' "$BUILD/sanity.out" >/dev/null \
-  || { echo "error: sidecar did not report ready; see $BUILD/sanity.err" >&2; tail -5 "$BUILD/sanity.err" >&2; exit 1; }
-echo "  sidecar reports ready"
+echo "Catalogue contract check:"
+"$OUT/sani-stt-$TRIPLE" --list-models >"$BUILD/catalogue.out" 2>"$BUILD/catalogue.err" || true
+grep -Fx '{"models":["tiny-streaming-en","base-streaming-en","small-streaming-en","medium-streaming-en"],"default":"small-streaming-en"}' "$BUILD/catalogue.out" >/dev/null \
+  || { echo "error: sidecar catalogue contract failed; see $BUILD/catalogue.err" >&2; tail -5 "$BUILD/catalogue.err" >&2; exit 1; }
+echo "  sidecar catalogue is current"

@@ -1,0 +1,9 @@
+{
+  "source_revision": "67644bfd5e67184be983901e018047fcb40899d7",
+  "architecture": "aarch64-apple-darwin",
+  "protocol": 1,
+  "components": {
+    "sani-stt": "bdc835a5891e8e951b45694070ad4de92027726ca6c83978c193e6fe11c7b26a",
+    "sani-core": "5578ed9aa8603afe2f02427fd77bb9ac6753543d239043fcae7b9e36f451ce6f"
+  }
+}

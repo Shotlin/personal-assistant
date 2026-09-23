@@ -21,7 +21,7 @@ export default function FullSettings({ onOpenLayout, initialCategory = "General"
   const keyEditor = (provider: "openrouter" | "typesafe", value: string, setValue: (v: string) => void, label: string) => (
     <div className="settings-card">
       <strong>{label}</strong><span className="settings-muted">Keychain: {provider === "openrouter" ? snapshot.openrouter_key : snapshot.typesafe_key}</span>
-      <div className="settings-inline"><input type="password" value={value} placeholder="Paste key to replace; blank clears" onChange={(e) => setValue(e.target.value)} /><button onClick={() => void saveProviderKey(provider, value).then(() => setValue(""))}>Apply key</button></div>
+      <div className="settings-inline"><input type="password" value={value} placeholder="Paste key to replace" onChange={(e) => setValue(e.target.value)} /><button onClick={() => void saveProviderKey(provider, value).then(() => setValue(""))}>Apply key</button></div>
     </div>
   );
   const runVoiceAction = async (model: string, action: () => Promise<void>) => {

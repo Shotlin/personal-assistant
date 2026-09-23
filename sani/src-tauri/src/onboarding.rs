@@ -393,8 +393,8 @@ pub struct StoreResult {
     pub runtime_status: ApplyStatus,
 }
 
-/// Store a provider key in the OS credential store. Empty clears it. The value
-/// is never returned or logged.
+/// Store a replacement provider key in the OS credential store. Removal is a
+/// separate confirmed user action; a blank field must never erase a key.
 #[tauri::command]
 pub async fn store_provider_key(
     app: AppHandle,
@@ -406,11 +406,13 @@ pub async fn store_provider_key(
         return Err("Finish the current task before changing AI settings.".into());
     }
     let trimmed = key.trim();
-    let stored = if trimmed.is_empty() {
-        settings::secret_delete(service)
-    } else {
-        settings::secret_write(service, trimmed)
-    };
+    if trimmed.is_empty() {
+        return Err("Enter a replacement key. Removing a saved key is a separate confirmed action.".into());
+    }
+    let stored = settings::secret_write(service, trimmed);
+    if !stored {
+        return Err("Sani could not save the credential in Keychain.".into());
+    }
     // A credential lives in the child environment only at spawn. Apply it
     // through the exact AI transaction rather than pretending a Keychain write
     // took effect in an already-running sidecar.
@@ -510,9 +512,8 @@ async fn check_openrouter(key: &str) -> KeyStatus {
             } else if status.as_u16() == 401 || status.as_u16() == 403 {
                 KeyStatus::Invalid
             } else {
-                // Reachable but unexpected — treat as connected so a transient
-                // provider quirk never blocks an otherwise-valid key.
-                KeyStatus::Connected { label: None }
+                // An arbitrary HTTP response is not authentication evidence.
+                KeyStatus::Offline
             }
         }
         Err(_) => KeyStatus::Offline,
@@ -526,13 +527,12 @@ async fn check_typesafe(key: &str) -> KeyStatus {
     match client().get(&url).bearer_auth(key).send().await {
         Ok(resp) => {
             let status = resp.status().as_u16();
-            if (401..403).contains(&status) {
+            if status == 401 || status == 403 {
                 KeyStatus::Invalid
-            } else {
-                // Any HTTP response means the host accepted the request shape;
-                // without a documented preflight we do not call a reachable
-                // endpoint invalid.
+            } else if (200..300).contains(&status) {
                 KeyStatus::Connected { label: None }
+            } else {
+                KeyStatus::Offline
             }
         }
         Err(_) => KeyStatus::Offline,
@@ -610,6 +610,21 @@ pub struct ComputerControlSnapshot {
     pub runtime: String,
 }
 
+fn driver_readiness(payload: &Value) -> &'static str {
+    let driver = payload.get("driver");
+    if driver.and_then(|value| value.get("found")).and_then(Value::as_bool) != Some(true) {
+        "missing"
+    } else if driver
+        .and_then(|value| value.get("bounded_ok"))
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        "policy_invalid"
+    } else {
+        "ready"
+    }
+}
+
 #[tauri::command]
 pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapshot {
     let accessibility_state = system_permissions::accessibility();
@@ -618,7 +633,7 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
     let screen_recording = screen_recording_state.as_str().to_string();
     let restart_required = system_permissions::screen_recording_restart_required();
     let runtime = sani_core::core_status(app.clone()).await;
-    let runtime_ok = runtime.is_ok();
+    let driver = runtime.as_ref().ok().map(driver_readiness).unwrap_or("unavailable");
     let (status, message) = if restart_required {
         (
             "restart_required",
@@ -629,7 +644,17 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
             "permission_required",
             "Grant Accessibility and Screen Recording to enable computer control.",
         )
-    } else if !runtime_ok {
+    } else if driver == "missing" {
+        (
+            "unavailable",
+            "Sani’s packaged computer-control driver is missing or stopped.",
+        )
+    } else if driver == "policy_invalid" {
+        (
+            "unavailable",
+            "Sani’s computer-control driver is not running with the approved bounded policy.",
+        )
+    } else if driver == "unavailable" {
         (
             "unavailable",
             "Sani’s computer-control runtime is unavailable. Try restarting Sani.",
@@ -643,11 +668,20 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
         accessibility,
         screen_recording,
         restart_required,
-        runtime: if runtime_ok {
-            "available".into()
-        } else {
-            "unavailable".into()
-        },
+        runtime: driver.into(),
+    }
+}
+
+#[cfg(test)]
+mod control_tests {
+    use super::driver_readiness;
+    use serde_json::json;
+
+    #[test]
+    fn transport_success_does_not_make_a_missing_driver_ready() {
+        assert_eq!(driver_readiness(&json!({"driver":{"found":false,"bounded_ok":false}})), "missing");
+        assert_eq!(driver_readiness(&json!({"driver":{"found":true,"bounded_ok":false}})), "policy_invalid");
+        assert_eq!(driver_readiness(&json!({"driver":{"found":true,"bounded_ok":true}})), "ready");
     }
 }
 
