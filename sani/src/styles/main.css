@@ -283,6 +283,9 @@ html,body,#root{background:var(--bg-solid);overflow:hidden}#boot-fallback{height
   gap: 12px;
 }
 
+.voice-draft-actions { display:flex; gap:8px; margin-top:12px; }
+.voice-draft-actions button { border:1px solid var(--border-soft); border-radius:8px; padding:8px 10px; background:var(--surface-strong); color:var(--text); }
+
 .voice-model-card {
   display: grid;
   gap: 9px;

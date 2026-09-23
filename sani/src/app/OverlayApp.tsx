@@ -9,6 +9,8 @@ import {
   onState,
   onSttError,
   onSttStatus,
+  onPartial,
+  onVoiceLimit,
   openMicSettings,
   pressEscape,
   requestMicPermission,
@@ -59,6 +61,7 @@ export default function OverlayApp() {
   const [levels, setLevels] = useState<number[]>([]);
   const [notice, setNotice] = useState<string>("");
   const [perm, setPerm] = useState<MicPermission>("unknown");
+  const [draft, setDraft] = useState("");
 
   useEffect(() => {
     const unlistens: Array<() => void> = [];
@@ -79,10 +82,13 @@ export default function OverlayApp() {
           }
         }),
         await onSttError((msg) => setNotice(msg)),
+        await onPartial(setDraft),
+        await onVoiceLimit(setNotice),
       );
       const current = await getState();
       setState(current.state);
       setPerm(current.mic_permission);
+      setDraft(current.partial);
     };
     reg();
     return () => unlistens.forEach((u) => u());
@@ -181,7 +187,7 @@ export default function OverlayApp() {
                   background: notice && state !== "listening" && !prompt ? "var(--warning)" : statusColor,
                 }}
               />
-              <span className={busy ? "status-shimmer" : ""}>{statusLabel}</span>
+              <span className={busy ? "status-shimmer" : ""}>{state === "listening" && draft ? "Finish & Send ready" : statusLabel}</span>
             </div>
           </div>
         </button>

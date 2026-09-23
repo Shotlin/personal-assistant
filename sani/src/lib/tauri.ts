@@ -222,6 +222,8 @@ export const onSttStatus = (cb: (s: unknown) => void) =>
   listen("sani://stt-status", (e) => cb(e.payload));
 export const onSttError = (cb: (s: string) => void) =>
   listen<string>("sani://stt-error", (e) => cb(e.payload));
+export const onVoiceLimit = (cb: (s: string) => void) =>
+  listen<string>("sani://voice-limit", (e) => cb(e.payload));
 export const onMicError = (cb: (s: string) => void) =>
   listen<string>("sani://mic-error", (e) => cb(e.payload));
 export const onMicPermission = (cb: (s: MicPermission) => void) =>

@@ -16,6 +16,7 @@ import {
   onState,
   onSttError,
   onUiCommand,
+  onVoiceLimit,
   getMessages,
   listConversations,
   panelReady,
@@ -153,6 +154,7 @@ export default function PanelApp() {
         await onAgentStatus((online) => setAgentOnline(online)),
         await onMicError((msg) => setNotice(msg)),
         await onSttError((msg) => setNotice(msg)),
+        await onVoiceLimit((msg) => setNotice(msg)),
         await onUiCommand((command) => setDrawer(command === "settings" ? "settings" : "history")),
       );
       const current = await getState();
