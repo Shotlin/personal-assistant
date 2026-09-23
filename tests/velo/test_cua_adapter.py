@@ -318,6 +318,7 @@ def test_allowed_apps_parse_from_the_real_manifest() -> None:
         "com.apple.calculator": "calculator",
         "com.google.Chrome": "Chrome",
         "com.apple.Terminal": "Terminal",
+        "com.apple.TextEdit": "TextEdit",
     }
 
 
