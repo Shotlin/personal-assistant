@@ -897,9 +897,19 @@ pub fn start_at_startup(app: &AppHandle) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         match core_start(handle.clone()).await {
-            Ok(_) => spawn_supervisor(handle),
+            Ok(_) => {
+                crate::onboarding::set_runtime_status(
+                    &handle,
+                    crate::onboarding::ApplyStatus::Ready,
+                );
+                spawn_supervisor(handle)
+            }
             Err(err) => {
                 log::error!("sani-core could not start: {err}");
+                crate::onboarding::set_runtime_status(
+                    &handle,
+                    crate::onboarding::ApplyStatus::FailedToApply,
+                );
                 let _ = handle.emit(RUNTIME_STATUS, false);
                 spawn_supervisor(handle);
             }

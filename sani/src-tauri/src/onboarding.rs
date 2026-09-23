@@ -58,6 +58,11 @@ fn set_apply_status(app: &AppHandle, status: ApplyStatus) {
         .fetch_add(1, Ordering::Relaxed);
 }
 
+pub fn set_runtime_status(app: &AppHandle, status: ApplyStatus) {
+    set_apply_status(app, status);
+    emit_settings_changed(app);
+}
+
 fn settings_version(app: &AppHandle) -> u64 {
     app.state::<SettingsApplicationState>()
         .version
@@ -267,7 +272,7 @@ fn full_settings_snapshot(app: &AppHandle) -> FullSettingsSnapshot {
     }
 }
 
-fn emit_settings_changed(app: &AppHandle) {
+pub fn emit_settings_changed(app: &AppHandle) {
     let _ = app.emit("settings://changed", full_settings_snapshot(app));
 }
 

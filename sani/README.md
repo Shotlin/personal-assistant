@@ -205,6 +205,27 @@ The activity stream carries only observable runtime events with timestamps
 durations). No chain-of-thought, prompts, tool payloads, or secrets — that
 guarantee is enforced server-side and covered by tests.
 
+## Full and Quick Settings
+
+The main desktop window now contains Full Settings for General, AI & Models,
+Voice, Microphone, Computer Control, Appearance, Shortcuts, Startup, and
+read-only Storage. The overlay keeps Quick Settings for frequent controls.
+They are separate Tauri WebViews, but each reads the same native non-secret
+snapshot and listens for `settings://changed`; native state, not a
+cross-window React store, is authoritative.
+
+Deep Agent is fixed to OpenRouter with a user-selected model ID. Velo selects
+either OpenRouter or direct TypeSafe explicitly; it never chooses a provider
+based on whichever credential happens to exist. Credentials remain in macOS
+Keychain and only their `absent`/`stored` state reaches a renderer.
+
+AI model/provider and provider-key writes are desired-state transactions:
+Sani rejects them during an active run, persists the requested configuration,
+restarts sani-core, and waits for a bounded readiness check. The visible
+runtime state is `saved`, `applying`, `ready`, or `failed_to_apply`. A failed
+restart leaves the desired configuration visible for correction and retry; it
+does not silently roll back or switch provider.
+
 ## Dev flag
 
 `SANI_AUTOSTART=1` begins listening right after launch (equivalent to pressing

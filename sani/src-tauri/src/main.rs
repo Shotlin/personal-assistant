@@ -446,6 +446,9 @@ fn save_settings_cmd(
         // Drop the capture so the next start_listening reopens the new device.
         *app.state::<SaniState>().audio.lock() = None;
     }
+    // Settings renderers are distinct WebViews. Notify both only after the
+    // native mutation succeeded, so neither relies on a second React store.
+    onboarding::emit_settings_changed(&app);
     Ok(())
 }
 
