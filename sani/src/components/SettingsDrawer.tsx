@@ -7,7 +7,7 @@ interface SettingsDrawerProps {
 }
 
 export default function SettingsDrawer({ onClose }: SettingsDrawerProps) {
-  const { snapshot: settings, microphones: mics, error, saveGeneral, saveAi } = useSettings();
+  const { snapshot: settings, microphones: mics, agents, agentsAvailable, error, saveGeneral, saveAi, selectAgent } = useSettings();
   const [hotkeyDraft, setHotkeyDraft] = useState("");
   const [capturing, setCapturing] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -111,6 +111,13 @@ export default function SettingsDrawer({ onClose }: SettingsDrawerProps) {
         </div>
 
         <div className="settings-group">AI &amp; Models</div>
+        <label className="settings-row">
+          <span>Next-turn agent</span>
+          <select value={settings.agent_mode} disabled={!agentsAvailable} onChange={(e) => void selectAgent(e.target.value)}>
+            {!agents.some((agent) => agent.id === settings.agent_mode) && <option value={settings.agent_mode}>{settings.agent_mode} (unavailable)</option>}
+            {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+          </select>
+        </label>
         <label className="settings-row">
           <span>Deep Agent model</span>
           <input

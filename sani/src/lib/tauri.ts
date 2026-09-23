@@ -250,6 +250,7 @@ export const saveSettings = (patch: {
   theme?: string;
   agent_mode?: string;
 }) => invoke<void>("save_settings_cmd", patch);
+export const setAgentMode = (agentMode: string) => invoke<void>("set_agent_mode", { agentMode });
 export const listMics = () => invoke<string[]>("list_mics");
 export const startListening = () => invoke<void>("start_listening_cmd");
 export const stopListening = () => invoke<void>("stop_listening_cmd");

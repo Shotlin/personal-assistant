@@ -3,8 +3,10 @@ import {
   applyAiSettings,
   getFullSettings,
   listMics,
+  coreAgents,
   onSettingsChanged,
   saveSettings,
+  setAgentMode,
   storeProviderKey,
   type FullSettingsSnapshot,
 } from "../../lib/tauri";
@@ -12,11 +14,14 @@ import {
 interface SettingsContextValue {
   snapshot: FullSettingsSnapshot | null;
   microphones: string[];
+  agents: import("../../lib/tauri").AgentDescriptor[];
+  agentsAvailable: boolean;
   error: string;
   refresh: () => Promise<void>;
   saveGeneral: (patch: Parameters<typeof saveSettings>[0]) => Promise<void>;
   saveAi: (patch: Parameters<typeof applyAiSettings>[0]) => Promise<void>;
   saveProviderKey: (provider: "openrouter" | "typesafe", candidate: string) => Promise<void>;
+  selectAgent: (agentId: string) => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -29,12 +34,16 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<FullSettingsSnapshot | null>(null);
   const [microphones, setMicrophones] = useState<string[]>([]);
+  const [agents, setAgents] = useState<import("../../lib/tauri").AgentDescriptor[]>([]);
+  const [agentsAvailable, setAgentsAvailable] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
-    const [next, mics] = await Promise.all([getFullSettings(), listMics()]);
+    const [next, mics, roster] = await Promise.all([getFullSettings(), listMics(), coreAgents().catch(() => null)]);
     setSnapshot(next);
     setMicrophones(mics);
+    setAgents(roster ?? []);
+    setAgentsAvailable(roster !== null);
   }, []);
 
   useEffect(() => {
@@ -59,6 +68,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SettingsContextValue>(() => ({
     snapshot,
     microphones,
+    agents,
+    agentsAvailable,
     error,
     refresh,
     saveGeneral: (patch) => mutate(() => saveSettings(patch)),
@@ -66,7 +77,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     // Candidate values exist only during this invocation; the provider never
     // retains them in state or exposes them in the snapshot.
     saveProviderKey: (provider, candidate) => mutate(() => storeProviderKey(provider, candidate)),
-  }), [snapshot, microphones, error, refresh, mutate]);
+    selectAgent: (agentId) => mutate(() => setAgentMode(agentId)),
+  }), [snapshot, microphones, agents, agentsAvailable, error, refresh, mutate]);
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }
