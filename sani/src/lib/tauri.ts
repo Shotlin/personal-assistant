@@ -75,6 +75,7 @@ export interface VoiceModelDescriptor {
   installed: boolean;
   active: boolean;
 }
+export interface ComputerControlSnapshot { status: "ready" | "unavailable" | "permission_required" | "restart_required"; message: string; accessibility: string; screen_recording: string; restart_required: boolean; runtime: string; }
 
 /** One raw sani-core event frame, relayed verbatim from the sidecar. */
 export interface CoreEvent {
@@ -295,6 +296,7 @@ export const coreAgents = () =>
   invoke<{ agents: AgentDescriptor[] }>("core_agents").then((r) => r.agents);
 /** The sidecar's own subsystem report, for Diagnostics. */
 export const coreStatus = () => invoke<Record<string, unknown>>("core_status");
+export const computerControlSnapshot = () => invoke<ComputerControlSnapshot>("computer_control_snapshot");
 
 /** Hide the panel without destroying it (RC-02). Reopen is instant. */
 export const hidePanel = () => invoke<void>("hide_panel");

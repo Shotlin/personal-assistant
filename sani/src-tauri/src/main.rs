@@ -196,6 +196,7 @@ fn main() {
             onboarding::validate_stored_provider_key,
             onboarding::list_openrouter_models,
             onboarding::permission_snapshot,
+            onboarding::computer_control_snapshot,
             onboarding::open_permission_settings,
             onboarding::request_accessibility,
             onboarding::request_screen_recording,

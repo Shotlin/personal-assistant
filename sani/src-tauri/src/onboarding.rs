@@ -13,7 +13,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::{app_state, permissions, settings, setup, system_permissions};
+use crate::{app_state, permissions, sani_core, settings, setup, system_permissions};
 
 pub const OPENROUTER_KEY_SERVICE: &str = "sani-openrouter-key";
 pub const TYPESAFE_KEY_SERVICE: &str = "sani-typesafe-key";
@@ -579,6 +579,40 @@ pub fn permission_snapshot() -> PermissionSnapshot {
         screen_recording: system_permissions::screen_recording().as_str().to_string(),
         screen_recording_restart_required: system_permissions::screen_recording_restart_required(),
     }
+}
+
+/// One truthful computer-control report: current OS permission queries plus a
+/// live `system.status` request. No renderer infers readiness from a stale
+/// toggle or fabricates an available runtime.
+#[derive(Serialize)]
+pub struct ComputerControlSnapshot {
+    pub status: String,
+    pub message: String,
+    pub accessibility: String,
+    pub screen_recording: String,
+    pub restart_required: bool,
+    pub runtime: String,
+}
+
+#[tauri::command]
+pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapshot {
+    let accessibility_state = system_permissions::accessibility();
+    let screen_recording_state = system_permissions::screen_recording();
+    let accessibility = accessibility_state.as_str().to_string();
+    let screen_recording = screen_recording_state.as_str().to_string();
+    let restart_required = system_permissions::screen_recording_restart_required();
+    let runtime = sani_core::core_status(app.clone()).await;
+    let runtime_ok = runtime.is_ok();
+    let (status, message) = if restart_required {
+        ("restart_required", "Screen Recording was granted; restart Sani before computer control can use it.")
+    } else if !accessibility_state.is_granted() || !screen_recording_state.is_granted() {
+        ("permission_required", "Grant Accessibility and Screen Recording to enable computer control.")
+    } else if !runtime_ok {
+        ("unavailable", "Sani’s computer-control runtime is unavailable. Try restarting Sani.")
+    } else {
+        ("ready", "Computer control is ready.")
+    };
+    ComputerControlSnapshot { status: status.into(), message: message.into(), accessibility, screen_recording, restart_required, runtime: if runtime_ok { "available".into() } else { "unavailable".into() } }
 }
 
 #[tauri::command]
