@@ -51,6 +51,9 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 /// a startup bound, not permission approval: denied macOS permissions leave
 /// the daemon alive and are reported honestly by the driver.
 const CUA_BOOT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Ceiling on the read-only permission probe, so a wedged daemon cannot stall
+/// the Computer Control page while Sani waits for an answer.
+const DRIVER_PERMISSION_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// A filesystem entry at the private endpoint is not enough: a crashed CUA
 /// daemon can leave its Unix socket behind.  Treat the driver as live only
@@ -318,9 +321,19 @@ fn packaged_core(app: &AppHandle) -> Option<PathBuf> {
 /// process's code identity, so a fully granted Sani still cannot make an
 /// ungranted driver move the pointer. `None` means the probe could not be
 /// answered, which must never be reported as ready.
-pub fn driver_permissions(app: &AppHandle) -> Option<(bool, bool)> {
+pub async fn driver_permissions(app: AppHandle) -> Option<(bool, bool)> {
+    // Off the async runtime and hard-bounded: a wedged daemon must not hang the
+    // Computer Control page, and an unanswered probe must never be reported as
+    // ready.
+    tokio::task::spawn_blocking(move || read_driver_permissions(&app))
+        .await
+        .ok()
+        .flatten()
+}
+
+fn read_driver_permissions(app: &AppHandle) -> Option<(bool, bool)> {
     let cua = SaniCoreConfig::resolve(app).ok()?.cua?;
-    let output = std::process::Command::new(&cua.command)
+    let mut child = std::process::Command::new(&cua.command)
         .args([
             "call",
             "check_permissions",
@@ -328,8 +341,26 @@ pub fn driver_permissions(app: &AppHandle) -> Option<(bool, bool)> {
             "--socket",
             cua.socket.to_string_lossy().as_ref(),
         ])
-        .output()
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
         .ok()?;
+    let deadline = std::time::Instant::now() + DRIVER_PERMISSION_TIMEOUT;
+    let output = loop {
+        let finished = child.try_wait().ok()?;
+        if finished.is_some() {
+            break child.wait_with_output().ok()?;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    if !output.status.success() {
+        return None;
+    }
     let value: Value = serde_json::from_slice(&output.stdout).ok()?;
     Some((
         value.get("accessibility")?.as_bool()?,

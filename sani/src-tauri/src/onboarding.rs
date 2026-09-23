@@ -646,7 +646,7 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
     // does not restart a conversation or alter any user setting.
     let driver_recovery = sani_core::recover_embedded_cua_driver(&app).await;
     let runtime = sani_core::core_status(app.clone()).await;
-    let permissions = sani_core::driver_permissions(&app);
+    let permissions = sani_core::driver_permissions(app.clone()).await;
     let driver = if driver_recovery.is_err() {
         "unavailable"
     } else {
