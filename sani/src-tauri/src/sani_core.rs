@@ -37,6 +37,10 @@ pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 const RUN_DEADLINE: Duration = Duration::from_secs(15 * 60);
 /// Round-trip budget for simple request/response methods.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+/// A frozen Python sidecar must unpack and import its private runtime before
+/// it can answer its very first frame. This is deliberately bounded, but is
+/// longer than a warm request so launch is not misclassified as failure.
+const REGISTRY_BOOT_TIMEOUT: Duration = Duration::from_secs(30);
 /// `system.status` probes the CUA daemon and the database, so it gets longer
 /// than a plain round trip rather than reporting a healthy runtime as dead.
 const STATUS_TIMEOUT: Duration = Duration::from_secs(20);
@@ -452,6 +456,7 @@ pub struct SaniCoreClient {
     child: Child,
     transport: CoreTransport<ChildStdout, ChildStdin>,
     streaming: bool,
+    registry_ready: bool,
 }
 
 impl SaniCoreClient {
@@ -492,6 +497,7 @@ impl SaniCoreClient {
             child,
             transport: CoreTransport::new(stdout, stdin),
             streaming: false,
+            registry_ready: false,
         })
     }
 
@@ -514,14 +520,16 @@ impl SaniCoreClient {
 
     /// `agents.list` -> the sidecar registry's agent descriptors.
     pub async fn list_agents(&mut self) -> Result<Vec<Value>, String> {
+        let timeout = registry_timeout(self.registry_ready);
         let result = self
-            .request("agents.list", json!({}), REQUEST_TIMEOUT)
+            .request("agents.list", json!({}), timeout)
             .await?;
         let agents = result
             .get("agents")
             .and_then(Value::as_array)
             .cloned()
             .ok_or_else(|| format!("unexpected agents.list result: {result}"))?;
+        self.registry_ready = true;
         Ok(agents)
     }
 
@@ -782,6 +790,14 @@ fn registry_needs_recovery(result: &Result<Vec<Value>, String>) -> bool {
     match result {
         Err(_) => true,
         Ok(agents) => agents.is_empty(),
+    }
+}
+
+fn registry_timeout(registry_ready: bool) -> Duration {
+    if registry_ready {
+        REQUEST_TIMEOUT
+    } else {
+        REGISTRY_BOOT_TIMEOUT
     }
 }
 
@@ -1090,6 +1106,13 @@ mod tests {
         assert!(registry_needs_recovery(&Err("sidecar exited".into())));
         assert!(registry_needs_recovery(&Ok(Vec::new())));
         assert!(!registry_needs_recovery(&Ok(vec![json!({"id": "velo"})])));
+    }
+
+    #[test]
+    fn cold_registry_handshake_has_a_bounded_boot_budget() {
+        assert_eq!(registry_timeout(false), REGISTRY_BOOT_TIMEOUT);
+        assert_eq!(registry_timeout(true), REQUEST_TIMEOUT);
+        assert!(REGISTRY_BOOT_TIMEOUT > REQUEST_TIMEOUT);
     }
 
     #[tokio::test]
