@@ -1,18 +1,25 @@
 """Sani computer-control acceptance check against the packaged installed app.
 
-Verifies, in order, the four things the goal actually claims:
+Verifies, in order, the things the goal actually claims:
 
-1. Sani's own macOS grants, read from the running installed process.
-2. The embedded CUA driver's view of those same grants, read from the live
-   daemon over Sani's private socket (this is the host-attributed identity, so
-   `responsible_ppid` must equal the running Sani pid).
-3. That a real CGEvent click moves the *physical* pointer -- measured with
-   CoreGraphics from outside Sani, so a simulated or background-only delivery
-   cannot pass.
-4. That typing lands somewhere observable.
+1. The embedded CUA driver's view of macOS's grants, read live from the daemon
+   over Sani's private socket. This is the authoritative source: it is the same
+   process that will move the pointer, and it answers from its own TCC identity.
+2. That the driver sits in *Sani's* responsibility chain, so the grant the user
+   gave to Sani is the grant macOS applies here.
+3. That a pixel-addressed click moves the *physical* pointer to inside the
+   target window. Measured with CoreGraphics from outside Sani. The accessibility
+   click path deliberately never moves the cursor, so this is what distinguishes
+   a real desktop action from a background AX write.
+4. That typing lands in a place that can be read back independently.
 
-Read-only with respect to Sani: it never writes settings and never fakes a
-result. If a permission is missing it reports BLOCKED and stops.
+TextEdit is used for 3 and 4 on purpose: it is a native Cocoa text view, so its
+AXValue is genuine proof of what the field holds. A browser tab is not -- the
+driver itself refuses to trust AXValue read-back there.
+
+Read-only with respect to Sani: never writes settings, never fakes a result. A
+missing permission reports BLOCKED and stops; an action that did not physically
+happen reports FAIL.
 """
 
 from __future__ import annotations
@@ -27,7 +34,11 @@ import Quartz
 APP = "/Applications/Sani.app"
 DRIVER = f"{APP}/Contents/Resources/CuaDriver.app/Contents/MacOS/cua-driver"
 SOCKET = "/Users/sayan/Library/Application Support/app.sani.local/cua-driver.sock"
-CHROME = "com.google.Chrome"
+TEXTEDIT = "com.apple.TextEdit"
+PHRASE = "sani computer control check"
+
+#: How far the pointer is parked before the click, in logical points.
+PARK_OFFSET = 400
 
 
 def call(tool: str, args: dict) -> dict:
@@ -42,28 +53,18 @@ def call(tool: str, args: dict) -> dict:
         return {"error": (result.stdout or result.stderr).strip()[:300]}
 
 
-def cursor() -> tuple[int, int]:
+def cursor() -> tuple[float, float]:
     point = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
-    return (int(point.x), int(point.y))
+    return (float(point.x), float(point.y))
 
 
-def host_grants() -> dict:
-    pid = subprocess.run(["pgrep", "-f", "Sani.app/Contents/MacOS/sani$"],
-                         capture_output=True, text=True).stdout.split()
-    core = subprocess.run(["pgrep", "-f", "sani-core-runtime/sani-core"],
-                          capture_output=True, text=True).stdout.split()
-    if not core:
-        return {}
-    env = subprocess.run(["ps", "eww", "-p", core[0]], capture_output=True, text=True).stdout
-    found = {}
-    for token in env.split():
-        key, _, value = token.partition("=")
-        if key == "SANI_HOST_ACCESSIBILITY_PERMISSION":
-            found["accessibility"] = value
-        elif key == "SANI_HOST_SCREEN_RECORDING_PERMISSION":
-            found["screen_recording"] = value
-    found["sani_pid"] = pid[0] if pid else None
-    return found
+def park(where: tuple[float, float]) -> None:
+    """Move the pointer out of the way. Setup only -- the driver must move it back."""
+    Quartz.CGWarpMouseCursorPosition(Quartz.CGPoint(where[0], where[1]))
+
+
+def distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
 def fail(step: str, detail: str) -> int:
@@ -71,65 +72,104 @@ def fail(step: str, detail: str) -> int:
     return 1
 
 
+def blocked(step: str, detail: str) -> int:
+    print(f"BLOCKED  {step}: {detail}")
+    return 2
+
+
 def main() -> int:
-    grants = host_grants()
-    print(f"1. host grants from running process: {grants}")
-    if not grants:
-        return fail("host", "sani-core is not running")
+    sani = subprocess.run(["pgrep", "-f", "Sani.app/Contents/MacOS/sani$"],
+                          capture_output=True, text=True).stdout.split()
+    if not sani:
+        return fail("host", "Sani is not running -- launch /Applications/Sani.app first")
+    sani_pid = sani[0]
 
     permissions = call("check_permissions", {"prompt": False})
-    print(f"2. driver view: {json.dumps({k: v for k, v in permissions.items() if k != 'source'})}")
     source = permissions.get("source", {})
-    print(f"   attribution: embedded={source.get('embedded')} "
-          f"host={source.get('host_bundle_id')!r} "
-          f"responsible_ppid={source.get('responsible_ppid')} sani_pid={grants.get('sani_pid')}")
-    if not permissions.get("accessibility") or not permissions.get("screen_recording"):
-        return fail("permission", "BLOCKED: macOS has not granted Accessibility + Screen "
-                                 "Recording to Sani yet")
-    if str(source.get("responsible_ppid")) != str(grants.get("sani_pid")):
-        return fail("chain", "driver is not in Sani's responsibility chain")
+    print(f"1. driver permission probe: accessibility={permissions.get('accessibility')} "
+          f"screen_recording={permissions.get('screen_recording')}")
+    print(f"2. identity: pid={source.get('pid')} embedded={source.get('embedded')} "
+          f"host_bundle_id={source.get('host_bundle_id')!r} "
+          f"responsible_ppid={source.get('responsible_ppid')} (Sani pid {sani_pid})")
 
-    launch = call("launch_app", {"bundle_id": CHROME})
-    time.sleep(2.0)
+    if not permissions.get("accessibility") or not permissions.get("screen_recording"):
+        return blocked("permission",
+                       "macOS has not granted Accessibility + Screen Recording to Sani. "
+                       "Sani -> Computer Control -> Request Accessibility, then Request "
+                       "Screen Recording, then quit and reopen Sani.")
+    if str(source.get("responsible_ppid")) != sani_pid:
+        return fail("chain", "the driver is not a child of the running Sani, so the grant "
+                             "macOS applies here is not Sani's")
+
+    launch = call("launch_app", {"bundle_id": TEXTEDIT})
+    time.sleep(2.5)
     pid = launch.get("pid") or next(
         (a.get("pid") for a in call("list_apps", {}).get("apps", [])
-         if a.get("bundle_id") == CHROME), None)
+         if a.get("bundle_id") == TEXTEDIT), None)
     if not pid:
-        return fail("launch", json.dumps(launch)[:200])
+        return fail("launch", f"TextEdit did not start: {json.dumps(launch)[:200]}")
 
-    call("bring_to_front", {"pid": pid})
+    call("hotkey", {"pid": pid, "keys": ["command", "n"]})
     time.sleep(1.5)
     windows = [w for w in call("list_windows", {"pid": pid}).get("windows", [])
                if w.get("is_on_screen")]
     if not windows:
-        return fail("window", "Chrome has no on-screen window to aim at")
+        return fail("window", "TextEdit has no on-screen document window")
     window = max(windows, key=lambda w: w["bounds"]["width"] * w["bounds"]["height"])
-    bounds, wid = window["bounds"], window["window_id"]
+    wid = window["window_id"]
+    bounds = window["bounds"]
 
+    state = call("get_window_state", {"pid": pid, "window_id": wid,
+                                      "include_screenshot": False,
+                                      "max_elements": 200, "max_depth": 25})
+    scale = state.get("screenshot_scale") or 1
+    areas = [e for e in state.get("elements", [])
+             if str(e.get("role", "")).endswith("TextArea") and (e.get("frame") or {}).get("w")]
+    if not areas:
+        return fail("target", "no text area in the TextEdit snapshot: "
+                              + json.dumps(state)[:300])
+    area = max(areas, key=lambda e: e["frame"]["w"] * e["frame"]["h"])
+    frame = area["frame"]
+    # `frame` is window-local points; the pixel click path wants window-local
+    # screenshot pixels, which are scaled by screenshot_scale on Retina.
+    aim_x = int((frame["x"] + frame["w"] / 2) * scale)
+    aim_y = int((frame["y"] + frame["h"] / 2) * scale)
+    print(f"3. aiming at text area local pts ({frame['x'] + frame['w'] / 2:.0f},"
+          f"{frame['y'] + frame['h'] / 2:.0f}) scale={scale} -> px ({aim_x},{aim_y})")
+
+    park((float(bounds["x"]) - PARK_OFFSET, float(bounds["y"]) + PARK_OFFSET))
+    time.sleep(0.5)
     before = cursor()
-    target_x = int(bounds["x"] + bounds["width"] * 0.5)
-    target_y = int(bounds["y"] + 14)
-    click = call("click", {"pid": pid, "window_id": wid,
-                           "x": int(bounds["width"] * 0.5), "y": 14})
+
+    click = call("click", {"pid": pid, "window_id": wid, "x": aim_x, "y": aim_y})
     time.sleep(1.0)
     after = cursor()
-    moved = before != after
-    print(f"3. physical pointer: {before} -> {after} (aimed {target_x},{target_y}) "
-          f"moved={moved} route={json.dumps(click)[:160]}")
-    if not moved:
-        return fail("pointer", "the real cursor did not move -- delivery is not foreground")
 
-    typed = "sani computer control check"
-    type_result = call("type_text", {"pid": pid, "window_id": wid, "text": typed})
-    time.sleep(1.0)
-    state = call("get_window_state", {"pid": pid, "window_id": wid,
-                                      "include_screenshot": False, "max_elements": 60,
-                                      "max_depth": 12})
-    blob = json.dumps(state)
-    landed = typed in blob
-    print(f"4. typing: {json.dumps(type_result)[:160]} observed_in_state={landed}")
+    inside = (bounds["x"] - 2 <= after[0] <= bounds["x"] + bounds["width"] + 2
+              and bounds["y"] - 2 <= after[1] <= bounds["y"] + bounds["height"] + 2)
+    print(f"4. physical pointer: parked {before[0]:.0f},{before[1]:.0f} -> "
+          f"{after[0]:.0f},{after[1]:.0f} moved {distance(before, after):.0f}pt; "
+          f"inside target window={inside}")
+    print(f"   click result: {json.dumps(click)[:220]}")
+    if not inside or distance(before, after) < 50:
+        return fail("pointer", "the real cursor did not travel to the aimed window -- "
+                              "actions are not being delivered to the physical desktop")
 
-    print("PASS  grants real, driver attributed to Sani, pointer physically moved")
+    typed = call("type_text", {"pid": pid, "window_id": wid, "text": PHRASE,
+                               "delivery_mode": "foreground"})
+    time.sleep(1.5)
+    after_state = call("get_window_state", {"pid": pid, "window_id": wid,
+                                            "include_screenshot": False,
+                                            "max_elements": 200, "max_depth": 25})
+    values = [str(e.get("value", "")) for e in after_state.get("elements", [])]
+    landed = any(PHRASE in value for value in values)
+    print(f"5. typing: {json.dumps(typed)[:220]}")
+    print(f"   read back from the document: found={landed}")
+    if not landed:
+        return fail("typing", f"{PHRASE!r} never appeared in TextEdit's accessibility value")
+
+    print("PASS  grants real and attributed to Sani; the physical pointer travelled to "
+          "the aimed window; typing read back from the document")
     return 0
 
 
