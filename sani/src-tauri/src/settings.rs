@@ -91,6 +91,10 @@ pub struct Settings {
     pub theme: String,
     #[serde(default = "default_stt_model")]
     pub stt_model: String,
+    /// Days to retain non-secret execution metadata. Conversations/messages
+    /// are not governed by this value.
+    #[serde(default = "default_technical_retention_days")]
+    pub technical_retention_days: u32,
     /// Silence that closes a user turn. Speech resuming inside this window
     /// cancels the commit and continues the same utterance.
     #[serde(default = "default_stt_turn_end_ms")]
@@ -153,6 +157,7 @@ fn default_theme() -> String {
 fn default_stt_model() -> String {
     "small-streaming-en".into()
 }
+fn default_technical_retention_days() -> u32 { 30 }
 fn default_stt_turn_end_ms() -> u32 {
     1400
 }

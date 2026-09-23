@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettings } from "./SettingsContext";
+import { clearRunActivity, setTechnicalRetention } from "../../lib/tauri";
 
 const CATEGORIES = ["General", "AI & Models", "Voice", "Microphone", "Computer Control", "Appearance", "Shortcuts", "Startup", "Storage"] as const;
 type Category = typeof CATEGORIES[number];
@@ -11,6 +12,7 @@ export default function FullSettings({ onOpenLayout }: { onOpenLayout: () => voi
   const [voiceBusy, setVoiceBusy] = useState("");
   const [openRouterCandidate, setOpenRouterCandidate] = useState("");
   const [typeSafeCandidate, setTypeSafeCandidate] = useState("");
+  const [storageNotice, setStorageNotice] = useState("");
   if (!snapshot) return <section className="full-settings"><p>Loading settings…</p></section>;
   const keyEditor = (provider: "openrouter" | "typesafe", value: string, setValue: (v: string) => void, label: string) => (
     <div className="settings-card">
@@ -40,7 +42,7 @@ export default function FullSettings({ onOpenLayout }: { onOpenLayout: () => voi
       {category === "Appearance" && <><h2>Appearance</h2><p>Overlay layout remains a separate, safe editor.</p><button onClick={onOpenLayout}>Open Layout Editor</button></>}
       {category === "Shortcuts" && <><h2>Shortcuts</h2><label>Global shortcut<input defaultValue={snapshot.hotkey} onBlur={(e) => void saveGeneral({ hotkey: e.target.value })}/></label></>}
       {category === "Startup" && <><h2>Startup</h2><label className="settings-toggle"><input type="checkbox" checked={snapshot.launch_at_login} onChange={(e) => void saveGeneral({ launch_at_login: e.target.checked })}/> Launch Sani at login</label></>}
-      {category === "Storage" && <><h2>Storage</h2><div className="settings-card"><strong>Local Sani data</strong><code>{snapshot.storage_path}</code><p>Data stays on this Mac. Storage management and deletion are intentionally not available in this phase.</p></div></>}
+      {category === "Storage" && <><h2>Storage</h2><div className="settings-card"><strong>Local Sani data</strong><code>{snapshot.storage_path}</code><p>Chats remain until you explicitly delete a conversation. Technical execution details are separate and never include keys, audio, screenshots, or clipboard data.</p><label>Keep technical details<select value={snapshot.technical_retention_days} onChange={(e) => void setTechnicalRetention(Number(e.target.value) as 7 | 14 | 30).then((count) => setStorageNotice(`Saved retention and removed ${count} expired technical records.`))}><option value={7}>7 days</option><option value={14}>14 days</option><option value={30}>30 days</option></select></label><button className="danger" onClick={() => { if (window.confirm("Clear all local technical execution details? Conversations and messages will remain.")) void clearRunActivity().then((count) => setStorageNotice(`Cleared ${count} technical records. Conversations were not changed.`)); }}>Clear technical details</button>{storageNotice && <p className="settings-muted">{storageNotice}</p>}</div></>}
     </div></div>
   </section>;
 }

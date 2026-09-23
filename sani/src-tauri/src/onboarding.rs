@@ -225,6 +225,7 @@ pub struct FullSettingsSnapshot {
     pub accessibility_permission: String,
     pub screen_recording_permission: String,
     pub storage_path: String,
+    pub technical_retention_days: u32,
 }
 
 fn full_settings_snapshot(app: &AppHandle) -> FullSettingsSnapshot {
@@ -269,6 +270,7 @@ fn full_settings_snapshot(app: &AppHandle) -> FullSettingsSnapshot {
         accessibility_permission: system_permissions::accessibility().as_str().into(),
         screen_recording_permission: system_permissions::screen_recording().as_str().into(),
         storage_path,
+        technical_retention_days: s.technical_retention_days,
     }
 }
 

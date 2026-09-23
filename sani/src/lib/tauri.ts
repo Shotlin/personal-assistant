@@ -123,6 +123,7 @@ export interface FullSettingsSnapshot extends SettingsShape {
   accessibility_permission: string;
   screen_recording_permission: string;
   storage_path: string;
+  technical_retention_days: number;
 }
 
 // ------------------------------------------------------- overlay layout editor
@@ -278,6 +279,9 @@ export const getMessages = (conversationId: string) =>
   invoke<ChatMessage[]>("get_messages", { conversationId });
 export const getRunActivity = (conversationId: string) =>
   invoke<ActivityEvent[]>("get_run_activity", { conversationId });
+export const pruneRunActivity = (days: 7 | 14 | 30) => invoke<number>("prune_run_activity", { days });
+export const clearRunActivity = () => invoke<number>("clear_run_activity");
+export const setTechnicalRetention = (days: 7 | 14 | 30) => invoke<number>("set_technical_retention", { days });
 export const newConversation = () => invoke<string>("new_conversation");
 export const selectConversation = (conversationId: string) =>
   invoke<void>("select_conversation", { conversationId });

@@ -280,6 +280,19 @@ impl History {
         let rows = stmt.query_map(params![conversation_id], |row| Ok(ActivityRecord { sequence: row.get(0)?, conversation_id: row.get(1)?, run_id: row.get(2)?, agent_id: row.get(3)?, event_type: row.get(4)?, timestamp: row.get(5)?, label: row.get(6)?, status: row.get(7)? })).map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
+
+    /// Retention deliberately targets execution metadata only. Conversations
+    /// and messages (the user's chat record) are never part of this query.
+    pub fn prune_activity_before(&self, cutoff_ms: i64) -> Result<usize, String> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM run_activity WHERE timestamp < ?1", params![cutoff_ms])
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn clear_activity(&self) -> Result<usize, String> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM run_activity", []).map_err(|e| e.to_string())
+    }
 }
 
 /// Derive a short conversation title from the first user utterance.

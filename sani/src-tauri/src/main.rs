@@ -158,6 +158,9 @@ fn main() {
             list_conversations,
             get_messages,
             get_run_activity,
+            prune_run_activity,
+            clear_run_activity,
+            set_technical_retention,
             new_conversation,
             select_conversation,
             delete_conversation,
@@ -572,6 +575,27 @@ fn get_run_activity(
     conversation_id: String,
 ) -> Result<Vec<history::ActivityRecord>, String> {
     app_state::history(&app).activity(&conversation_id)
+}
+
+#[tauri::command]
+fn prune_run_activity(app: tauri::AppHandle, days: u32) -> Result<usize, String> {
+    let days = match days { 7 | 14 | 30 => days, _ => return Err("Choose 7, 14, or 30 days for technical retention.".into()) };
+    let cutoff = app_state::now_ms() - i64::from(days) * 24 * 60 * 60 * 1000;
+    app_state::history(&app).prune_activity_before(cutoff)
+}
+
+#[tauri::command]
+fn clear_run_activity(app: tauri::AppHandle) -> Result<usize, String> {
+    app_state::history(&app).clear_activity()
+}
+
+#[tauri::command]
+fn set_technical_retention(app: tauri::AppHandle, days: u32) -> Result<usize, String> {
+    let days = match days { 7 | 14 | 30 => days, _ => return Err("Choose 7, 14, or 30 days for technical retention.".into()) };
+    { let settings_arc = app_state::settings(&app); let mut settings = settings_arc.write(); settings.technical_retention_days = days; settings::save(&app, &settings)?; }
+    let removed = prune_run_activity(app.clone(), days)?;
+    onboarding::emit_settings_changed(&app);
+    Ok(removed)
 }
 
 #[tauri::command]
