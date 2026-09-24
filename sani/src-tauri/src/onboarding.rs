@@ -612,6 +612,23 @@ pub struct ComputerControlSnapshot {
     pub driver_screen_recording: String,
     pub restart_required: bool,
     pub runtime: String,
+    /// Which bundle macOS is being asked about. A rebuild changes this app's
+    /// code identity, and a checked row in System Settings can belong to a copy
+    /// that no longer exists -- naming the running bundle makes that visible
+    /// instead of mysterious.
+    pub app_path: String,
+}
+
+/// The `.app` bundle this process was launched from, or the executable path.
+fn running_bundle_path() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            exe.ancestors()
+                .find(|p| p.extension().map(|e| e == "app").unwrap_or(false))
+                .map(|bundle| bundle.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| String::from("unknown"))
 }
 
 fn driver_readiness(payload: &Value, permissions: Option<(bool, bool)>) -> &'static str {
@@ -698,6 +715,7 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
         driver_screen_recording: permission_label(permissions.map(|grants| grants.1)),
         restart_required,
         runtime: driver.into(),
+        app_path: running_bundle_path(),
     }
 }
 
