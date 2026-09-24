@@ -25,8 +25,15 @@
 #       independently verified against. Read/write is limited to whatever the
 #       user opens; the driver still cannot touch any other application.)
 version: 3
-expires_after: 8h
-idle_timeout: 30m
+# A desktop assistant spends most of its life waiting for the user, and the
+# driver enforces these two windows against wall-clock time rather than against
+# activity. At the previous 8h/30m the policy silently locked itself after half
+# an hour of thinking, and every call then failed with "capability manifest idle
+# timeout exceeded" -- indistinguishable from a broken permission. Widened to a
+# working day; the real fix is for Sani to re-approve the manifest when it goes
+# stale, which is not yet implemented.
+expires_after: 24h
+idle_timeout: 12h
 allow:
   tools:
     # session + inventory
