@@ -82,7 +82,7 @@ export interface VoiceModelDescriptor {
 }
 /** macOS grants are per process: Sani and the CuaDriver helper each need their
  *  own, so the page reports both rather than one merged "ready". */
-export interface ComputerControlSnapshot { status: "ready" | "unavailable" | "permission_required" | "driver_permission_required" | "restart_required"; message: string; accessibility: string; screen_recording: string; driver_accessibility: string; driver_screen_recording: string; restart_required: boolean; runtime: string; app_path: string; }
+export interface ComputerControlSnapshot { status: "ready" | "unavailable" | "permission_required" | "driver_permission_required" | "policy_locked" | "unverified" | "restart_required"; message: string; accessibility: string; screen_recording: string; driver_accessibility: string; driver_screen_recording: string; /** The daemon's own words when it could not be asked; empty when it answered. */ driver_detail: string; /** Which authority refuses an action right now. */ permission_mode: "bounded" | "standard"; restart_required: boolean; runtime: string; app_path: string; }
 
 /** One raw sani-core event frame, relayed verbatim from the sidecar. */
 export interface CoreEvent {

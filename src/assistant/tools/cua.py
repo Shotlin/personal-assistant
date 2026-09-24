@@ -56,9 +56,17 @@ class CuaConnection:
     lifecycle_tools_by_name: dict[str, BaseTool] = field(default_factory=dict)
 
 
-def _require_manifest(settings: Settings) -> Path:
+def _require_manifest(settings: Settings) -> Path | None:
+    """The reviewed capability manifest, or None where no manifest is the policy.
+
+    Under approved architecture D1 the daemon runs in ``standard`` mode and the
+    deterministic action-class gate belongs to Sani: there a manifest is not
+    merely absent, it is the wrong artifact to demand of the driver.
+    """
     if not settings.cua_enabled:
         raise RuntimeError("CUA is disabled; CUA tools require CUA_ENABLED=true")
+    if settings.cua_permission_mode == "standard":
+        return None
     manifest = Path(settings.cua_capability_manifest_path)
     if not settings.cua_capability_manifest_path.startswith("/"):
         raise RuntimeError("CUA_CAPABILITY_MANIFEST_PATH must be absolute")
@@ -83,11 +91,11 @@ def driver_mcp_args(settings: Settings) -> list[str]:
     return ["mcp", "--embedded", "--socket", settings.cua_socket]
 
 
-def _evaluate_daemon_status(output: str) -> str | None:
+def _evaluate_daemon_status(output: str, permission_mode: str = "bounded") -> str | None:
     """Fail-closed posture check over ``cua-driver status`` output.
 
-    Returns a remediation message when the daemon's startup posture does
-    not match the required bounded runtime, or ``None`` when it does.
+    Returns a remediation message when the daemon's live posture is not the
+    mode Sani asked for, or ``None`` when it matches.
 
     Why this exists (2026-09-18 incident): the driver's ``mcp`` proxy
     silently resurrects a dead daemon via ``open -a CuaDriver``, and on
@@ -95,7 +103,9 @@ def _evaluate_daemon_status(output: str) -> str | None:
     daemon came up in *standard* mode without the capability manifest
     even though both TCC toggles were enabled. The application must
     therefore verify the daemon's actual posture instead of trusting
-    its own ``CUA_PERMISSION_MODE`` setting.
+    its own ``CUA_PERMISSION_MODE`` setting. That verification is
+    mode-parameterised, so a standard-mode host rejects a bounded or
+    resurrected daemon as loudly as a bounded host rejects a standard one.
     """
     lowered = output.lower()
     if "daemon is not running" in lowered:
@@ -106,14 +116,18 @@ def _evaluate_daemon_status(output: str) -> str | None:
             "standard mode without the capability manifest."
         )
     mode_line = next((line for line in output.splitlines() if "permission mode:" in line), "")
-    if "bounded" not in mode_line:
+    if permission_mode not in mode_line:
         return (
-            "CuaDriver daemon is not in bounded mode "
+            f"CuaDriver daemon is not in {permission_mode} mode "
             f"({mode_line.strip() or 'mode unreadable'}); CUA_ENABLED=true "
-            "requires a daemon started with --permission-mode bounded. "
+            f"requires a daemon started with --permission-mode {permission_mode}. "
             "Restart it via the LaunchAgent — never via `open --args`, "
             "which drops the mode/manifest arguments on this host."
         )
+    if permission_mode != "bounded":
+        # Standard mode carries no manifest by design. Demanding one would
+        # re-impose the ceiling architecture D1 moved into Sani's own gate.
+        return None
     manifest_line = next(
         (line for line in output.splitlines() if line.strip().startswith("capability manifest:")),
         "",
@@ -132,14 +146,20 @@ def _evaluate_daemon_status(output: str) -> str | None:
     return None
 
 
-async def _assert_bounded_daemon(settings: Settings) -> None:
-    """Verify the live daemon posture before any CUA tool is exposed."""
+async def _assert_daemon_posture(settings: Settings) -> None:
+    """Verify the live daemon is running the mode Sani launched it in.
+
+    A socket that merely accepts a connection proves nothing about which mode
+    it was started in, and that gap is why a locked-out bounded manifest and a
+    resurrected standalone daemon could both pass for healthy. The posture is
+    therefore read from the daemon itself, over Sani's own endpoint when it has
+    one -- never from the setting that asked for it.
+    """
     import asyncio
     import shutil
 
+    status_args = ["status"]
     if settings.cua_socket:
-        # The packaged Sani host created this endpoint itself with the exact
-        # bounded manifest arguments, then waited for it before starting core.
         # Do not call bare `status` here: on macOS that command addresses the
         # global standalone daemon, not Sani's private embedded endpoint.
         try:
@@ -152,23 +172,23 @@ async def _assert_bounded_daemon(settings: Settings) -> None:
             raise RuntimeError(
                 f"embedded CuaDriver endpoint is not a socket: {settings.cua_socket}"
             )
-        return
+        status_args += ["--socket", settings.cua_socket]
 
     executable = shutil.which(settings.cua_command)
     if executable is None:
         raise RuntimeError(
             f"cua-driver executable {settings.cua_command!r} not found on PATH; "
-            "cannot verify the bounded daemon posture (fail-closed)."
+            "cannot verify the daemon posture (fail-closed)."
         )
     proc = await asyncio.create_subprocess_exec(
         executable,
-        "status",
+        *status_args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     stdout, stderr = await proc.communicate()
     output = stdout.decode(errors="replace") + stderr.decode(errors="replace")
-    reason = _evaluate_daemon_status(output)
+    reason = _evaluate_daemon_status(output, settings.cua_permission_mode)
     if reason is not None:
         raise RuntimeError(reason)
     mode_line = next((line for line in output.splitlines() if "permission mode:" in line), "")
@@ -224,7 +244,7 @@ def _filtered_connection(discovered: Sequence[BaseTool]) -> CuaConnection:
 async def load_cua_tools(settings: Settings) -> CuaConnection:
     """Stateless discovery through the MCP adapter (verification scripts)."""
     _require_manifest(settings)
-    await _assert_bounded_daemon(settings)
+    await _assert_daemon_posture(settings)
     client = MultiServerMCPClient(
         {
             "cua": {
@@ -247,10 +267,10 @@ async def open_cua_connection(settings: Settings) -> AsyncIterator[CuaConnection
     tool inventory and closes the session on exit.
     """
     _require_manifest(settings)
-    # Fail closed before any transport is opened: a standard-mode or
-    # manifest-less daemon (the mcp proxy's silent resurrection path)
-    # must never back a CUA_ENABLED=true gateway (spec 13.3/13.4).
-    await _assert_bounded_daemon(settings)
+    # Fail closed before any transport is opened: whatever mode Sani launched,
+    # the daemon answering must be in it. The 2026-09-18 incident was the mcp
+    # proxy resurrecting a daemon in a mode nobody chose (spec 13.3/13.4).
+    await _assert_daemon_posture(settings)
 
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client

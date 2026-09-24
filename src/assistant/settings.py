@@ -233,14 +233,16 @@ class Settings(BaseSettings):
             )
 
         if self.cua_enabled:
-            if self.cua_permission_mode != "bounded":
+            if self.cua_permission_mode not in ("bounded", "standard"):
                 errors.append(
-                    "CUA_PERMISSION_MODE must be 'bounded' in Phase 1 "
+                    "CUA_PERMISSION_MODE must be 'bounded' or 'standard' "
                     f"(got {self.cua_permission_mode!r}); unrestricted mode is not allowed"
                 )
-            if not self.cua_capability_manifest_path:
-                errors.append("CUA_ENABLED=true requires CUA_CAPABILITY_MANIFEST_PATH")
-            elif not self.cua_capability_manifest_path.startswith("/"):
+            if self.cua_permission_mode == "bounded" and not self.cua_capability_manifest_path:
+                errors.append("CUA_ENABLED=true with bounded mode requires CUA_CAPABILITY_MANIFEST_PATH")
+            if self.cua_capability_manifest_path and not (
+                self.cua_capability_manifest_path.startswith("/")
+            ):
                 errors.append("CUA_CAPABILITY_MANIFEST_PATH must be an absolute path")
             if self.cua_socket and not self.cua_socket.startswith("/"):
                 errors.append("CUA_SOCKET must be an absolute path when configured")

@@ -127,6 +127,13 @@ pub struct Settings {
         deserialize_with = "deserialize_agent_mode"
     )]
     pub agent_mode: String,
+    /// Staged activation of the approved D1 architecture: run the embedded CUA
+    /// daemon in driver `standard` mode (no capability manifest) instead of
+    /// `bounded`. Off by default so the switch happens once, with the batched
+    /// install that is allowed to consume a fresh macOS grant -- the mode is
+    /// read only when the daemon is spawned, never mid-session.
+    #[serde(default)]
+    pub computer_control_standard_mode: bool,
     /// Normal main-window geometry and its independent maximized intent.
     /// Coordinates are logical points relative to the persisted display's
     /// usable work area; maximized state never overwrites these bounds.

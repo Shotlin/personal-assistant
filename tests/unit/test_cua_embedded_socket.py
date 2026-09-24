@@ -1,7 +1,7 @@
 """The packaged Sani host must never let MCP revive a standard daemon."""
 
 from assistant.settings import Settings
-from assistant.tools.cua import _assert_bounded_daemon, driver_mcp_args
+from assistant.tools.cua import _assert_daemon_posture, driver_mcp_args
 
 
 def test_embedded_driver_uses_its_private_socket() -> None:
@@ -25,7 +25,7 @@ def test_standalone_development_keeps_its_existing_mcp_command() -> None:
 async def test_embedded_guard_rejects_a_missing_private_endpoint() -> None:
     settings = Settings(cua_socket="/private/tmp/sani-no-such-cua-driver.sock")
     try:
-        await _assert_bounded_daemon(settings)
+        await _assert_daemon_posture(settings)
     except RuntimeError as exc:
         assert "embedded CuaDriver socket is unavailable" in str(exc)
     else:  # pragma: no cover - the test path must remain absent

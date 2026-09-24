@@ -115,42 +115,49 @@ def macos_permissions(settings: Settings | None = None) -> tuple[PermissionState
 
 @dataclass(frozen=True)
 class DriverStatus:
-    """Fail-closed posture of the installed Cua Driver daemon."""
+    """Fail-closed posture of the installed Cua Driver daemon.
+
+    ``posture_ok`` means the daemon that answered is running the mode Sani
+    launched it in -- bounded or standard. It was called ``bounded_ok`` while
+    only one mode was legal; keeping that name would have made a legal
+    standard-mode daemon read as a policy failure.
+    """
 
     found: bool
-    bounded_ok: bool
+    posture_ok: bool
     detail: str
 
 
 async def probe_driver(settings: Settings) -> DriverStatus:
     """Probe the driver's daemon posture without ever spawning a daemon.
 
-    Reuses the gateway's fail-closed posture evaluation: a standard-mode or
-    manifest-less daemon must never back computer control.
+    A connectable socket proves a daemon exists; it proves nothing about the
+    mode that daemon was started in. Since a locked-out bounded manifest and a
+    resurrected standalone daemon both used to read as healthy here, the mode
+    is now read from the daemon itself.
     """
     if not settings.cua_enabled:
         return DriverStatus(
             found=False,
-            bounded_ok=False,
+            posture_ok=False,
             detail="CUA is disabled (CUA_ENABLED=false); computer control unavailable",
         )
     if settings.cua_socket:
-        # The native Sani host owns this endpoint and only publishes it after
-        # the embedded daemon bound with bounded mode plus the reviewed
-        # manifest.  A global `cua-driver status` would inspect a different
-        # standalone service, so its result is not relevant here.
+        # The native Sani host owns this endpoint. A global `cua-driver status`
+        # would inspect a different standalone service, so the socket is named
+        # explicitly on every read below.
         try:
             socket_mode = os.stat(settings.cua_socket).st_mode
         except OSError as exc:
             return DriverStatus(
                 found=True,
-                bounded_ok=False,
+                posture_ok=False,
                 detail=f"Sani embedded CuaDriver socket is unavailable: {exc}",
             )
         if not stat.S_ISSOCK(socket_mode):
             return DriverStatus(
                 found=True,
-                bounded_ok=False,
+                posture_ok=False,
                 detail="Sani embedded CuaDriver endpoint is not a Unix socket",
             )
         try:
@@ -163,49 +170,71 @@ async def probe_driver(settings: Settings) -> DriverStatus:
         except (OSError, TimeoutError) as exc:
             return DriverStatus(
                 found=True,
-                bounded_ok=False,
+                posture_ok=False,
                 detail=(
                     "Sani embedded CuaDriver socket is not accepting connections: "
                     f"{exc}"
                 ),
             )
-        return DriverStatus(
-            found=True,
-            bounded_ok=True,
-            detail=(
-                "Sani embedded bounded CuaDriver accepted a live connection; "
-                "check the live permission results below"
-            ),
+        return await _posture_from_status(
+            settings,
+            ["status", "--socket", settings.cua_socket],
+            fallback="Sani embedded CuaDriver accepted a live connection",
         )
     executable = shutil.which(settings.cua_command)
     if executable is None:
         return DriverStatus(
             found=False,
-            bounded_ok=False,
+            posture_ok=False,
             detail=(
                 f"cua-driver executable {settings.cua_command!r} not found on "
                 "PATH; the Sani bundle must provide the embedded driver"
             ),
         )
+    return await _posture_from_status(
+        settings, ["status"], fallback="standalone daemon reachable"
+    )
+
+
+async def _posture_from_status(
+    settings: Settings, args: list[str], fallback: str
+) -> DriverStatus:
+    """Ask the daemon which mode it is actually running, and judge that."""
+    from assistant.tools.cua import _evaluate_daemon_status
+
+    executable = shutil.which(settings.cua_command)
+    if executable is None:
+        return DriverStatus(
+            found=True,
+            posture_ok=False,
+            detail=(
+                f"cua-driver executable {settings.cua_command!r} is unavailable, so "
+                f"the daemon's mode cannot be verified ({fallback})"
+            ),
+        )
     try:
         proc = await asyncio.create_subprocess_exec(
             executable,
-            "status",
+            *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), _DRIVER_PROBE_TIMEOUT_SECONDS)
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), _DRIVER_PROBE_TIMEOUT_SECONDS
+        )
     except (OSError, TimeoutError) as exc:
         return DriverStatus(
-            found=True, bounded_ok=False, detail=f"driver status probe failed: {exc}"
+            found=True, posture_ok=False, detail=f"driver status probe failed: {exc}"
         )
     output = stdout.decode(errors="replace") + stderr.decode(errors="replace")
-    from assistant.tools.cua import _evaluate_daemon_status
-
-    reason = _evaluate_daemon_status(output)
+    reason = _evaluate_daemon_status(output, settings.cua_permission_mode)
     if reason is not None:
-        return DriverStatus(found=True, bounded_ok=False, detail=reason)
-    return DriverStatus(found=True, bounded_ok=True, detail="bounded daemon verified")
+        return DriverStatus(found=True, posture_ok=False, detail=reason)
+    return DriverStatus(
+        found=True,
+        posture_ok=True,
+        detail=f"{settings.cua_permission_mode}-mode daemon verified over its own endpoint",
+    )
 
 
 async def system_status(settings: Settings) -> dict[str, Any]:
@@ -215,7 +244,7 @@ async def system_status(settings: Settings) -> dict[str, Any]:
     return {
         "driver": {
             "found": driver.found,
-            "bounded_ok": driver.bounded_ok,
+            "posture_ok": driver.posture_ok,
             "detail": driver.detail,
         },
         "permissions": [
