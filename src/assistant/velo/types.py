@@ -120,6 +120,10 @@ class VeloTarget:
     label: str
     value: str = ""
     element_token: str = ""
+    #: Global (x, y, w, h) in points. Only used to re-aim a click at the pixel
+    #: rung when the element exposes no AXPress; deliberately not part of
+    #: ``compact()``, so the model never sees or chooses coordinates.
+    frame: tuple[float, float, float, float] | None = None
 
     def compact(self) -> dict[str, str]:
         payload = {"id": self.id, "role": self.role, "label": self.label}

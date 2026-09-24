@@ -572,3 +572,46 @@ async def test_hotkey_combo_is_split_into_key_list(cua_tools) -> None:
     )
     assert tool_name == "hotkey"
     assert kwargs == {"keys": ["cmd", "shift", "4"]}
+
+
+async def test_click_falls_back_to_pixels_when_axpress_is_unsupported(cua_tools) -> None:
+    """TextEdit's document view does not implement AXPress (-25206).
+
+    An accessibility click there reports failure and nothing happens, which is
+    indistinguishable from "permissions are broken" unless the adapter retries
+    on the pixel rung.
+    """
+    from assistant.velo.types import VeloTarget
+
+    cua_tools["list_apps"].outcome = ok_outcome(REAL_APPS_STATE)
+    cua_tools["list_windows"] = FakeTool(
+        "list_windows", ok_outcome(REAL_WINDOWS_STATE), arg_names=("pid",)
+    )
+    click_tool = cua_tools["click"]
+    click_tool.args = {k: None for k in
+                       ("element_token", "pid", "window_id", "x", "y", "delivery_mode")}
+    click_tool.outcome = ToolOutcome(
+        status="failed",
+        effect="unverifiable",
+        text="AX action failed: AXUIElementPerformAction(AXPress) returned -25206",
+    )
+    adapter, _ = build_adapter(cua_tools)
+    await adapter.observe()  # records the focused pid/window
+
+    framed = observation(
+        VeloTarget(id="tok-1", role="textbox", label="body",
+                   element_token="tok-1", frame=(246.0, 171.0, 100.0, 40.0))
+    )
+    objective = VeloObjective(text="type into the document")
+    result = await adapter.execute(
+        act(VeloActionKind.CLICK, target_id="tok-1"), framed, objective
+    )
+
+    assert len(click_tool.calls) == 2, "no pixel retry happened"
+    retry = click_tool.calls[1]
+    # On-screen window 2002 starts at (0, 25); the element centre is global
+    # (296, 191), so the window-local point is (296, 166).
+    assert (retry["x"], retry["y"]) == (296, 166)
+    assert retry["delivery_mode"] == "foreground"
+    assert retry["pid"] == 4242 and retry["window_id"] == 2002
+    assert result.status == "failed"  # the driver still refused; only the aim changed

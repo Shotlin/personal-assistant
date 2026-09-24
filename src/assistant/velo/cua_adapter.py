@@ -111,6 +111,8 @@ class VeloCuaAdapter:
         self.allowed_apps = dict(allowed_apps or {})
         self.screenshot_count = 0
         self._last_observation: VeloObservation | None = None
+        #: (pid, window_id) of the surface the last observation described.
+        self._focus: tuple[int, int] | None = None
 
     # ------------------------------------------------------------------
     # observation
@@ -142,6 +144,7 @@ class VeloCuaAdapter:
                     window_id = await self._resolve_window_id(pid, app)
                     if window_id is not None:
                         args["window_id"] = window_id
+                        self._focus = (pid, window_id)
                 outcome = await self._call("get_window_state", args)
         observation = self._observation_from_window_state(outcome, foreground)
         if observation is None:
@@ -234,7 +237,59 @@ class VeloCuaAdapter:
             raise VeloCuaError(f"required CUA tool {tool_name!r} is not available")
         self._budget.consume(decision.action.value)
         outcome = await self._call(tool_name, kwargs)
+        if tool_name == "click" and _press_unsupported(outcome):
+            target = (
+                observation.target(decision.target_id) if decision.target_id else None
+            )
+            retried = await self._pixel_click_fallback(target)
+            if retried is not None:
+                outcome = retried
         return _action_result(outcome, tool_name)
+
+    async def _pixel_click_fallback(self, target: VeloTarget | None) -> ToolOutcome | None:
+        """Re-aim a refused accessibility click at the pixel rung.
+
+        A surprising number of native text surfaces -- TextEdit's document view
+        among them -- do not implement ``AXPress`` at all, so an
+        accessibility-rung click reports failure and nothing happens. The
+        element's own frame is the only geometry left to aim by. Window bounds
+        are read again because raising a window cascades it, and a stale origin
+        lands the click somewhere else entirely.
+        """
+        if target is None or target.frame is None or self._focus is None:
+            return None
+        if "list_windows" not in self._tools:
+            return None
+        pid, window_id = self._focus
+        listed = await self._call("list_windows", {"pid": pid})
+        data = _structured_dict(listed) or {}
+        windows = data.get("windows")
+        if not isinstance(windows, list):
+            return None
+        origin = next(
+            (
+                w.get("bounds")
+                for w in windows
+                if isinstance(w, dict) and w.get("window_id") == window_id
+            ),
+            None,
+        )
+        if not isinstance(origin, dict):
+            return None
+        left, top = target.frame[0] + target.frame[2] / 2, target.frame[1] + target.frame[3] / 2
+        try:
+            x = int(left - float(origin["x"]))
+            y = int(top - float(origin["y"]))
+        except (KeyError, TypeError, ValueError):
+            return None
+        if x < 0 or y < 0:
+            return None
+        logger.info("velo_click_axpress_unsupported", extra={"event": "velo_click_fallback"})
+        return await self._call(
+            "click",
+            {"pid": pid, "window_id": window_id, "x": x, "y": y,
+             "delivery_mode": "foreground"},
+        )
 
     def _build_tool_call(
         self,
@@ -500,9 +555,36 @@ def _targets_from_elements(
                 label=label,
                 value=value,
                 element_token=token,
+                frame=_frame_of(element),
             )
         )
     return tuple(targets)
+
+
+def _frame_of(element: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    """Global element frame in points, if the driver reported a usable one."""
+    frame = element.get("frame")
+    if not isinstance(frame, dict):
+        return None
+    try:
+        box = (
+            float(frame["x"]),
+            float(frame["y"]),
+            float(frame["w"]),
+            float(frame["h"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+    return box if box[2] > 0 and box[3] > 0 else None
+
+
+#: Markers that the accessibility press rung was refused rather than failed.
+_UNSUPPORTED_PRESS = ("-25206", "axpress", "action unsupported", "cannot perform")
+
+
+def _press_unsupported(outcome: ToolOutcome) -> bool:
+    blob = f"{outcome.text} {outcome.structured}".lower()
+    return any(marker in blob for marker in _UNSUPPORTED_PRESS)
 
 
 def _action_result(outcome: ToolOutcome, tool_name: str) -> VeloActionResult:
