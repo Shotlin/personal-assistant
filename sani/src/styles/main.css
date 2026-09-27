@@ -313,3 +313,41 @@ html,body,#root{background:var(--bg-solid);overflow:hidden}#boot-fallback{height
 .desktop-composer button { border: 1px solid var(--border-soft); border-radius: 8px; padding: 9px 11px; background: var(--surface-strong); color: var(--text); }
 .desktop-composer textarea { min-width: 0; min-height: 40px; max-height: 120px; resize: vertical; border: 1px solid var(--border-soft); border-radius: 8px; padding: 9px 10px; background: var(--surface); color: var(--text); font: inherit; }
 .composer-error { grid-column: 2 / -1; margin: 0; color: var(--error); font-size: 12px; }
+
+/* ------------------------------------------------------- computer control */
+/* One readable column at a time, sized off the window rather than a fixed
+   canvas: the status card has to stay legible in a narrow side-by-side window
+   as well as full width, and every font size here stays at or above 12px. */
+.cc-page { flex: 1; min-width: 0; overflow: auto; padding: 32px clamp(24px, 4vw, 64px); display: grid; gap: 20px; align-content: start; max-width: 1080px; }
+.cc-header { display: flex; justify-content: space-between; gap: 20px; align-items: start; border-bottom: 1px solid var(--hairline); padding-bottom: 18px; }
+.cc-header h1 { margin: 0; font-size: 24px; }
+.cc-header p { margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; max-width: 62ch; }
+.cc-card { display: grid; gap: 16px; border: 1px solid var(--border-soft); border-left-width: 3px; border-radius: 12px; padding: 18px; background: var(--surface-glass); }
+.cc-tone-ok { border-left-color: var(--success); }
+.cc-tone-warn { border-left-color: var(--warning); }
+.cc-tone-bad { border-left-color: var(--error); }
+.cc-banner { display: flex; align-items: flex-start; gap: 12px; }
+.cc-pill { flex: none; font-size: 12px; font-weight: 600; letter-spacing: .01em; border-radius: 999px; padding: 6px 11px; border: 1px solid var(--border-soft); background: var(--surface-strong); }
+.cc-pill-ok { color: var(--success); border-color: rgba(88, 198, 138, .4); }
+.cc-pill-warn { color: var(--warning); border-color: rgba(232, 184, 79, .4); }
+.cc-pill-bad { color: var(--error); border-color: rgba(255, 106, 99, .4); }
+.cc-message { margin: 4px 0 0; flex: 1; min-width: 0; font-size: 14px; line-height: 1.5; color: var(--text-secondary); }
+.cc-refresh { flex: none; border: 1px solid var(--border-soft); border-radius: 8px; padding: 7px 12px; background: var(--surface-strong); color: var(--text); font-size: 13px; }
+.cc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.cc-grid-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cc-group { min-width: 0; display: grid; gap: 8px; align-content: start; }
+.cc-group h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); }
+.cc-group dl { margin: 0; display: grid; gap: 6px; }
+.cc-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; align-items: baseline; }
+.cc-row dt { color: var(--text-secondary); }
+.cc-row dd { margin: 0; text-align: right; overflow-wrap: anywhere; max-width: 62%; color: var(--text); }
+.cc-note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-dim); }
+.cc-detail { display: block; font-size: 12px; line-height: 1.4; padding: 8px 10px; border-radius: 8px; background: var(--surface); color: var(--text-secondary); overflow-wrap: anywhere; }
+.cc-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cc-actions button { border: 1px solid var(--border-soft); border-radius: 8px; padding: 9px 12px; background: var(--surface-strong); color: var(--text); font-size: 13px; }
+.cc-actions .cc-primary { background: var(--accent, #5b9bff); border-color: transparent; color: #08090c; font-weight: 600; }
+.cc-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); max-width: 78ch; }
+.cc-gallery { display: grid; gap: 18px; padding: 32px clamp(24px, 4vw, 64px); max-width: 1080px; }
+.cc-gallery header h1 { margin: 0; font-size: 22px; }
+.cc-gallery header p { color: var(--text-secondary); font-size: 13px; }
+@media (max-width: 900px) { .cc-grid, .cc-grid-compact { grid-template-columns: 1fr; } .cc-banner { flex-wrap: wrap; } .cc-message { flex-basis: 100%; order: 3; } .cc-page, .cc-gallery { padding: 24px 18px; } }

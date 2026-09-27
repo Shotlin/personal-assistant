@@ -33,7 +33,7 @@ export const resetOnboarding = () => invoke<void>("reset_onboarding");
 export const getAiConfig = () => invoke<AiConfig>("get_ai_config");
 export const saveAiConfig = (patch: AiConfigPatch) => invoke<AiConfig>("save_ai_config", { patch });
 export const storeProviderKey = (provider: string, key: string) =>
-  invoke<{ stored: boolean; has_openrouter: boolean; has_typesafe: boolean }>("store_provider_key", {
+  invoke<{ stored: boolean; has_openrouter: boolean }>("store_provider_key", {
     provider,
     key,
   });

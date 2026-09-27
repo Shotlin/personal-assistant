@@ -82,7 +82,7 @@ export interface VoiceModelDescriptor {
 }
 /** macOS grants are per process: Sani and the CuaDriver helper each need their
  *  own, so the page reports both rather than one merged "ready". */
-export interface ComputerControlSnapshot { status: "ready" | "unavailable" | "permission_required" | "driver_permission_required" | "policy_locked" | "unverified" | "restart_required"; message: string; accessibility: string; screen_recording: string; driver_accessibility: string; driver_screen_recording: string; /** The daemon's own words when it could not be asked; empty when it answered. */ driver_detail: string; /** Which authority refuses an action right now. */ permission_mode: "bounded" | "standard"; restart_required: boolean; runtime: string; app_path: string; }
+export interface ComputerControlSnapshot { status: "ready" | "restart_required" | "permission_required" | "driver_missing" | "driver_stopped" | "wrong_mode" | "driver_permission_required" | "policy_locked" | "unavailable"; message: string; accessibility: string; screen_recording: string; /** Whose grants these are, and why the driver shares them. */ permission_authority: string; driver_running: boolean; driver_pid: number | null; driver_endpoint: string; driver_mode: string; /** granted | denied | policy_locked | unanswered | unreachable | unrecognized */ driver_probe: string; /** The driver's own words, whenever the probe could not answer. */ driver_detail: string; /** Live driver sessions; null means the question could not be asked. */ active_sessions: number | null; restart_required: boolean; runtime: string; app_path: string; }
 
 /** One raw sani-core event frame, relayed verbatim from the sidecar. */
 export interface CoreEvent {
@@ -122,10 +122,7 @@ export interface FullSettingsSnapshot extends SettingsShape {
   version: number;
   reasoning_provider: "openrouter" | string;
   reasoning_model: string;
-  velo_provider: "openrouter" | "typesafe" | string;
-  velo_model: string;
   openrouter_key: KeyPresence;
-  typesafe_key: KeyPresence;
   runtime_status: ApplyStatus;
   microphone_permission: MicPermission;
   accessibility_permission: string;
@@ -261,12 +258,10 @@ export const getFullSettings = () => invoke<FullSettingsSnapshot>("get_full_sett
 export const applyAiSettings = (patch: {
   reasoning_provider?: "openrouter";
   reasoning_model?: string;
-  velo_provider?: "openrouter" | "typesafe";
-  velo_model?: string;
 }) => invoke<FullSettingsSnapshot>("apply_ai_settings", { patch });
-export const storeProviderKey = (provider: "openrouter" | "typesafe", key: string) =>
-  invoke<{ stored: boolean; has_openrouter: boolean; has_typesafe: boolean; runtime_status: ApplyStatus }>("store_provider_key", { provider, key });
-export const validateStoredProviderKey = (provider: "openrouter" | "typesafe") =>
+export const storeProviderKey = (provider: "openrouter", key: string) =>
+  invoke<{ stored: boolean; has_openrouter: boolean; runtime_status: ApplyStatus }>("store_provider_key", { provider, key });
+export const validateStoredProviderKey = (provider: "openrouter") =>
   invoke<KeyValidation>("validate_stored_provider_key", { provider });
 export const onSettingsChanged = (cb: (snapshot: FullSettingsSnapshot) => void) =>
   listen<FullSettingsSnapshot>("settings://changed", (e) => cb(e.payload));
@@ -307,6 +302,16 @@ export const coreAgents = () =>
 /** The sidecar's own subsystem report, for Diagnostics. */
 export const coreStatus = () => invoke<Record<string, unknown>>("core_status");
 export const computerControlSnapshot = () => invoke<ComputerControlSnapshot>("computer_control_snapshot");
+/** Poke from Sani's driver watchdog: pull a fresh snapshot, nothing more. */
+export const onComputerControlChange = (cb: () => void) =>
+  listen("sani://computer-control", () => cb());
+/** Adds Sani to the macOS list so the toggle exists. Never grants anything. */
+export const requestAccessibility = () => invoke<string>("request_accessibility");
+/** Raises the Screen Recording prompt. Only the user can complete it. */
+export const requestScreenRecording = () => invoke<string>("request_screen_recording");
+export const openPermissionSettings = (pane: "accessibility" | "screen_recording") =>
+  invoke<void>("open_permission_settings", { pane });
+export const restartSani = () => invoke<void>("restart_app");
 
 /** Hide the panel without destroying it (RC-02). Reopen is instant. */
 export const hidePanel = () => invoke<void>("hide_panel");

@@ -53,11 +53,13 @@ def installed(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     class FakeDesktopSessions:
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             self.opened: list[str] = []
+            self.session_ids: list[str | None] = []
             self.closed = False
             record["created_sessions"] = self
 
-        def open(self, name: str) -> Any:
+        def open(self, name: str, *, session_id: str | None = None) -> Any:
             self.opened.append(name)
+            self.session_ids.append(session_id)
 
             @contextlib.asynccontextmanager
             async def handle():  # noqa: ANN202
@@ -163,9 +165,9 @@ async def test_deep_entry_uses_the_shared_runtime_not_a_private_build(
         fake_open,
     )
     entry = DeepAgentEntry(_settings())
-    runtime = await entry._ensure_runtime()  # noqa: SLF001 -- contract under test
+    runtime = await entry._provider.runtime()  # noqa: SLF001 -- contract under test
     assert runtime is sentinel
     assert len(opened) == 1
     # Idempotent: one runtime for the process, not one per turn.
-    assert await entry._ensure_runtime() is sentinel  # noqa: SLF001
+    assert await entry._provider.runtime() is sentinel  # noqa: SLF001
     assert len(opened) == 1

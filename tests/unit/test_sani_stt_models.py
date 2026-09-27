@@ -1,8 +1,8 @@
 """Authoritative Moonshine model catalog contract for the Sani STT sidecar."""
 
 import importlib.util
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 def load_sidecar():

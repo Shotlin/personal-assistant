@@ -133,6 +133,7 @@ imports:
  &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
  &#8226;   <a href="#assistant.core.app">assistant.core.app</a>
  &#8226;   <a href="#assistant.core.desktop">assistant.core.desktop</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
  &#8226;   <a href="#assistant.core.protocol">assistant.core.protocol</a>
  &#8226;   <a href="#assistant.core.registry">assistant.core.registry</a>
  &#8226;   <a href="#assistant.core.runtime">assistant.core.runtime</a>
@@ -153,16 +154,10 @@ imports:
  &#8226;   <a href="#assistant.observability.timing">assistant.observability.timing</a>
  &#8226;   <a href="#assistant.observability.usage">assistant.observability.usage</a>
  &#8226;   <a href="#assistant.runtime">assistant.runtime</a>
+ &#8226;   <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
  &#8226;   <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
- &#8226;   <a href="#assistant.runtime.recipe_errors">assistant.runtime.recipe_errors</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.recipe_result">assistant.runtime.recipe_result</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
  &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
  &#8226;   <a href="#assistant.runtime.runs_local">assistant.runtime.runs_local</a>
- &#8226;   <a href="#assistant.runtime.scene">assistant.runtime.scene</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.settings">assistant.settings</a>
  &#8226;   <a href="#assistant.tools">assistant.tools</a>
@@ -170,11 +165,6 @@ imports:
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#assistant.tools.registry">assistant.tools.registry</a>
  &#8226;   <a href="#assistant.tools.result_normalizer">assistant.tools.result_normalizer</a>
- &#8226;   <a href="#assistant.velo">assistant.velo</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
- &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
  &#8226;   <a href="#asyncio">asyncio</a>
  &#8226;   <a href="#codecs">codecs</a>
  &#8226;   <a href="#collections">collections</a>
@@ -2109,6 +2099,7 @@ imported by:
  &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
  &#8226;   <a href="#assistant.core.app">assistant.core.app</a>
  &#8226;   <a href="#assistant.core.desktop">assistant.core.desktop</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
  &#8226;   <a href="#assistant.core.protocol">assistant.core.protocol</a>
  &#8226;   <a href="#assistant.core.registry">assistant.core.registry</a>
  &#8226;   <a href="#assistant.core.runtime">assistant.core.runtime</a>
@@ -2125,24 +2116,23 @@ imported by:
  &#8226;   <a href="#assistant.observability.logging">assistant.observability.logging</a>
  &#8226;   <a href="#assistant.observability.timing">assistant.observability.timing</a>
  &#8226;   <a href="#assistant.observability.usage">assistant.observability.usage</a>
+ &#8226;   <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
  &#8226;   <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
  &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
  &#8226;   <a href="#assistant.runtime.runs_local">assistant.runtime.runs_local</a>
- &#8226;   <a href="#assistant.runtime.scene">assistant.runtime.scene</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.settings">assistant.settings</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#assistant.tools.registry">assistant.tools.registry</a>
  &#8226;   <a href="#assistant.tools.result_normalizer">assistant.tools.result_normalizer</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
+ &#8226;   <a href="#assistant.velo.parse">assistant.velo.parse</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
+ &#8226;   <a href="#assistant.velo.verify">assistant.velo.verify</a>
  &#8226;   <a href="#attr._make">attr._make</a>
  &#8226;   <a href="#attr.exceptions">attr.exceptions</a>
  &#8226;   <a href="#bracex">bracex</a>
@@ -46880,7 +46870,6 @@ imported by:
  &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
  &#8226;   <a href="#assistant.core.runtime">assistant.core.runtime</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -47014,14 +47003,7 @@ imports:
  &#8226;   <a href="#assistant.models">assistant.models</a>
  &#8226;   <a href="#assistant.observability.timing">assistant.observability.timing</a>
  &#8226;   <a href="#assistant.observability.usage">assistant.observability.usage</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
- &#8226;   <a href="#assistant.runtime.recipe_errors">assistant.runtime.recipe_errors</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.recipe_result">assistant.runtime.recipe_result</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
  &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
- &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.settings">assistant.settings</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#asyncio">asyncio</a>
@@ -47215,6 +47197,7 @@ imported by:
  &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
  &#8226;   <a href="#assistant.core.app">assistant.core.app</a>
  &#8226;   <a href="#assistant.core.desktop">assistant.core.desktop</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
  &#8226;   <a href="#assistant.core.protocol">assistant.core.protocol</a>
  &#8226;   <a href="#assistant.core.registry">assistant.core.registry</a>
  &#8226;   <a href="#assistant.core.runtime">assistant.core.runtime</a>
@@ -47233,6 +47216,7 @@ imports:
  &#8226;   <a href="#assistant.core">assistant.core</a>
  &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
  &#8226;   <a href="#assistant.core.app">assistant.core.app</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
  &#8226;   <a href="#assistant.settings">assistant.settings</a>
  &#8226;   <a href="#asyncio">asyncio</a>
  &#8226;   <a href="#contextlib">contextlib</a>
@@ -47259,17 +47243,14 @@ imports:
  &#8226;   <a href="#assistant.agent.context">assistant.agent.context</a>
  &#8226;   <a href="#assistant.core">assistant.core</a>
  &#8226;   <a href="#assistant.core.desktop">assistant.core.desktop</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
  &#8226;   <a href="#assistant.core.protocol">assistant.core.protocol</a>
  &#8226;   <a href="#assistant.core.registry">assistant.core.registry</a>
  &#8226;   <a href="#assistant.core.runtime">assistant.core.runtime</a>
  &#8226;   <a href="#assistant.memory.namespaces">assistant.memory.namespaces</a>
- &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.settings">assistant.settings</a>
- &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
  &#8226;   <a href="#asyncio">asyncio</a>
  &#8226;   <a href="#collections.abc">collections.abc</a>
  &#8226;   <a href="#contextlib">contextlib</a>
@@ -47294,6 +47275,7 @@ imported by:
 imports:
     <a href="#__future__">__future__</a>
  &#8226;   <a href="#assistant.core">assistant.core</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
  &#8226;   <a href="#assistant.core.protocol">assistant.core.protocol</a>
  &#8226;   <a href="#assistant.core.registry">assistant.core.registry</a>
  &#8226;   <a href="#asyncio">asyncio</a>
@@ -47342,6 +47324,31 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="assistant.core.identity"></a>
+  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/core/identity.py" type="text/plain"><tt>assistant.core.identity</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#__future__">__future__</a>
+ &#8226;   <a href="#assistant.core">assistant.core</a>
+ &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#sys">sys</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#assistant.core.__main__">assistant.core.__main__</a>
+ &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
+ &#8226;   <a href="#assistant.core.app">assistant.core.app</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
+ &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="assistant.core.protocol"></a>
   <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/core/protocol.py" type="text/plain"><tt>assistant.core.protocol</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -47359,6 +47366,7 @@ imports:
 imported by:
     <a href="#assistant.core.agents">assistant.core.agents</a>
  &#8226;   <a href="#assistant.core.app">assistant.core.app</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -47381,6 +47389,7 @@ imports:
 imported by:
     <a href="#assistant.core.agents">assistant.core.agents</a>
  &#8226;   <a href="#assistant.core.app">assistant.core.app</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -47399,6 +47408,7 @@ imports:
  &#8226;   <a href="#assistant.memory.local">assistant.memory.local</a>
  &#8226;   <a href="#assistant.memory.postgres">assistant.memory.postgres</a>
  &#8226;   <a href="#assistant.models">assistant.models</a>
+ &#8226;   <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.settings">assistant.settings</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
@@ -47528,6 +47538,7 @@ imported by:
     <a href="#assistant.agent.build">assistant.agent.build</a>
  &#8226;   <a href="#assistant.api.identity">assistant.api.identity</a>
  &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -47781,6 +47792,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -47819,17 +47831,36 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
- &#8226;   <a href="#assistant.runtime.recipe_errors">assistant.runtime.recipe_errors</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.recipe_result">assistant.runtime.recipe_result</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
+    <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
+ &#8226;   <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
  &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
  &#8226;   <a href="#assistant.runtime.runs_local">assistant.runtime.runs_local</a>
- &#8226;   <a href="#assistant.runtime.scene">assistant.runtime.scene</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
+ &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="assistant.runtime.cua_faults"></a>
+  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/runtime/cua_faults.py" type="text/plain"><tt>assistant.runtime.cua_faults</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#__future__">__future__</a>
+ &#8226;   <a href="#assistant.runtime">assistant.runtime</a>
+ &#8226;   <a href="#collections.abc">collections.abc</a>
+ &#8226;   <a href="#enum">enum</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#assistant.core.runtime">assistant.core.runtime</a>
+ &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
+ &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
+ &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -47861,157 +47892,6 @@ imported by:
 </div>
 
 <div class="node">
-  <a name="assistant.runtime.planner"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/runtime/planner.py" type="text/plain"><tt>assistant.runtime.planner</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#__future__">__future__</a>
- &#8226;   <a href="#assistant.runtime">assistant.runtime</a>
- &#8226;   <a href="#assistant.runtime.recipe_errors">assistant.runtime.recipe_errors</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
- &#8226;   <a href="#dataclasses">dataclasses</a>
- &#8226;   <a href="#json">json</a>
- &#8226;   <a href="#langchain_core.messages">langchain_core.messages</a>
- &#8226;   <a href="#logging">logging</a>
- &#8226;   <a href="#typing">typing</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="assistant.runtime.recipe_errors"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/runtime/recipe_errors.py" type="text/plain"><tt>assistant.runtime.recipe_errors</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#assistant.runtime">assistant.runtime</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="assistant.runtime.recipe_executor"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/runtime/recipe_executor.py" type="text/plain"><tt>assistant.runtime.recipe_executor</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#__future__">__future__</a>
- &#8226;   <a href="#assistant.runtime">assistant.runtime</a>
- &#8226;   <a href="#assistant.runtime.recipe_errors">assistant.runtime.recipe_errors</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
- &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
- &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
- &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
- &#8226;   <a href="#assistant.tools.result_normalizer">assistant.tools.result_normalizer</a>
- &#8226;   <a href="#asyncio">asyncio</a>
- &#8226;   <a href="#collections.abc">collections.abc</a>
- &#8226;   <a href="#contextlib">contextlib</a>
- &#8226;   <a href="#dataclasses">dataclasses</a>
- &#8226;   <a href="#langchain_core.tools">langchain_core.tools</a>
- &#8226;   <a href="#pydantic">pydantic</a>
- &#8226;   <a href="#pydantic.BaseModel">pydantic.BaseModel</a>
- &#8226;   <a href="#re">re</a>
- &#8226;   <a href="#typing">typing</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="assistant.runtime.recipe_result"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/runtime/recipe_result.py" type="text/plain"><tt>assistant.runtime.recipe_result</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#assistant.runtime">assistant.runtime</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="assistant.runtime.recipes"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/runtime/recipes.py" type="text/plain"><tt>assistant.runtime.recipes</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#__future__">__future__</a>
- &#8226;   <a href="#assistant.runtime">assistant.runtime</a>
- &#8226;   <a href="#assistant.runtime.recipe_errors">assistant.runtime.recipe_errors</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
- &#8226;   <a href="#assistant.tools.result_normalizer">assistant.tools.result_normalizer</a>
- &#8226;   <a href="#collections.abc">collections.abc</a>
- &#8226;   <a href="#math">math</a>
- &#8226;   <a href="#re">re</a>
- &#8226;   <a href="#typing">typing</a>
- &#8226;   <a href="#urllib.parse">urllib.parse</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
- &#8226;   <a href="#assistant.runtime.recipe_result">assistant.runtime.recipe_result</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="assistant.runtime.router"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/runtime/router.py" type="text/plain"><tt>assistant.runtime.router</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#__future__">__future__</a>
- &#8226;   <a href="#assistant.runtime">assistant.runtime</a>
- &#8226;   <a href="#assistant.runtime.recipe_errors">assistant.runtime.recipe_errors</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
- &#8226;   <a href="#collections.abc">collections.abc</a>
- &#8226;   <a href="#dataclasses">dataclasses</a>
- &#8226;   <a href="#re">re</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
-
-  </div>
-
-</div>
-
-<div class="node">
   <a name="assistant.runtime.runs"></a>
   <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/runtime/runs.py" type="text/plain"><tt>assistant.runtime.runs</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -48030,7 +47910,6 @@ imports:
 imported by:
     <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
  &#8226;   <a href="#assistant.main">assistant.main</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
  &#8226;   <a href="#assistant.runtime.runs_local">assistant.runtime.runs_local</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
@@ -48065,32 +47944,13 @@ imported by:
 </div>
 
 <div class="node">
-  <a name="assistant.runtime.scene"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/runtime/scene.py" type="text/plain"><tt>assistant.runtime.scene</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#__future__">__future__</a>
- &#8226;   <a href="#assistant.runtime">assistant.runtime</a>
- &#8226;   <a href="#dataclasses">dataclasses</a>
- &#8226;   <a href="#datetime">datetime</a>
- &#8226;   <a href="#typing">typing</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#sani_core_entry.py">sani_core_entry.py</a>
-
-  </div>
-
-</div>
-
-<div class="node">
   <a name="assistant.runtime.session"></a>
   <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/runtime/session.py" type="text/plain"><tt>assistant.runtime.session</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
     <a href="#__future__">__future__</a>
  &#8226;   <a href="#assistant.runtime">assistant.runtime</a>
+ &#8226;   <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
  &#8226;   <a href="#asyncio">asyncio</a>
  &#8226;   <a href="#collections.abc">collections.abc</a>
  &#8226;   <a href="#contextlib">contextlib</a>
@@ -48101,15 +47961,10 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
- &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
- &#8226;   <a href="#assistant.core.runtime">assistant.core.runtime</a>
+    <a href="#assistant.core.runtime">assistant.core.runtime</a>
  &#8226;   <a href="#assistant.main">assistant.main</a>
  &#8226;   <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -48143,7 +47998,6 @@ imported by:
  &#8226;   <a href="#assistant.models.openai_provider">assistant.models.openai_provider</a>
  &#8226;   <a href="#assistant.models.openrouter">assistant.models.openrouter</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
- &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -48176,6 +48030,7 @@ imported by:
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
     <a href="#__future__">__future__</a>
+ &#8226;   <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
  &#8226;   <a href="#assistant.settings">assistant.settings</a>
  &#8226;   <a href="#assistant.tools">assistant.tools</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
@@ -48198,11 +48053,9 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#assistant.core.agents">assistant.core.agents</a>
- &#8226;   <a href="#assistant.core.desktop">assistant.core.desktop</a>
+    <a href="#assistant.core.desktop">assistant.core.desktop</a>
  &#8226;   <a href="#assistant.core.runtime">assistant.core.runtime</a>
  &#8226;   <a href="#assistant.main">assistant.main</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -48216,6 +48069,7 @@ imported by:
 imports:
     <a href="#__future__">__future__</a>
  &#8226;   <a href="#assistant.agent.context">assistant.agent.context</a>
+ &#8226;   <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
  &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.tools">assistant.tools</a>
@@ -48230,6 +48084,7 @@ imports:
  &#8226;   <a href="#langchain_core.tools">langchain_core.tools</a>
  &#8226;   <a href="#logging">logging</a>
  &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#time">time</a>
  &#8226;   <a href="#typing">typing</a>
 
   </div>
@@ -48238,8 +48093,9 @@ imported by:
     <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
  &#8226;   <a href="#assistant.api.streaming">assistant.api.streaming</a>
  &#8226;   <a href="#assistant.core.runtime">assistant.core.runtime</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -48281,11 +48137,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
- &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
+    <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
  &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
@@ -48294,78 +48147,107 @@ imported by:
 
 <div class="node">
   <a name="assistant.velo"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/velo/__init__.py" type="text/plain"><tt>assistant.velo</tt></a>
-<span class="moduletype">Package</span>  <div class="import">
+  <a target="code" href="-" type="text/plain"><tt>assistant.velo</tt></a>
+<span class="moduletype">NamespacePackage</span>  <div class="import">
 imports:
     <a href="#assistant">assistant</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
+ &#8226;   <a href="#assistant.velo.verify">assistant.velo.verify</a>
 
   </div>
   <div class="import">
 imported by:
-    <a href="#assistant.velo.agent">assistant.velo.agent</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
+    <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
+ &#8226;   <a href="#assistant.velo.parse">assistant.velo.parse</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
+ &#8226;   <a href="#assistant.velo.verify">assistant.velo.verify</a>
 
   </div>
 
 </div>
 
 <div class="node">
-  <a name="assistant.velo.agent"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/velo/agent.py" type="text/plain"><tt>assistant.velo.agent</tt></a>
+  <a name="assistant.velo.adapter"></a>
+  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/velo/adapter.py" type="text/plain"><tt>assistant.velo.adapter</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
     <a href="#__future__">__future__</a>
- &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
+ &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#assistant.velo">assistant.velo</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
- &#8226;   <a href="#asyncio">asyncio</a>
- &#8226;   <a href="#collections">collections</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
  &#8226;   <a href="#collections.abc">collections.abc</a>
+ &#8226;   <a href="#difflib">difflib</a>
+ &#8226;   <a href="#hashlib">hashlib</a>
+ &#8226;   <a href="#json">json</a>
  &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#assistant.velo.controller">assistant.velo.controller</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
+ &#8226;   <a href="#assistant.velo.verify">assistant.velo.verify</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="assistant.velo.contracts"></a>
+  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/velo/contracts.py" type="text/plain"><tt>assistant.velo.contracts</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#__future__">__future__</a>
+ &#8226;   <a href="#assistant.velo">assistant.velo</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#enum">enum</a>
  &#8226;   <a href="#time">time</a>
  &#8226;   <a href="#typing">typing</a>
 
   </div>
   <div class="import">
 imported by:
-    <a href="#assistant.core.agents">assistant.core.agents</a>
- &#8226;   <a href="#assistant.velo">assistant.velo</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
+    <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
+ &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
+ &#8226;   <a href="#assistant.velo.verify">assistant.velo.verify</a>
 
   </div>
 
 </div>
 
 <div class="node">
-  <a name="assistant.velo.cua_adapter"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/velo/cua_adapter.py" type="text/plain"><tt>assistant.velo.cua_adapter</tt></a>
+  <a name="assistant.velo.controller"></a>
+  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/velo/controller.py" type="text/plain"><tt>assistant.velo.controller</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
     <a href="#__future__">__future__</a>
- &#8226;   <a href="#assistant.agent.context">assistant.agent.context</a>
- &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
- &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
- &#8226;   <a href="#assistant.tools.result_normalizer">assistant.tools.result_normalizer</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
+ &#8226;   <a href="#assistant.core.protocol">assistant.core.protocol</a>
+ &#8226;   <a href="#assistant.core.registry">assistant.core.registry</a>
+ &#8226;   <a href="#assistant.memory.namespaces">assistant.memory.namespaces</a>
+ &#8226;   <a href="#assistant.observability.timing">assistant.observability.timing</a>
+ &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#assistant.velo">assistant.velo</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
- &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
+ &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
+ &#8226;   <a href="#assistant.velo.parse">assistant.velo.parse</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
+ &#8226;   <a href="#collections.abc">collections.abc</a>
  &#8226;   <a href="#logging">logging</a>
- &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#time">time</a>
  &#8226;   <a href="#typing">typing</a>
- &#8226;   <a href="#yaml">yaml</a>
+ &#8226;   <a href="#uuid">uuid</a>
 
   </div>
   <div class="import">
 imported by:
     <a href="#assistant.core.agents">assistant.core.agents</a>
- &#8226;   <a href="#assistant.velo">assistant.velo</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
 
   </div>
 
@@ -48377,14 +48259,13 @@ imported by:
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
     <a href="#__future__">__future__</a>
- &#8226;   <a href="#assistant.settings">assistant.settings</a>
  &#8226;   <a href="#assistant.velo">assistant.velo</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
  &#8226;   <a href="#dataclasses">dataclasses</a>
  &#8226;   <a href="#langchain_core._api">langchain_core._api</a>
  &#8226;   <a href="#langchain_typesafe">langchain_typesafe</a>
  &#8226;   <a href="#logging">logging</a>
- &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#time">time</a>
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#warnings">warnings</a>
 
@@ -48392,33 +48273,73 @@ imports:
   <div class="import">
 imported by:
     <a href="#assistant.core.agents">assistant.core.agents</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
 
   </div>
 
 </div>
 
 <div class="node">
-  <a name="assistant.velo.types"></a>
-  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/velo/types.py" type="text/plain"><tt>assistant.velo.types</tt></a>
+  <a name="assistant.velo.parse"></a>
+  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/velo/parse.py" type="text/plain"><tt>assistant.velo.parse</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
     <a href="#__future__">__future__</a>
  &#8226;   <a href="#assistant.velo">assistant.velo</a>
- &#8226;   <a href="#collections.abc">collections.abc</a>
  &#8226;   <a href="#dataclasses">dataclasses</a>
- &#8226;   <a href="#enum">enum</a>
+ &#8226;   <a href="#re">re</a>
  &#8226;   <a href="#typing">typing</a>
 
   </div>
   <div class="import">
 imported by:
-    <a href="#assistant.core.agents">assistant.core.agents</a>
+    <a href="#assistant.velo.controller">assistant.velo.controller</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="assistant.velo.recipes"></a>
+  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/velo/recipes.py" type="text/plain"><tt>assistant.velo.recipes</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#__future__">__future__</a>
  &#8226;   <a href="#assistant.velo">assistant.velo</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
- &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
- &#8226;   <a href="#sani_core_entry.py">sani_core_entry.py</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
+ &#8226;   <a href="#assistant.velo.verify">assistant.velo.verify</a>
+ &#8226;   <a href="#asyncio">asyncio</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#typing">typing</a>
+ &#8226;   <a href="#urllib.parse">urllib.parse</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#assistant.velo.controller">assistant.velo.controller</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="assistant.velo.verify"></a>
+  <a target="code" href="/Users/sayan/Documents/personal-assistant/src/assistant/velo/verify.py" type="text/plain"><tt>assistant.velo.verify</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#__future__">__future__</a>
+ &#8226;   <a href="#assistant.velo">assistant.velo</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
+ &#8226;   <a href="#urllib.parse">urllib.parse</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#assistant.velo">assistant.velo</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
 
   </div>
 
@@ -48537,12 +48458,11 @@ imported by:
  &#8226;   <a href="#assistant.main">assistant.main</a>
  &#8226;   <a href="#assistant.memory.local">assistant.memory.local</a>
  &#8226;   <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
  &#8226;   <a href="#assistant.runtime.runs_local">assistant.runtime.runs_local</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
  &#8226;   <a href="#asyncio">asyncio</a>
  &#8226;   <a href="#asyncio.base_events">asyncio.base_events</a>
  &#8226;   <a href="#asyncio.base_futures">asyncio.base_futures</a>
@@ -51579,7 +51499,6 @@ imported by:
  &#8226;   <a href="#anyio.streams.memory">anyio.streams.memory</a>
  &#8226;   <a href="#anyio.to_interpreter">anyio.to_interpreter</a>
  &#8226;   <a href="#anyio.to_process">anyio.to_process</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
  &#8226;   <a href="#ast">ast</a>
  &#8226;   <a href="#asyncio.base_events">asyncio.base_events</a>
  &#8226;   <a href="#asyncio.base_subprocess">asyncio.base_subprocess</a>
@@ -51931,15 +51850,13 @@ imported by:
  &#8226;   <a href="#assistant.memory.local">assistant.memory.local</a>
  &#8226;   <a href="#assistant.memory.postgres">assistant.memory.postgres</a>
  &#8226;   <a href="#assistant.models.factory">assistant.models.factory</a>
+ &#8226;   <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
  &#8226;   <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#asyncio.base_events">asyncio.base_events</a>
  &#8226;   <a href="#asyncio.coroutines">asyncio.coroutines</a>
  &#8226;   <a href="#attr._compat">attr._compat</a>
@@ -52882,7 +52799,6 @@ imported by:
  &#8226;   <a href="#assistant.main">assistant.main</a>
  &#8226;   <a href="#assistant.memory.local">assistant.memory.local</a>
  &#8226;   <a href="#assistant.memory.postgres">assistant.memory.postgres</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
@@ -55143,17 +55059,15 @@ imported by:
  &#8226;   <a href="#assistant.memory.local">assistant.memory.local</a>
  &#8226;   <a href="#assistant.memory.postgres">assistant.memory.postgres</a>
  &#8226;   <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
  &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
- &#8226;   <a href="#assistant.runtime.scene">assistant.runtime.scene</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#assistant.tools.result_normalizer">assistant.tools.result_normalizer</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
  &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
+ &#8226;   <a href="#assistant.velo.parse">assistant.velo.parse</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
  &#8226;   <a href="#cryptography.hazmat.primitives.serialization.ssh">cryptography.hazmat.primitives.serialization.ssh</a>
  &#8226;   <a href="#deepagents.backends.context_hub">deepagents.backends.context_hub</a>
  &#8226;   <a href="#deepagents.backends.protocol">deepagents.backends.protocol</a>
@@ -55466,7 +55380,6 @@ imported by:
  &#8226;   <a href="#assistant.memory.local">assistant.memory.local</a>
  &#8226;   <a href="#assistant.memory.policy">assistant.memory.policy</a>
  &#8226;   <a href="#assistant.observability.logging">assistant.observability.logging</a>
- &#8226;   <a href="#assistant.runtime.scene">assistant.runtime.scene</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#calendar">calendar</a>
  &#8226;   <a href="#click.types">click.types</a>
@@ -57200,6 +57113,7 @@ imports:
 imported by:
     <a href="#_pytest.assertion._compare_sequence">_pytest.assertion._compare_sequence</a>
  &#8226;   <a href="#_pytest.assertion.compare_text">_pytest.assertion.compare_text</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
  &#8226;   <a href="#click.exceptions">click.exceptions</a>
  &#8226;   <a href="#difflib">difflib</a>
  &#8226;   <a href="#doctest">doctest</a>
@@ -60742,7 +60656,8 @@ imported by:
  &#8226;   <a href="#anyio._core._futures">anyio._core._futures</a>
  &#8226;   <a href="#anyio._core._tasks">anyio._core._tasks</a>
  &#8226;   <a href="#anyio.lowlevel">anyio.lowlevel</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
+ &#8226;   <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
  &#8226;   <a href="#ast">ast</a>
  &#8226;   <a href="#asyncio.constants">asyncio.constants</a>
  &#8226;   <a href="#asyncio.locks">asyncio.locks</a>
@@ -75331,6 +75246,7 @@ imported by:
  &#8226;   <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
  &#8226;   <a href="#assistant.memory.policy">assistant.memory.policy</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
  &#8226;   <a href="#cryptography.x509.extensions">cryptography.x509.extensions</a>
  &#8226;   <a href="#deepagents.middleware.summarization">deepagents.middleware.summarization</a>
  &#8226;   <a href="#google.auth._agent_identity_utils">google.auth._agent_identity_utils</a>
@@ -79819,6 +79735,7 @@ imports:
  &#8226;   <a href="#importlib">importlib</a>
  &#8226;   <a href="#importlib._bootstrap">importlib._bootstrap</a>
  &#8226;   <a href="#importlib._bootstrap_external">importlib._bootstrap_external</a>
+ &#8226;   <a href="#importlib.machinery">importlib.machinery</a>
  &#8226;   <a href="#sys">sys</a>
  &#8226;   <a href="#warnings">warnings</a>
 
@@ -80018,6 +79935,7 @@ imported by:
  &#8226;   <a href="#_pytest.pathlib">_pytest.pathlib</a>
  &#8226;   <a href="#ctypes.util">ctypes.util</a>
  &#8226;   <a href="#httpx2._alias">httpx2._alias</a>
+ &#8226;   <a href="#importlib">importlib</a>
  &#8226;   <a href="#importlib.abc">importlib.abc</a>
  &#8226;   <a href="#inspect">inspect</a>
  &#8226;   <a href="#packaging.tags">packaging.tags</a>
@@ -81293,10 +81211,10 @@ imported by:
  &#8226;   <a href="#anthropic.lib.tools._beta_session_runner">anthropic.lib.tools._beta_session_runner</a>
  &#8226;   <a href="#anthropic.resources.beta.webhooks">anthropic.resources.beta.webhooks</a>
  &#8226;   <a href="#assistant.api.run_events_route">assistant.api.run_events_route</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
  &#8226;   <a href="#assistant.memory.local">assistant.memory.local</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
  &#8226;   <a href="#assistant.tools.result_normalizer">assistant.tools.result_normalizer</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
  &#8226;   <a href="#charset_normalizer.models">charset_normalizer.models</a>
  &#8226;   <a href="#deepagents._version">deepagents._version</a>
  &#8226;   <a href="#deepagents.backends.filesystem">deepagents.backends.filesystem</a>
@@ -84905,7 +84823,6 @@ imported by:
  &#8226;   <a href="#assistant.api.streaming">assistant.api.streaming</a>
  &#8226;   <a href="#assistant.api.turns">assistant.api.turns</a>
  &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
  &#8226;   <a href="#deepagents._messages_reducer">deepagents._messages_reducer</a>
  &#8226;   <a href="#deepagents.graph">deepagents.graph</a>
  &#8226;   <a href="#deepagents.middleware._message_eviction">deepagents.middleware._message_eviction</a>
@@ -87108,7 +87025,6 @@ imports:
   <div class="import">
 imported by:
     <a href="#assistant.agent.build">assistant.agent.build</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#assistant.tools.registry">assistant.tools.registry</a>
@@ -101123,15 +101039,15 @@ imported by:
  &#8226;   <a href="#assistant.observability.timing">assistant.observability.timing</a>
  &#8226;   <a href="#assistant.observability.usage">assistant.observability.usage</a>
  &#8226;   <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
  &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#assistant.tools.registry">assistant.tools.registry</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
  &#8226;   <a href="#asyncio.futures">asyncio.futures</a>
  &#8226;   <a href="#asyncio.log">asyncio.log</a>
  &#8226;   <a href="#charset_normalizer">charset_normalizer</a>
@@ -101567,7 +101483,6 @@ imported by:
  &#8226;   <a href="#anyio._core._synchronization">anyio._core._synchronization</a>
  &#8226;   <a href="#anyio._core._tasks">anyio._core._tasks</a>
  &#8226;   <a href="#anyio.abc._eventloop">anyio.abc._eventloop</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
  &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
  &#8226;   <a href="#assistant.runtime.runs_local">assistant.runtime.runs_local</a>
  &#8226;   <a href="#asyncio.windows_events">asyncio.windows_events</a>
@@ -175227,6 +175142,7 @@ imported by:
  &#8226;   <a href="#argparse">argparse</a>
  &#8226;   <a href="#assistant.core.__main__">assistant.core.__main__</a>
  &#8226;   <a href="#assistant.core.desktop">assistant.core.desktop</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#asyncio.base_events">asyncio.base_events</a>
  &#8226;   <a href="#asyncio.coroutines">asyncio.coroutines</a>
@@ -176150,7 +176066,6 @@ imported by:
  &#8226;   <a href="#assistant.settings">assistant.settings</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
  &#8226;   <a href="#click._termui_impl">click._termui_impl</a>
  &#8226;   <a href="#deepagents._version">deepagents._version</a>
  &#8226;   <a href="#deepagents.backends.filesystem">deepagents.backends.filesystem</a>
@@ -180861,7 +180776,6 @@ imported by:
  &#8226;   <a href="#assistant.models.openai_compatible">assistant.models.openai_compatible</a>
  &#8226;   <a href="#assistant.models.openai_provider">assistant.models.openai_provider</a>
  &#8226;   <a href="#assistant.models.openrouter">assistant.models.openrouter</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
  &#8226;   <a href="#assistant.settings">assistant.settings</a>
  &#8226;   <a href="#deepagents.middleware.async_subagents">deepagents.middleware.async_subagents</a>
  &#8226;   <a href="#deepagents.middleware.filesystem">deepagents.middleware.filesystem</a>
@@ -181771,7 +181685,6 @@ imported by:
  &#8226;   <a href="#anthropic.lib.tools._beta_functions">anthropic.lib.tools._beta_functions</a>
  &#8226;   <a href="#assistant.agent.context">assistant.agent.context</a>
  &#8226;   <a href="#assistant.api.schemas">assistant.api.schemas</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
  &#8226;   <a href="#deepagents.middleware.async_subagents">deepagents.middleware.async_subagents</a>
  &#8226;   <a href="#deepagents.middleware.filesystem">deepagents.middleware.filesystem</a>
  &#8226;   <a href="#deepagents.middleware.rubric">deepagents.middleware.rubric</a>
@@ -194998,10 +194911,8 @@ imported by:
  &#8226;   <a href="#argparse">argparse</a>
  &#8226;   <a href="#assistant.memory.policy">assistant.memory.policy</a>
  &#8226;   <a href="#assistant.observability.logging">assistant.observability.logging</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
- &#8226;   <a href="#assistant.runtime.router">assistant.runtime.router</a>
- &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
+ &#8226;   <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
+ &#8226;   <a href="#assistant.velo.parse">assistant.velo.parse</a>
  &#8226;   <a href="#ast">ast</a>
  &#8226;   <a href="#attr.validators">attr.validators</a>
  &#8226;   <a href="#base64">base64</a>
@@ -202834,6 +202745,7 @@ imported by:
  &#8226;   <a href="#anyio.to_thread">anyio.to_thread</a>
  &#8226;   <a href="#argparse">argparse</a>
  &#8226;   <a href="#assistant.core.__main__">assistant.core.__main__</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
  &#8226;   <a href="#ast">ast</a>
  &#8226;   <a href="#asyncio">asyncio</a>
  &#8226;   <a href="#asyncio.base_events">asyncio.base_events</a>
@@ -204052,7 +203964,10 @@ imported by:
  &#8226;   <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
  &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
  &#8226;   <a href="#assistant.runtime.runs_local">assistant.runtime.runs_local</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
+ &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
+ &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
  &#8226;   <a href="#asyncio.base_events">asyncio.base_events</a>
  &#8226;   <a href="#asyncio.windows_events">asyncio.windows_events</a>
  &#8226;   <a href="#click._termui_impl">click._termui_impl</a>
@@ -205960,6 +205875,7 @@ imported by:
  &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
  &#8226;   <a href="#assistant.core.app">assistant.core.app</a>
  &#8226;   <a href="#assistant.core.desktop">assistant.core.desktop</a>
+ &#8226;   <a href="#assistant.core.identity">assistant.core.identity</a>
  &#8226;   <a href="#assistant.core.protocol">assistant.core.protocol</a>
  &#8226;   <a href="#assistant.core.registry">assistant.core.registry</a>
  &#8226;   <a href="#assistant.core.runtime">assistant.core.runtime</a>
@@ -205969,21 +205885,20 @@ imported by:
  &#8226;   <a href="#assistant.observability.logging">assistant.observability.logging</a>
  &#8226;   <a href="#assistant.observability.timing">assistant.observability.timing</a>
  &#8226;   <a href="#assistant.observability.usage">assistant.observability.usage</a>
+ &#8226;   <a href="#assistant.runtime.cua_faults">assistant.runtime.cua_faults</a>
  &#8226;   <a href="#assistant.runtime.desktop_queue">assistant.runtime.desktop_queue</a>
- &#8226;   <a href="#assistant.runtime.planner">assistant.runtime.planner</a>
- &#8226;   <a href="#assistant.runtime.recipe_executor">assistant.runtime.recipe_executor</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
  &#8226;   <a href="#assistant.runtime.runs">assistant.runtime.runs</a>
  &#8226;   <a href="#assistant.runtime.runs_local">assistant.runtime.runs_local</a>
- &#8226;   <a href="#assistant.runtime.scene">assistant.runtime.scene</a>
  &#8226;   <a href="#assistant.runtime.session">assistant.runtime.session</a>
  &#8226;   <a href="#assistant.tools.cua">assistant.tools.cua</a>
  &#8226;   <a href="#assistant.tools.policy">assistant.tools.policy</a>
  &#8226;   <a href="#assistant.tools.result_normalizer">assistant.tools.result_normalizer</a>
- &#8226;   <a href="#assistant.velo.agent">assistant.velo.agent</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
+ &#8226;   <a href="#assistant.velo.adapter">assistant.velo.adapter</a>
+ &#8226;   <a href="#assistant.velo.contracts">assistant.velo.contracts</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#assistant.velo.jev">assistant.velo.jev</a>
- &#8226;   <a href="#assistant.velo.types">assistant.velo.types</a>
+ &#8226;   <a href="#assistant.velo.parse">assistant.velo.parse</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
  &#8226;   <a href="#asyncio.timeouts">asyncio.timeouts</a>
  &#8226;   <a href="#attr">attr</a>
  &#8226;   <a href="#attr._compat">attr._compat</a>
@@ -213918,7 +213833,8 @@ imported by:
  &#8226;   <a href="#anthropic._qs">anthropic._qs</a>
  &#8226;   <a href="#anthropic._utils._path">anthropic._utils._path</a>
  &#8226;   <a href="#anthropic.lib.bedrock._client">anthropic.lib.bedrock._client</a>
- &#8226;   <a href="#assistant.runtime.recipes">assistant.runtime.recipes</a>
+ &#8226;   <a href="#assistant.velo.recipes">assistant.velo.recipes</a>
+ &#8226;   <a href="#assistant.velo.verify">assistant.velo.verify</a>
  &#8226;   <a href="#click._termui_impl">click._termui_impl</a>
  &#8226;   <a href="#deepagents._version">deepagents._version</a>
  &#8226;   <a href="#deepagents.backends.context_hub">deepagents.backends.context_hub</a>
@@ -215278,6 +215194,7 @@ imported by:
  &#8226;   <a href="#assistant.api.chat_route">assistant.api.chat_route</a>
  &#8226;   <a href="#assistant.core.agents">assistant.core.agents</a>
  &#8226;   <a href="#assistant.core.app">assistant.core.app</a>
+ &#8226;   <a href="#assistant.velo.controller">assistant.velo.controller</a>
  &#8226;   <a href="#click.types">click.types</a>
  &#8226;   <a href="#deepagents.backends.local_shell">deepagents.backends.local_shell</a>
  &#8226;   <a href="#deepagents.middleware._message_eviction">deepagents.middleware._message_eviction</a>
@@ -219851,7 +219768,6 @@ imports:
   <div class="import">
 imported by:
     <a href="#assistant.observability.logging">assistant.observability.logging</a>
- &#8226;   <a href="#assistant.velo.cua_adapter">assistant.velo.cua_adapter</a>
  &#8226;   <a href="#deepagents.middleware.skills">deepagents.middleware.skills</a>
  &#8226;   <a href="#google.genai.types">google.genai.types</a>
  &#8226;   <a href="#langchain_core.language_models.llms">langchain_core.language_models.llms</a>

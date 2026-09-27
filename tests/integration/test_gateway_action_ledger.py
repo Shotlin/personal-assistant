@@ -25,20 +25,25 @@ from assistant.settings import Settings
 from tests.helpers.scripted_model import ScriptedChatModel
 
 
-def _fake_click_tool() -> StructuredTool:
+def _fake_launch_tool() -> StructuredTool:
+    """``launch_app`` rather than an aimed click: this file tests the gateway's
+    seam -- that a run scope gets a ledger at all -- and a click would be refused
+    before dispatch unless the fake model also staged an observation first.
+    """
+
     async def coro(**kwargs: Any) -> Any:
-        return {"ok": True, "clicked": kwargs.get("element_token", "?")}
+        return {"ok": True, "launched": kwargs.get("name", "?")}
 
     return StructuredTool(
-        name="click",
-        description="click",
+        name="launch_app",
+        description="launch_app",
         args_schema={"type": "object", "properties": {}},
         coroutine=coro,
     )
 
 
 class ToolCallingScript(ScriptedChatModel):
-    """First response invokes the click tool; second responds with text."""
+    """First response invokes the launch tool; second responds with text."""
 
     def _generate(
         self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
@@ -48,11 +53,11 @@ class ToolCallingScript(ScriptedChatModel):
             message: AIMessage = AIMessage(
                 content="",
                 tool_calls=[
-                    {"name": "click", "args": {"element_token": "e1"}, "id": "call1"}
+                    {"name": "launch_app", "args": {"name": "Notes"}, "id": "call1"}
                 ],
             )
         else:
-            message = AIMessage("clicked for ledger test")
+            message = AIMessage("launched for ledger test")
         self.call_index += 1
         return ChatResult(
             generations=[ChatGeneration(message=locals().get("message", AIMessage("")))]
@@ -72,16 +77,16 @@ async def ledger_gateway(
     from assistant.tools.cua import CuaConnection
     from assistant.tools.policy import apply_tool_policy
 
-    wrapped_click = apply_tool_policy([_fake_click_tool()])[0][0]
+    wrapped_launch = apply_tool_policy([_fake_launch_tool()])[0][0]
 
     @asynccontextmanager
     async def fake_cua_connection(settings: Any) -> AsyncIterator[CuaConnection]:
         yield CuaConnection(
-            tools=[wrapped_click],
-            tool_names=["click"],
-            discovered_names=["click"],
+            tools=[wrapped_launch],
+            tool_names=["launch_app"],
+            discovered_names=["launch_app"],
             skipped_names=[],
-            tools_by_name={"click": wrapped_click},
+            tools_by_name={"launch_app": wrapped_launch},
             lifecycle_tools_by_name={},
         )
 
@@ -93,9 +98,7 @@ async def ledger_gateway(
             openrouter_api_key="dummy",
             cua_enabled=True,
             active_cursor_persistence_enabled=False,
-            # The scripted model plays the AGENT here; the compact planner
-            # (default on) would consume its responses as plan attempts.
-            compact_planner_enabled=False,
+            # The scripted model plays the agent; nothing else may answer.
         )
     )
     async with app.router.lifespan_context(app):
@@ -120,7 +123,7 @@ async def test_mutating_tool_call_writes_one_confirmed_row(
     }
     payload = {
         "model": app.state.settings.assistant_model_id,
-        "messages": [{"role": "user", "content": "click the button"}],
+        "messages": [{"role": "user", "content": "open Notes"}],
         "stream": False,
     }
     first = await client.post("/v1/chat/completions", headers=headers, json=payload)
@@ -130,5 +133,5 @@ async def test_mutating_tool_call_writes_one_confirmed_row(
     assert record is not None
     states = [a["state"] for a in record.actions]
     tools = [a["tool_name"] for a in record.actions]
-    assert tools.count("click") == 1, f"expected exactly one click row, got {tools}"
+    assert tools.count("launch_app") == 1, f"expected exactly one launch row, got {tools}"
     assert states.count("confirmed") == 1, f"expected exactly one confirmed, got {states}"

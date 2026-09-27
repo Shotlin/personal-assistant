@@ -1,10 +1,51 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { computerControlSnapshot, type ComputerControlSnapshot } from "../lib/tauri";
+import {
+  computerControlSnapshot,
+  onComputerControlChange,
+  type ComputerControlSnapshot,
+} from "../lib/tauri";
+import ComputerControlStatus from "./ComputerControlStatus";
 
 export default function ComputerControlPage() {
   const [snapshot, setSnapshot] = useState<ComputerControlSnapshot | null>(null);
-  const refresh = () => void computerControlSnapshot().then(setSnapshot).catch(() => setSnapshot(null));
-  useEffect(refresh, []);
-  return <section className="computer-control-page"><header><div><h1>Computer Control</h1><p>Permissions and runtime availability are checked locally each time you refresh.</p></div><button onClick={refresh}>Refresh</button></header><div className="settings-card"><strong>{snapshot?.status.replaceAll("_", " ") ?? "Checking…"}</strong><p>{snapshot?.message ?? "Checking current macOS permissions and Sani runtime…"}</p><dl><div><dt>Accessibility</dt><dd>{snapshot?.accessibility ?? "checking"}</dd></div><div><dt>Screen Recording</dt><dd>{snapshot?.screen_recording ?? "checking"}</dd></div><div><dt>CuaDriver accessibility</dt><dd>{snapshot?.driver_accessibility ?? "checking"}</dd></div><div><dt>CuaDriver screen recording</dt><dd>{snapshot?.driver_screen_recording ?? "checking"}</dd></div><div><dt>Runtime</dt><dd>{snapshot?.runtime ?? "checking"}</dd></div><div><dt>Approve this app</dt><dd title={snapshot?.app_path}>{snapshot?.app_path ?? "checking"}</dd></div></dl><div className="settings-inline"><button onClick={() => void invoke("request_accessibility").then(refresh)}>Request Accessibility</button><button onClick={() => void invoke("request_screen_recording").then(refresh)}>Request Screen Recording</button><button onClick={() => void invoke("open_permission_settings", { pane: "accessibility" })}>Open Accessibility Settings</button><button onClick={() => void invoke("open_permission_settings", { pane: "screen_recording" })}>Open Screen Recording Settings</button>{snapshot?.restart_required && <button onClick={() => void invoke("restart_app")}>Restart Sani</button>}</div></div></section>;
+
+  const refresh = () =>
+    void computerControlSnapshot().then(setSnapshot).catch(() => setSnapshot(null));
+
+  useEffect(() => {
+    let live = true;
+    let stop: (() => void) | undefined;
+    refresh();
+    // Sani pushes when its cheap signals change, and the page answers by pulling
+    // a real reading -- so a grant given in System Settings, or a driver the
+    // watchdog just replaced, shows up without touching Refresh.
+    void onComputerControlChange(refresh).then((unlisten) => {
+      if (live) stop = unlisten;
+      else unlisten();
+    });
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      live = false;
+      stop?.();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
+  return (
+    <section className="cc-page">
+      <header className="cc-header">
+        <div>
+          <h1>Computer Control</h1>
+          <p>
+            Sani’s own macOS permissions, its embedded driver and the assistant runtime. Read locally, and
+            refreshed whenever Sani reports a change.
+          </p>
+        </div>
+      </header>
+      <ComputerControlStatus snapshot={snapshot} onRefresh={refresh} />
+    </section>
+  );
 }

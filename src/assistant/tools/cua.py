@@ -13,6 +13,8 @@ Two ways to talk to the driver:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import os
 import stat
@@ -25,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
+from assistant.runtime.cua_faults import CuaFault, classify_exception
 from assistant.settings import Settings
 from assistant.tools.policy import (
     SESSION_LIFECYCLE_TOOL_NAMES,
@@ -36,7 +39,36 @@ from assistant.tools.policy import (
 logger = logging.getLogger("assistant.tools.cua")
 
 if TYPE_CHECKING:  # pragma: no cover
-    from mcp import ClientSession
+    pass
+
+#: Calls that cannot change the desktop, so replaying one after a transport drop
+#: is safe. `start_session`/`end_session` are documented idempotent by the
+#: driver. Everything else -- a click, a keystroke, typed text -- may already
+#: have landed before the socket died, and is never silently sent twice.
+NON_MUTATING_TOOLS = frozenset(
+    {
+        "list_apps",
+        "list_windows",
+        "get_window_state",
+        "get_desktop_state",
+        "get_accessibility_tree",
+        "get_screen_size",
+        "verify_state",
+        "zoom",
+        "check_permissions",
+        "start_session",
+        "end_session",
+        "get_agent_cursor_state",
+    }
+)
+
+
+class CuaTransportError(RuntimeError):
+    """The MCP lease could not be established or rebuilt."""
+
+    def __init__(self, message: str, fault: CuaFault = CuaFault.TRANSPORT) -> None:
+        super().__init__(message)
+        self.fault = fault
 
 
 @dataclass(frozen=True)
@@ -258,6 +290,170 @@ async def load_cua_tools(settings: Settings) -> CuaConnection:
     return _filtered_connection(list(discovered))
 
 
+class McpTransport:
+    """One stdio MCP lease, owned by exactly one task, rebuilt in that task.
+
+    The lease is an anyio task group, and a task group may only be entered and
+    exited by the task that owns it. Entering the replacement lease from whichever
+    turn happened to notice the failure does not work -- measured live on 0.28.2,
+    the dying driver cancels its own scope, so the caller's task is inside a
+    cancelled scope before the new lease is even opened, and "reconnect" raises
+    `CancelledError` instead of recovering. So one task owns the lease for its
+    whole life and every request -- including the rebuild -- runs there.
+
+    The tools the agent was built with hold *this* object rather than a session,
+    which is what lets a driver crash and restart underneath a running Deep Agent
+    without rebuilding the agent or failing the process's remaining turns.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._queue: asyncio.Queue[tuple[str, Any, asyncio.Future]] | None = None
+        self._owner: asyncio.Task | None = None
+        self.leases = 0
+
+    @property
+    def reconnections(self) -> int:
+        """Leases opened after the first one."""
+        return max(0, self.leases - 1)
+
+    @property
+    def running(self) -> bool:
+        return self._owner is not None and not self._owner.done()
+
+    async def start(self) -> None:
+        if self.running:
+            return
+        self._queue = asyncio.Queue()
+        self._owner = asyncio.create_task(self._serve(), name="cua-mcp-transport")
+
+    #: A restarted driver needs a moment to listen again -- measured live: the
+    #: socket file exists before anything is accepting on it, and a lease opened
+    #: in that window dies with "Connection closed". Bounded, and waited only
+    #: before opening a lease: a read that waits a moment is cheap, and a
+    #: mutation is never replayed at all.
+    ENDPOINT_WAIT_SECONDS = 3.0
+
+    async def _wait_for_endpoint(self) -> None:
+        socket = str(getattr(self._settings, "cua_socket", "") or "")
+        if not socket:
+            return
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.ENDPOINT_WAIT_SECONDS
+        while True:
+            try:
+                _reader, writer = await asyncio.wait_for(
+                    asyncio.open_unix_connection(socket), timeout=0.5
+                )
+            except (OSError, TimeoutError):
+                writer = None
+            if writer is not None:
+                writer.close()
+                with contextlib.suppress(Exception):
+                    await writer.wait_closed()
+                return
+            if loop.time() >= deadline:
+                return  # open anyway: the proxy's own failure is then the evidence
+            await asyncio.sleep(0.1)
+
+    async def _new_lease(self) -> tuple[contextlib.AsyncExitStack, Any]:
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        await self._wait_for_endpoint()
+        stack = contextlib.AsyncExitStack()
+        try:
+            read_stream, write_stream = await stack.enter_async_context(
+                stdio_client(
+                    StdioServerParameters(
+                        command=self._settings.cua_command,
+                        args=driver_mcp_args(self._settings),
+                    )
+                )
+            )
+            session = await stack.enter_async_context(
+                ClientSession(read_stream, write_stream)
+            )
+            await session.initialize()
+        except BaseException as exc:
+            with contextlib.suppress(Exception):
+                await stack.aclose()
+            fault = classify_exception(exc)
+            raise CuaTransportError(
+                f"the computer-control driver connection could not be opened: {exc}",
+                fault if fault is not CuaFault.UNKNOWN else CuaFault.DAEMON,
+            ) from exc
+        return stack, session
+
+    async def _serve(self) -> None:
+        queue = self._queue
+        assert queue is not None  # set by start()
+        stack: contextlib.AsyncExitStack | None = None
+        session: Any = None
+        try:
+            while True:
+                kind, payload, future = await queue.get()
+                if future.done():
+                    continue
+                try:
+                    if kind == "close":
+                        if stack is not None:
+                            await stack.aclose()
+                            stack, session = None, None
+                        future.set_result(None)
+                        continue
+                    if session is None:
+                        stack, session = await self._new_lease()
+                        self.leases += 1
+                    if kind == "list_tools":
+                        result = await session.list_tools()
+                    elif kind == "call":
+                        name, arguments = payload
+                        result = await session.call_tool(name, arguments)
+                    else:  # pragma: no cover - a programming error, not a fault
+                        raise CuaTransportError(f"unknown transport request {kind!r}")
+                    future.set_result(result)
+                except BaseException as exc:
+                    # Nothing is trusted after a failed exchange: the lease is
+                    # dropped here so the next request opens a new one instead of
+                    # writing into a half-dead pipe.
+                    if stack is not None:
+                        with contextlib.suppress(Exception):
+                            await stack.aclose()
+                        stack, session = None, None
+                    if not future.done():
+                        future.set_exception(exc)
+                    if isinstance(exc, asyncio.CancelledError):
+                        raise
+        finally:
+            if stack is not None:
+                with contextlib.suppress(Exception):
+                    await stack.aclose()
+
+    async def _request(self, kind: str, payload: Any = None) -> Any:
+        if not self.running or self._queue is None:
+            raise CuaTransportError("the computer-control driver transport is stopped")
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        await self._queue.put((kind, payload, future))
+        return await future
+
+    async def list_tools(self) -> Any:
+        return await self._request("list_tools")
+
+    async def call_tool(self, name: str, kwargs: dict[str, Any]) -> Any:
+        return await self._request("call", (name, kwargs))
+
+    async def aclose(self) -> None:
+        owner, self._owner = self._owner, None
+        if owner is None or owner.done():
+            return
+        with contextlib.suppress(Exception):
+            await self._request("close")
+        owner.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await owner
+
+
 @asynccontextmanager
 async def open_cua_connection(settings: Settings) -> AsyncIterator[CuaConnection]:
     """Persistent stdio MCP session owned by the gateway.
@@ -272,45 +468,64 @@ async def open_cua_connection(settings: Settings) -> AsyncIterator[CuaConnection
     # proxy resurrecting a daemon in a mode nobody chose (spec 13.3/13.4).
     await _assert_daemon_posture(settings)
 
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
-
-    server_params = StdioServerParameters(
-        command=settings.cua_command,
-        args=driver_mcp_args(settings),
-    )
-
-    async with stdio_client(server_params) as (read_stream, write_stream):
-        session = ClientSession(read_stream, write_stream)
-        async with session as mcp_session:
-            await mcp_session.initialize()
-
-            tools_response = await mcp_session.list_tools()
-            discovered: list[BaseTool] = []
-            for tool in tools_response.tools:
-                discovered.append(
-                    StructuredTool(
-                        name=tool.name,
-                        description=tool.description or "",
-                        args_schema=tool.inputSchema,
-                        coroutine=_caller(mcp_session, tool.name),
-                    )
-                )
-            yield _filtered_connection(discovered)
+    transport = McpTransport(settings)
+    await transport.start()
+    try:
+        tools_response = await transport.list_tools()
+        discovered: list[BaseTool] = [
+            StructuredTool(
+                name=tool.name,
+                description=tool.description or "",
+                args_schema=tool.inputSchema,
+                coroutine=_caller(transport, tool.name),
+            )
+            for tool in tools_response.tools
+        ]
+        yield _filtered_connection(discovered)
+    finally:
+        await transport.aclose()
 
 
-def _caller(session: ClientSession, name: str) -> Any:
-    """Build an async callable that routes one tool call over ``session``.
+def _caller(transport: McpTransport, name: str) -> Any:
+    """Build the async callable for one tool, with a bounded recovery path.
 
-    Returns the normalized :class:`ToolOutcome` so the policy wrapper can
-    produce bounded model text while structured evidence stays available
-    to trusted local verification (master plan WP2/F02).
+    A transport-class failure rebuilds the lease once. Whether the call is then
+    re-sent depends on what it does: a read is safe to replay, a mutation is
+    not -- the driver may have performed it and lost the pipe on the way back. A
+    mutation that cannot be confirmed is reported as unknown so the agent loop
+    re-observes the screen rather than acting twice.
     """
 
-    from assistant.tools.result_normalizer import normalize_mcp_result
+    from assistant.tools.result_normalizer import ToolOutcome, normalize_mcp_result
 
     async def call(**kwargs: Any) -> Any:
-        result = await session.call_tool(name, kwargs)
-        return normalize_mcp_result(result)
+        try:
+            result = await transport.call_tool(name, kwargs)
+            return normalize_mcp_result(result)
+        except asyncio.CancelledError:
+            # This turn was stopped. That is an instruction, not a fault, and
+            # "recovering" from it would keep driving the desktop after Stop.
+            raise
+        except BaseException as exc:
+            if classify_exception(exc) is not CuaFault.TRANSPORT:
+                raise
+            if name in NON_MUTATING_TOOLS:
+                # The failed exchange already dropped the lease inside the owner
+                # task, so this replay opens a fresh one. Once only: a second
+                # transport failure propagates rather than becoming a loop.
+                result = await transport.call_tool(name, kwargs)
+                return normalize_mcp_result(result)
+            logger.warning(
+                "cua_action_outcome_unknown",
+                extra={"event": "cua_action_outcome_unknown", "tool": name},
+            )
+            return ToolOutcome(
+                status="unknown",
+                effect="unverifiable",
+                text=(
+                    f"{name} could not be confirmed: the driver connection dropped "
+                    "and the action is never replayed blindly"
+                ),
+            )
 
     return call

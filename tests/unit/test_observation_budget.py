@@ -27,6 +27,8 @@ class _WindowArgs(BaseModel):
 
 class _SessionArgs(BaseModel):
     session: str | None = None
+    pid: int | None = None
+    window_id: int | None = None
 
 
 def _fake_tool(name: str, args_model: BaseModel | None = None, captured: list | None = None):
@@ -49,16 +51,19 @@ async def test_window_state_defaults_applied():
     assert call["max_depth"] == 12
 
 
-async def test_model_can_opt_into_screenshot_but_png_goes_to_artifact_store(
-    tmp_path,
-):
+async def test_an_explicit_screenshot_request_goes_to_the_model(tmp_path) -> None:
+    """D3: the picture is the recovery rung, so asking for it must deliver it.
+
+    Diverting an explicitly requested capture to a file left the model holding a
+    path it cannot look at, which is not a rung it can climb.
+    """
     captured: list[dict] = []
     wrapped, _ = apply_tool_policy([_fake_tool("get_window_state", _WindowArgs, captured)])
     cua_artifact_dir.set(str(tmp_path))
-    await wrapped[0].ainvoke({"pid": 1, "include_screenshot": True})
+    await wrapped[0].ainvoke({"pid": 1, "window_id": 2, "include_screenshot": True})
     call = captured[0]
     assert call["include_screenshot"] is True
-    assert call["screenshot_out_file"] and call["screenshot_out_file"].startswith(str(tmp_path))
+    assert "screenshot_out_file" not in call or not call["screenshot_out_file"]
 
 
 async def test_session_injected_when_accepting_session_arg():
@@ -66,7 +71,7 @@ async def test_session_injected_when_accepting_session_arg():
     wrapped, _ = apply_tool_policy([_fake_tool("click", _SessionArgs, captured)])
     cua_current_session.set("run-abc")
     cua_run_budget.set(None)
-    await wrapped[0].ainvoke({})
+    await wrapped[0].ainvoke({"pid": 42, "window_id": 7})
     assert captured[0]["session"] == "run-abc"
     cua_current_session.set(None)
 

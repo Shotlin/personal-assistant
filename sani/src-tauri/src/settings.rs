@@ -113,13 +113,6 @@ pub struct Settings {
     pub reasoning_provider: String,
     #[serde(default)]
     pub reasoning_model: String,
-    /// Quick computer-control (Velo / JEV) provider + model. When the provider
-    /// is OpenRouter the same Keychain credential as the reasoning model is
-    /// reused — it is never asked for twice.
-    #[serde(default = "default_velo_provider")]
-    pub velo_provider: String,
-    #[serde(default = "default_velo_model")]
-    pub velo_model: String,
     /// Which registered agent takes a turn. `auto` was a legacy pseudo-agent;
     /// persisted copies are migrated to Velo during deserialization.
     #[serde(
@@ -129,10 +122,11 @@ pub struct Settings {
     pub agent_mode: String,
     /// Staged activation of the approved D1 architecture: run the embedded CUA
     /// daemon in driver `standard` mode (no capability manifest) instead of
-    /// `bounded`. Off by default so the switch happens once, with the batched
-    /// install that is allowed to consume a fresh macOS grant -- the mode is
-    /// read only when the daemon is spawned, never mid-session.
-    #[serde(default)]
+    /// `bounded`. Turned on for the batched install of 2026-09-25 — the run that
+    /// is allowed to consume a fresh macOS grant. The mode is read only when the
+    /// daemon is spawned, never mid-session. Setting this to false in
+    /// settings.json is the rollback to the manifest-bounded daemon.
+    #[serde(default = "default_computer_control_standard_mode")]
     pub computer_control_standard_mode: bool,
     /// Normal main-window geometry and its independent maximized intent.
     /// Coordinates are logical points relative to the persisted display's
@@ -171,11 +165,9 @@ where
 fn default_reasoning_provider() -> String {
     "openrouter".into()
 }
-fn default_velo_provider() -> String {
-    "openrouter".into()
-}
-fn default_velo_model() -> String {
-    "jev-latest".into()
+
+fn default_computer_control_standard_mode() -> bool {
+    true
 }
 
 fn default_hotkey() -> String {
@@ -306,7 +298,7 @@ pub fn save(app: &tauri::AppHandle, settings: &Settings) -> Result<(), String> {
 const KEYCHAIN_ACCOUNT: &str = "app.sani.local";
 
 /// Read a generic secret from the Keychain by service name. Used by onboarding
-/// for provider credentials (OpenRouter, TypeSafe) so API keys never touch the
+/// for the provider credential (OpenRouter) so API keys never touch the
 /// plaintext settings file, the database, memory, or logs.
 pub fn secret_read(service: &str) -> Option<String> {
     let out = std::process::Command::new("security")
@@ -492,6 +484,23 @@ mod tests {
         assert_eq!(deep.agent_mode, "deep");
         assert_eq!(velo.agent_mode, "velo");
         assert_eq!(auto.agent_mode, "velo");
+    }
+
+    #[test]
+    fn computer_control_starts_in_standard_mode_and_keeps_the_rollback() {
+        // Architecture D1's activation lives in this default. A settings file
+        // written before the switch must not quietly keep the capability
+        // manifest ceiling, and an explicit false has to stay a working
+        // rollback to the bounded daemon.
+        let missing: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        let standard: Settings =
+            serde_json::from_str(r#"{"computer_control_standard_mode":true}"#).unwrap();
+        let bounded: Settings =
+            serde_json::from_str(r#"{"computer_control_standard_mode":false}"#).unwrap();
+
+        assert!(missing.computer_control_standard_mode);
+        assert!(standard.computer_control_standard_mode);
+        assert!(!bounded.computer_control_standard_mode);
     }
 
     #[test]

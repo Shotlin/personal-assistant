@@ -134,13 +134,11 @@ async def test_system_status_shape_has_no_secrets(tmp_path: Path) -> None:
         cua_enabled=True,
         memory_backend="sqlite",
         sani_data_dir=str(tmp_path),
-        typesafe_api_key="",
         openrouter_api_key="sk-or-secret-value",
     )
     payload = await asyncio.wait_for(system_status(settings), 10)
     assert payload["driver"]["posture_ok"] is True
     assert payload["memory_backend"] == "sqlite"
-    assert payload["jev_credential"] == "openrouter"
     assert "sk-or-secret-value" not in repr(payload)
 
 

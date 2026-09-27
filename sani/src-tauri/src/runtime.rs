@@ -13,19 +13,12 @@
 //! plus every frame relayed verbatim on sani://core-event for the agent UI.
 
 use serde_json::{json, Value};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 
 use crate::app_state;
-
-/// Monotonic activity sequence, so the timeline renders in arrival order.
-static ACTIVITY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
-
-fn next_sequence() -> u64 {
-    ACTIVITY_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-}
 
 /// What the live run has produced so far. Shared with the event sink because
 /// the sink is consumed by `run_turn`, and the caller still needs the answer
@@ -108,6 +101,10 @@ pub async fn stream_turn(
     let started_at = Instant::now();
     let live = Arc::new(Mutex::new(Streamed::default()));
     let emitter = app.clone();
+    // "first_token" is a stage, not a per-token metric: the timing table's
+    // (run_id, stage) key already dedups, but the guard stops the churn of
+    // one ignored insert per streamed token.
+    let first_token_recorded = Arc::new(AtomicBool::new(false));
 
     let sink = {
         let live = live.clone();
@@ -115,6 +112,7 @@ pub async fn stream_turn(
         let agent_name = agent_name.clone();
         let activity_conversation_id = thread_id.clone();
         let started_at = started_at;
+        let first_token_recorded = first_token_recorded.clone();
         move |frame: Value| {
             let _ = emitter.emit("sani://core-event", frame.clone());
             let Some(event) = parse(&frame) else { return };
@@ -139,13 +137,15 @@ pub async fn stream_turn(
             match event.kind.as_str() {
                 "agent.token" => {
                     if let Some(delta) = &event.token {
-                        record_timing(
-                            &emitter,
-                            &event.run_id,
-                            "first_token",
-                            started_at.elapsed().as_millis() as i64,
-                            "observed",
-                        );
+                        if !first_token_recorded.swap(true, Ordering::Relaxed) {
+                            record_timing(
+                                &emitter,
+                                &event.run_id,
+                                "first_token",
+                                started_at.elapsed().as_millis() as i64,
+                                "observed",
+                            );
+                        }
                         stream.text.push_str(delta);
                         emit_chunk(&emitter, &message_id, "text", delta, &event.agent_id);
                     }
@@ -274,10 +274,11 @@ fn emit_activity(
     agent_id: &str,
     label: &str,
 ) {
-    let sequence = next_sequence();
     let timestamp = app_state::now_ms();
+    // The database assigns a globally monotonic sequence (MAX+1), which
+    // survives app restarts; the returned value orders the live event too.
     let record = crate::history::ActivityRecord {
-        sequence: sequence as i64,
+        sequence: 0,
         conversation_id: conversation_id.to_string(),
         run_id: run_id.to_string(),
         agent_id: agent_id.to_string(),
@@ -286,11 +287,17 @@ fn emit_activity(
         label: label.to_string(),
         status: "info".to_string(),
     };
-    if !conversation_id.is_empty() {
-        if let Err(error) = app_state::history(emitter).append_activity(&record) {
-            log::warn!("[history] could not persist run activity: {error}");
+    let sequence = if !conversation_id.is_empty() {
+        match app_state::history(emitter).append_activity(&record) {
+            Ok(sequence) => sequence,
+            Err(error) => {
+                log::warn!("[history] could not persist run activity: {error}");
+                0
+            }
         }
-    }
+    } else {
+        0
+    };
     let _ = emitter.emit(
         "sani://activity",
         json!({

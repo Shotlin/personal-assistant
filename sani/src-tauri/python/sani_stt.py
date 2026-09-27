@@ -891,7 +891,11 @@ def run_sidecar(args, sink: Sink) -> int:
     stream.add_listener(listener)
     stream.start()
     driver = MoonshineDriver(stream, stream_lock)
-    sink({"type": "ready", "model": args.model, "vad": vad_label})
+    # The label goes out as `vad_model`: the host's SttEvent declares `vad` as a
+    # number (a confidence on partial events), and a string in that field made the
+    # whole ready line fail to deserialize -- silently, because an unparseable
+    # line is skipped. The mic then sat at "Preparing voice model" forever.
+    sink({"type": "ready", "model": args.model, "vad_model": vad_label})
 
     stop = threading.Event()
 

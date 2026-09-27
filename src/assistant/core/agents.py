@@ -1,14 +1,20 @@
-"""Registry entries wiring Velo and the Deep Agent into sani-core (Stage G).
+"""The executor entries sani-core runs, under the two names the UI offers.
 
-Each entry adapts an existing, independently tested implementation to the
-sidecar's small agent contract (identity, run, cancel) -- no rewrites, no
-agent-to-agent wiring. Both are fail-closed: a missing credential or an
-unavailable CUA runtime surfaces as a run error for the desktop UI, never
-as a fallback to another model (Sani master doc sections 5, 10-12).
+Velo owns the user's intent, task state, and execution: ordinary commands
+resolve and execute locally as verified recipes, interpretation goes through
+one structured JEV decision, and unfamiliar goals go to the Deep Agent's
+reasoning loop -- which enters the same policy, adapter and verification path
+as everything else. "Deep Agent" is that reasoning loop named plainly; it is
+no longer a second routing or decision engine, and Velo is no longer merely
+its label (master plan sections 3-4).
 
-Default construction is lazy: nothing touches the network, the driver, or
-the model provider until a run actually starts, and tests inject fakes for
-everything heavy.
+One entry set means one MCP transport, one checkpointer and one runtime: both
+names draw their desktop tools and memory from the same lazily-opened
+:SaniRuntime:, so the two names cannot drift apart mid-conversation.
+
+Construction is lazy: nothing touches the network, the driver, or the model
+provider until a run actually starts, and tests inject fakes for everything
+heavy.
 """
 
 from __future__ import annotations
@@ -16,154 +22,26 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-from assistant.agent.context import RunBudget
 from assistant.core.desktop import system_status
+from assistant.core.identity import engine_identity
 from assistant.core.protocol import AGENT_PROGRESS, AGENT_TOKEN
 from assistant.core.registry import AgentDescriptor, AgentRegistry
 from assistant.core.runtime import SaniRuntime
-from assistant.runtime.session import DesktopSessionManager, McpToolDesktopDriver
 from assistant.settings import Settings
-from assistant.velo.agent import VeloAgent
-from assistant.velo.cua_adapter import VeloCuaAdapter, allowed_apps_from_manifest
-from assistant.velo.jev import JevDecisionEngine, text_candidates_from_objective
-from assistant.velo.types import VeloLimits, VeloObjective, VeloResult, VeloStatus
+from assistant.velo.controller import VeloEntry
 
 
-def _default_velo_context(
-    settings: Settings,
-) -> contextlib.AbstractAsyncContextManager[tuple[VeloAgent, Callable[[], None]]]:
-    """Open the persistent CUA connection and build the real Velo run stack.
+class RuntimeProvider:
+    """Opens the one process-lifetime :SaniRuntime: for both agent entries.
 
-    The transport lives for exactly one run -- same lifetime as
-    scripts/run_velo.py; no new transport per action inside the run.
+    Held here, not per entry, so ``velo`` and ``deep`` cannot end up with two
+    transports or two checkpointers. An injected agent builder carries its own
+    transport: no runtime is opened and tests never touch the driver or a
+    provider.
     """
-
-    @contextlib.asynccontextmanager
-    async def context() -> AsyncIterator[tuple[VeloAgent, Callable[[], None]]]:
-        from assistant.tools.cua import open_cua_connection
-
-        async with open_cua_connection(settings) as connection:
-            manager = DesktopSessionManager(
-                McpToolDesktopDriver(connection.lifecycle_tools_by_name),
-                enabled=settings.active_cursor_persistence_enabled,
-            )
-            async with manager.open(f"core-{uuid.uuid4().hex[:8]}") as desktop_run:
-                budget = RunBudget(max_actions=settings.velo_max_steps)
-                adapter = VeloCuaAdapter(
-                    connection,
-                    desktop_run,
-                    budget,
-                    allowed_apps=allowed_apps_from_manifest(settings.cua_capability_manifest_path),
-                )
-                jev = JevDecisionEngine.from_settings(settings)
-                limits = VeloLimits(
-                    max_steps=settings.velo_max_steps,
-                    max_runtime_seconds=float(settings.velo_max_runtime_seconds),
-                    max_same_action_repeats=settings.velo_max_same_action_repeats,
-                    max_consecutive_failed_actions=settings.velo_max_consecutive_failed_actions,
-                    recent_history_steps=settings.velo_recent_history_steps,
-                )
-                agent = VeloAgent(adapter, jev, limits)
-                yield agent, desktop_run.cancel
-
-    return context()
-
-
-class VeloAgentEntry:
-    """Velo (JEV + CUA) as a sani-core agent: quick computer control."""
-
-    def __init__(
-        self,
-        settings: Settings,
-        *,
-        context_factory: Callable[
-            [Settings], contextlib.AbstractAsyncContextManager[tuple[VeloAgent, Callable[[], None]]]
-        ]
-        | None = None,
-    ) -> None:
-        self._settings = settings
-        self._context_factory = context_factory or _default_velo_context
-        self._cancel_requested = False
-        self._active_cancel: Callable[[], None] | None = None
-
-    @property
-    def descriptor(self) -> AgentDescriptor:
-        return AgentDescriptor(id="velo", name="Velo", capabilities=("computer-control", "desktop"))
-
-    async def cancel(self) -> None:
-        self._cancel_requested = True
-        if self._active_cancel is not None:
-            self._active_cancel()
-
-    async def run(
-        self,
-        text: str,
-        *,
-        thread_id: str,
-        on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
-        cancel_check: Callable[[], bool],
-    ) -> dict[str, Any]:
-        self._cancel_requested = False
-        events: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
-
-        async def pump() -> None:
-            while True:
-                item = await events.get()
-                if item is None:
-                    return
-                await on_event(item[0], item[1])
-
-        pump_task = asyncio.create_task(pump(), name="velo-entry-events")
-        try:
-            async with self._context_factory(self._settings) as (agent, cancel_hook):
-                self._active_cancel = cancel_hook
-                result = await agent.run(
-                    VeloObjective(text=text, text_candidates=text_candidates_from_objective(text)),
-                    cancel_check=lambda: cancel_check() or self._cancel_requested,
-                    on_progress=lambda line: events.put_nowait(
-                        (AGENT_PROGRESS, {"message": line})
-                    ),
-                )
-        finally:
-            self._active_cancel = None
-            events.put_nowait(None)
-            with contextlib.suppress(asyncio.CancelledError):
-                await pump_task
-        return {
-            "status": result.status.value,
-            "reason": result.reason,
-            "response": velo_response(result),
-            "metrics": result.metrics.as_dict(),
-        }
-
-
-#: What the user sees when Velo's structured outcome reaches the transcript.
-#: Derived from the terminal status only -- never a guess about the desktop.
-_VELO_FAILURE_LABELS: dict[VeloStatus, str] = {
-    VeloStatus.ASK_USER: "I need you to decide:",
-    VeloStatus.STOPPED: "Stopped.",
-    VeloStatus.FAILED: "I couldn't finish that.",
-}
-
-
-def velo_response(result: VeloResult) -> str:
-    """A one-line, honest answer for a completed Velo run.
-
-    Velo reports status/reason/metrics, not prose, so the transcript would
-    otherwise have nothing to attribute to it.
-    """
-    reason = result.reason.strip()
-    if result.status is VeloStatus.DONE:
-        return reason or "Done."
-    label = _VELO_FAILURE_LABELS.get(result.status, "Stopped.")
-    return f"{label} {reason}".strip()
-
-
-class DeepAgentEntry:
-    """The LangChain Deep Agent as a sani-core agent: reasoning + memory."""
 
     def __init__(
         self,
@@ -173,13 +51,56 @@ class DeepAgentEntry:
     ) -> None:
         self._settings = settings
         self._builder = agent_builder
-        self._build_lock = asyncio.Lock()
-        self._cancelled = False
-        # The runtime owns the memory + CUA + agent handles; it is opened once
-        # and held for the process lifetime, and the entry holds the only
-        # reference so nothing is garbage-collected mid-run.
+        self._lock = asyncio.Lock()
         self._runtime: SaniRuntime | None = None
-        self._runtime_cm: Any = None
+        self._cm: Any = None
+
+    async def runtime(self) -> SaniRuntime:
+        async with self._lock:
+            if self._runtime is not None:
+                return self._runtime
+            if self._builder is not None:
+                self._runtime = SaniRuntime.open_with_agent(await self._builder(), self._settings)
+                return self._runtime
+            self._cm = SaniRuntime.open(self._settings)
+            try:
+                self._runtime = await self._cm.__aenter__()
+            except BaseException:
+                self._cm = None
+                raise
+            return self._runtime
+
+    async def aclose(self) -> None:
+        """Close the held runtime once (idempotent, best-effort)."""
+        cm, self._cm = self._cm, None
+        self._runtime = None
+        if cm is None:
+            return
+        with contextlib.suppress(Exception):
+            await cm.__aexit__(None, None, None)
+
+
+class DeepAgentEntry:
+    """The LangChain Deep Agent as a sani-core agent: reasoning + memory.
+
+    The general reasoning executor (master plan section 3): it plans and
+    reasons over unfamiliar multi-step objectives and streams its answer. It
+    does not route, parse imperatives, or own task state -- that is Velo's
+    job -- and it dispatches desktop work through the same wrapped tools,
+    policy and budget as every other route.
+    """
+
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        agent_builder: Callable[[], Awaitable[Any]] | None = None,
+        provider: RuntimeProvider | None = None,
+    ) -> None:
+        if provider is not None and agent_builder is not None:
+            raise ValueError("give the provider the builder, not both")
+        self._provider = provider or RuntimeProvider(settings, agent_builder=agent_builder)
+        self._cancelled = False
 
     @property
     def descriptor(self) -> AgentDescriptor:
@@ -192,23 +113,6 @@ class DeepAgentEntry:
         # task cancellation (the app already task.cancel()s the run).
         self._cancelled = True
 
-    async def _ensure_runtime(self) -> SaniRuntime:
-        async with self._build_lock:
-            if self._runtime is not None:
-                return self._runtime
-            if self._builder is not None:
-                # An injected agent carries its own transport; no runtime is
-                # opened, so tests never touch the driver or a provider.
-                self._runtime = SaniRuntime.open_with_agent(await self._builder(), self._settings)
-                return self._runtime
-            self._runtime_cm = SaniRuntime.open(self._settings)
-            try:
-                self._runtime = await self._runtime_cm.__aenter__()
-            except BaseException:
-                self._runtime_cm = None
-                raise
-            return self._runtime
-
     async def run(
         self,
         text: str,
@@ -218,7 +122,7 @@ class DeepAgentEntry:
         cancel_check: Callable[[], bool],
     ) -> dict[str, Any]:
         self._cancelled = False
-        runtime = await self._ensure_runtime()
+        runtime = await self._provider.runtime()
         from langchain_core.messages import AIMessage, HumanMessage
 
         from assistant.agent.context import AgentContext
@@ -239,7 +143,9 @@ class DeepAgentEntry:
         tool_backed: set[str] = set()
         announced_tools: set[str] = set()
 
-        async with runtime.run_scope(f"core-{uuid.uuid4().hex[:8]}") as budget:
+        async with runtime.run_scope(
+            f"core-{uuid.uuid4().hex[:8]}", conversation=conversation
+        ) as budget:
             async for event in runtime.agent.astream(
                 {"messages": [HumanMessage(text)]},
                 {"configurable": {"thread_id": thread}},
@@ -284,6 +190,7 @@ class DeepAgentEntry:
             "thread_id": thread,
             "response": response,
             "cua_actions_used": budget.used,
+            "engine": engine_identity(),
         }
 
 
@@ -301,10 +208,66 @@ def _message_text(message: Any) -> str:
     return "" if content is None else str(content)
 
 
+class LabeledAgentEntry:
+    """One executor, presented under another name.
+
+    Kept for hosts that present one executor twice; it is no longer how Velo
+    relates to the Deep Agent -- Velo is its own controller now.
+    """
+
+    def __init__(self, inner: Any, descriptor: AgentDescriptor) -> None:
+        self._inner = inner
+        self._descriptor = descriptor
+
+    @property
+    def descriptor(self) -> AgentDescriptor:
+        return self._descriptor
+
+    async def cancel(self) -> None:
+        await self._inner.cancel()
+
+    async def run(
+        self,
+        text: str,
+        *,
+        thread_id: str,
+        on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
+        cancel_check: Callable[[], bool],
+    ) -> dict[str, Any]:
+        return await self._inner.run(
+            text, thread_id=thread_id, on_event=on_event, cancel_check=cancel_check
+        )
+
+
 def build_default_registry(settings: Settings) -> AgentRegistry:
+    """Register the two names the UI offers, over one shared runtime.
+
+    ``velo`` is what a persisted selection and the transcript call the
+    assistant: the controller that resolves ordinary commands locally, asks
+    JEV when interpretation is genuinely needed, and hands unfamiliar
+    objectives to the Deep Agent. ``deep`` is the reasoning executor named
+    plainly.
+    """
     registry = AgentRegistry()
-    registry.register(VeloAgentEntry(settings))
-    registry.register(DeepAgentEntry(settings))
+    provider = RuntimeProvider(settings)
+    deep = DeepAgentEntry(settings, provider=provider)
+
+    def jev_factory() -> Any:
+        if not settings.velo_jev_enabled:
+            return None
+        from assistant.velo.jev import TypeSafeJevService
+
+        return TypeSafeJevService.from_settings(settings)
+
+    registry.register(deep)
+    registry.register(
+        VeloEntry(
+            settings,
+            get_runtime=provider.runtime,
+            deep_entry=deep,
+            jev_factory=jev_factory,
+        )
+    )
     return registry
 
 
@@ -315,3 +278,14 @@ def build_status_provider(
         return await system_status(settings)
 
     return status
+
+
+# Re-exported for the protocol contract the app loop and tests rely on.
+__all__ = [
+    "DeepAgentEntry",
+    "LabeledAgentEntry",
+    "RuntimeProvider",
+    "VeloEntry",
+    "build_default_registry",
+    "build_status_provider",
+]

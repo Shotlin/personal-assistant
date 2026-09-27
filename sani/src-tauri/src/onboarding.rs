@@ -16,7 +16,6 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::{app_state, permissions, sani_core, settings, setup, system_permissions};
 
 pub const OPENROUTER_KEY_SERVICE: &str = "sani-openrouter-key";
-pub const TYPESAFE_KEY_SERVICE: &str = "sani-typesafe-key";
 
 /// Non-secret distinction between what the user saved and what the current
 /// sidecar has actually accepted. Each WebView reads it from native state.
@@ -196,10 +195,7 @@ pub fn reset_onboarding(app: AppHandle) -> Result<(), String> {
 pub struct AiConfig {
     pub reasoning_provider: String,
     pub reasoning_model: String,
-    pub velo_provider: String,
-    pub velo_model: String,
     pub has_openrouter: bool,
-    pub has_typesafe: bool,
 }
 
 /// The complete non-secret settings source consumed by both settings WebViews.
@@ -216,10 +212,7 @@ pub struct FullSettingsSnapshot {
     pub agent_mode: String,
     pub reasoning_provider: String,
     pub reasoning_model: String,
-    pub velo_provider: String,
-    pub velo_model: String,
     pub openrouter_key: String,
-    pub typesafe_key: String,
     pub runtime_status: ApplyStatus,
     pub microphone_permission: String,
     pub accessibility_permission: String,
@@ -253,14 +246,7 @@ fn full_settings_snapshot(app: &AppHandle) -> FullSettingsSnapshot {
         agent_mode: s.agent_mode,
         reasoning_provider: s.reasoning_provider,
         reasoning_model: s.reasoning_model,
-        velo_provider: s.velo_provider,
-        velo_model: s.velo_model,
         openrouter_key: if settings::secret_read(OPENROUTER_KEY_SERVICE).is_some() {
-            "stored".into()
-        } else {
-            "absent".into()
-        },
-        typesafe_key: if settings::secret_read(TYPESAFE_KEY_SERVICE).is_some() {
             "stored".into()
         } else {
             "absent".into()
@@ -289,10 +275,7 @@ pub fn get_ai_config(app: AppHandle) -> AiConfig {
     AiConfig {
         reasoning_provider: s.reasoning_provider,
         reasoning_model: s.reasoning_model,
-        velo_provider: s.velo_provider,
-        velo_model: s.velo_model,
         has_openrouter: settings::secret_read(OPENROUTER_KEY_SERVICE).is_some(),
-        has_typesafe: settings::secret_read(TYPESAFE_KEY_SERVICE).is_some(),
     }
 }
 
@@ -300,8 +283,6 @@ pub fn get_ai_config(app: AppHandle) -> AiConfig {
 pub struct AiConfigPatch {
     pub reasoning_provider: Option<String>,
     pub reasoning_model: Option<String>,
-    pub velo_provider: Option<String>,
-    pub velo_model: Option<String>,
 }
 
 fn validate_ai_patch(patch: &AiConfigPatch) -> Result<(), String> {
@@ -310,24 +291,12 @@ fn validate_ai_patch(patch: &AiConfigPatch) -> Result<(), String> {
             return Err("Deep Agent provider is fixed to OpenRouter".into());
         }
     }
-    if let Some(provider) = &patch.velo_provider {
-        if provider != "openrouter" && provider != "typesafe" {
-            return Err("Velo provider must be OpenRouter or TypeSafe".into());
-        }
-    }
     if patch
         .reasoning_model
         .as_ref()
         .is_some_and(|m| m.trim().is_empty())
     {
         return Err("Deep Agent model ID cannot be empty".into());
-    }
-    if patch
-        .velo_model
-        .as_ref()
-        .is_some_and(|m| m.trim().is_empty())
-    {
-        return Err("Velo model ID cannot be empty".into());
     }
     Ok(())
 }
@@ -353,12 +322,6 @@ pub async fn apply_ai_settings(
         }
         if let Some(v) = patch.reasoning_model {
             s.reasoning_model = v;
-        }
-        if let Some(v) = patch.velo_provider {
-            s.velo_provider = v;
-        }
-        if let Some(v) = patch.velo_model {
-            s.velo_model = v;
         }
         settings::save(&app, &s)?;
     }
@@ -389,7 +352,6 @@ pub async fn save_ai_config(app: AppHandle, patch: AiConfigPatch) -> Result<AiCo
 pub struct StoreResult {
     pub stored: bool,
     pub has_openrouter: bool,
-    pub has_typesafe: bool,
     pub runtime_status: ApplyStatus,
 }
 
@@ -431,7 +393,6 @@ pub async fn store_provider_key(
     Ok(StoreResult {
         stored,
         has_openrouter: settings::secret_read(OPENROUTER_KEY_SERVICE).is_some(),
-        has_typesafe: settings::secret_read(TYPESAFE_KEY_SERVICE).is_some(),
         runtime_status: apply_status(&app),
     })
 }
@@ -439,7 +400,6 @@ pub async fn store_provider_key(
 fn provider_service(provider: &str) -> Result<&'static str, String> {
     match provider {
         "openrouter" => Ok(OPENROUTER_KEY_SERVICE),
-        "typesafe" => Ok(TYPESAFE_KEY_SERVICE),
         other => Err(format!("unknown provider '{other}'")),
     }
 }
@@ -464,7 +424,6 @@ pub async fn validate_provider_key(provider: String, key: String) -> KeyStatus {
     }
     match provider.as_str() {
         "openrouter" => check_openrouter(&key).await,
-        "typesafe" => check_typesafe(&key).await,
         _ => KeyStatus::Invalid,
     }
 }
@@ -513,25 +472,6 @@ async fn check_openrouter(key: &str) -> KeyStatus {
                 KeyStatus::Invalid
             } else {
                 // An arbitrary HTTP response is not authentication evidence.
-                KeyStatus::Offline
-            }
-        }
-        Err(_) => KeyStatus::Offline,
-    }
-}
-
-async fn check_typesafe(key: &str) -> KeyStatus {
-    let url = std::env::var("VELO_TYPESAFE_BASE_URL")
-        .unwrap_or_else(|_| "https://api.typesafe.ai".to_string());
-    let url = format!("{}/v1/models", url.trim_end_matches('/'));
-    match client().get(&url).bearer_auth(key).send().await {
-        Ok(resp) => {
-            let status = resp.status().as_u16();
-            if status == 401 || status == 403 {
-                KeyStatus::Invalid
-            } else if (200..300).contains(&status) {
-                KeyStatus::Connected { label: None }
-            } else {
                 KeyStatus::Offline
             }
         }
@@ -597,32 +537,178 @@ pub fn permission_snapshot() -> PermissionSnapshot {
     }
 }
 
-/// One truthful computer-control report: current OS permission queries plus a
-/// live `system.status` request. No renderer infers readiness from a stale
-/// toggle or fabricates an available runtime.
-#[derive(Serialize)]
+/// One truthful computer-control report.
+///
+/// This page used to show Sani's macOS switches and the driver's as two separate
+/// pairs, and that pairing is what made the app look like it was lying. The
+/// driver is a child in Sani's own responsibility chain, so `check_permissions`
+/// reports *Sani's* grants -- the driver has no switches of its own to be
+/// checked. Two rows for one permission could therefore disagree, and did.
+///
+/// So the macOS truth is one pair of rows, and the driver reports what it
+/// actually is: a process, a mode, an endpoint, a session count, and one honest
+/// word for what its probe answered. `status` and `runtime` are both derived
+/// from the same `ControlState`, so they cannot contradict each other.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct ComputerControlSnapshot {
     pub status: String,
     pub message: String,
     pub accessibility: String,
     pub screen_recording: String,
-    /// What the driver itself reported about its authority. Under embedded host
-    /// attribution these are Sani's own grants seen from the other side, so they
-    /// agree with the two fields above whenever the daemon could answer -- and
-    /// when it could not, the value says why instead of implying a denial.
-    pub driver_accessibility: String,
-    pub driver_screen_recording: String,
-    /// The daemon's own words when it could not be asked. Empty when answered.
+    /// Whose grants these are, and why the same two values cover the driver.
+    pub permission_authority: String,
+    pub driver_running: bool,
+    pub driver_pid: Option<u32>,
+    pub driver_endpoint: String,
+    pub driver_mode: String,
+    /// granted | denied | policy_locked | unanswered | unreachable | unrecognized
+    pub driver_probe: String,
+    /// The driver's own words, whenever the probe could not answer.
     pub driver_detail: String,
-    /// `bounded` or `standard`: which authority refuses an action today.
-    pub permission_mode: String,
+    /// Live driver sessions. `None` is "could not ask", never a quiet zero.
+    pub active_sessions: Option<usize>,
     pub restart_required: bool,
     pub runtime: String,
-    /// Which bundle macOS is being asked about. A rebuild changes this app's
-    /// code identity, and a checked row in System Settings can belong to a copy
-    /// that no longer exists -- naming the running bundle makes that visible
-    /// instead of mysterious.
     pub app_path: String,
+}
+
+const PERMISSION_AUTHORITY: &str =
+    "Sani.app -- the embedded driver runs inside Sani’s own responsibility chain, \
+     so it shares these two grants and has no switches of its own";
+
+/// The closed set of states this page may report.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlState {
+    Ready,
+    RestartRequired,
+    PermissionRequired,
+    /// No packaged driver, or none was ever started in this process.
+    DriverMissing,
+    /// Sani's own daemon is not accepting connections on its endpoint.
+    DriverStopped,
+    /// The daemon is running in a mode Sani did not launch it in.
+    WrongMode,
+    /// The driver answered, and the answer was a denial.
+    NotAuthorized,
+    /// The bounded capability policy idled out and is refusing every call.
+    PolicyLocked,
+    /// The sidecar itself could not be reached.
+    SidecarUnavailable,
+}
+
+/// Decide the state from what was observed. Ordering is the whole point: a
+/// granted Mac with a live daemon can only read `not_authorized` when the driver
+/// itself answered a denial, never because a probe timed out.
+fn control_state_of(
+    grants_granted: bool,
+    restart_required: bool,
+    driver_running: bool,
+    sidecar_reachable: bool,
+    found: bool,
+    posture_ok: bool,
+    probe: &sani_core::DriverProbe,
+) -> ControlState {
+    if restart_required {
+        return ControlState::RestartRequired;
+    }
+    if !grants_granted {
+        return ControlState::PermissionRequired;
+    }
+    if !sidecar_reachable {
+        return ControlState::SidecarUnavailable;
+    }
+    if !found {
+        return ControlState::DriverMissing;
+    }
+    if !posture_ok {
+        return ControlState::WrongMode;
+    }
+    if !driver_running {
+        return ControlState::DriverStopped;
+    }
+    match probe {
+        sani_core::DriverProbe::Answered {
+            accessibility,
+            screen_recording,
+        } => {
+            if *accessibility && *screen_recording {
+                ControlState::Ready
+            } else {
+                ControlState::NotAuthorized
+            }
+        }
+        sani_core::DriverProbe::PolicyLocked { .. } => ControlState::PolicyLocked,
+        // Embedded mode attributes the daemon to its host, and Sani has just read
+        // its own grants as granted. An unanswered probe is a missing answer, not
+        // a denial -- and the driver cannot be granted while Sani is not.
+        _ => ControlState::Ready,
+    }
+}
+
+fn status_word(state: ControlState) -> &'static str {
+    match state {
+        ControlState::Ready => "ready",
+        ControlState::RestartRequired => "restart_required",
+        ControlState::PermissionRequired => "permission_required",
+        ControlState::DriverMissing => "driver_missing",
+        ControlState::DriverStopped => "driver_stopped",
+        ControlState::WrongMode => "wrong_mode",
+        ControlState::NotAuthorized => "driver_permission_required",
+        ControlState::PolicyLocked => "policy_locked",
+        ControlState::SidecarUnavailable => "unavailable",
+    }
+}
+
+fn runtime_word(state: ControlState) -> &'static str {
+    match state {
+        ControlState::Ready => "connected",
+        ControlState::RestartRequired => "restart_required",
+        ControlState::PermissionRequired => "waiting_for_permission",
+        ControlState::DriverMissing => "missing",
+        ControlState::DriverStopped => "disconnected",
+        ControlState::WrongMode => "wrong_mode",
+        ControlState::NotAuthorized => "not_authorized",
+        ControlState::PolicyLocked => "policy_locked",
+        ControlState::SidecarUnavailable => "unavailable",
+    }
+}
+
+fn control_message(state: ControlState) -> &'static str {
+    match state {
+        ControlState::Ready => "Computer control is ready.",
+        ControlState::RestartRequired => {
+            "Screen Recording was granted; Sani must restart before computer control can use it."
+        }
+        ControlState::PermissionRequired => {
+            "Grant Accessibility and Screen Recording to Sani to enable computer control. \
+             The driver shares them, so there is nothing else to switch on."
+        }
+        ControlState::DriverMissing => {
+            "Sani’s packaged computer-control driver is missing from this install."
+        }
+        ControlState::DriverStopped => {
+            "Sani’s private driver is not accepting connections. The watchdog reclaims \
+             its endpoint and starts a replacement; restart Sani if this persists."
+        }
+        ControlState::WrongMode => {
+            "The running driver is not in the mode Sani launched it in, so its authority is \
+             unknown. Sani will replace it with a correctly started one."
+        }
+        ControlState::NotAuthorized => {
+            "The driver answered that macOS will not let it act, while Sani reads itself as \
+             granted. That means an older driver generation is answering -- Sani reclaims the \
+             endpoint and starts its own."
+        }
+        ControlState::PolicyLocked => {
+            "The driver’s capability policy idled out and refuses every action, including \
+             its own permission probe. This is not a revoked macOS permission; Sani restarts \
+             the driver to re-approve it."
+        }
+        ControlState::SidecarUnavailable => {
+            "Sani’s assistant runtime could not be reached, so computer control cannot be \
+             reported. Check the runtime status below."
+        }
+    }
 }
 
 /// The `.app` bundle this process was launched from, or the executable path.
@@ -637,173 +723,84 @@ fn running_bundle_path() -> String {
         .unwrap_or_else(|| String::from("unknown"))
 }
 
-/// Is the running daemon allowed to move the pointer?
-///
-/// Embedded mode attributes the daemon to its host -- `check_permissions`
-/// reports the host app's TCC grants and states that no separate driver grant
-/// exists -- so Sani's own live read covers the daemon too. That is why an
-/// unanswered probe is not a denial: it used to collapse into `not_authorized`,
-/// which is how a fully granted Mac looked broken. A probe that answers `false`
-/// is still a real contradiction and is reported as one, because it means the
-/// daemon answering is not the child Sani owns.
-fn driver_readiness(
-    payload: &Value,
-    probe: &sani_core::DriverProbe,
-    host_granted: bool,
-) -> &'static str {
-    let driver = payload.get("driver");
-    if driver
-        .and_then(|value| value.get("found"))
-        .and_then(Value::as_bool)
-        != Some(true)
-    {
-        return "missing";
-    }
-    if driver
-        .and_then(|value| value.get("posture_ok"))
-        .and_then(Value::as_bool)
-        != Some(true)
-    {
-        return "policy_invalid";
-    }
-    match probe {
-        sani_core::DriverProbe::Answered {
-            accessibility,
-            screen_recording,
-        } => {
-            if *accessibility && *screen_recording {
-                "ready"
-            } else {
-                "not_authorized"
-            }
-        }
-        sani_core::DriverProbe::PolicyLocked { .. } => "policy_locked",
-        _ if host_granted => "ready",
-        _ => "unverified",
-    }
-}
-
-fn probe_detail(probe: &sani_core::DriverProbe) -> String {
-    match probe {
-        sani_core::DriverProbe::PolicyLocked { detail }
-        | sani_core::DriverProbe::Unreachable { detail }
-        | sani_core::DriverProbe::Malformed { detail } => detail.clone(),
-        sani_core::DriverProbe::Timeout => {
-            "the driver did not answer the read-only permission probe in time".to_string()
-        }
-        _ => String::new(),
-    }
-}
-
 #[tauri::command]
 pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapshot {
     let accessibility_state = system_permissions::accessibility();
     let screen_recording_state = system_permissions::screen_recording();
-    let accessibility = accessibility_state.as_str().to_string();
-    let screen_recording = screen_recording_state.as_str().to_string();
-    let host_granted = accessibility_state.is_granted() && screen_recording_state.is_granted();
+    let grants_granted = accessibility_state.is_granted() && screen_recording_state.is_granted();
     let restart_required = system_permissions::screen_recording_restart_required();
-    // A crashed embedded driver can leave its socket pathname behind.  Repair
-    // only that private child before asking the core for its live report; this
-    // does not restart a conversation or alter any user setting.
-    let driver_recovery = sani_core::recover_embedded_cua_driver(&app).await;
+    // A crashed or orphaned driver leaves Sani's private endpoint behind, and the
+    // driver refuses to bind over it; this is the repair, not a poll.
+    let recovery = sani_core::recover_embedded_cua_driver(&app).await;
     let runtime = sani_core::core_status(app.clone()).await;
     let probe = sani_core::driver_probe(app.clone()).await;
-    let driver = if driver_recovery.is_err() {
-        "unavailable"
-    } else {
-        runtime
-            .as_ref()
-            .ok()
-            .map(|payload| driver_readiness(payload, &probe, host_granted))
-            .unwrap_or("unavailable")
+    let sessions = sani_core::driver_session_count(app.clone()).await;
+    // What the daemon says it is running, falling back to what Sani launched when
+    // the daemon cannot be asked at all.
+    let observed_mode = sani_core::driver_mode(app.clone()).await;
+    let (driver_pid, driver_endpoint, driver_running) = match sani_core::driver_generation(&app) {
+        Some((pid, endpoint, running)) => (pid, endpoint, running),
+        None => (None, String::new(), false),
     };
-    let (status, message) = if restart_required {
-        (
-            "restart_required",
-            "Screen Recording was granted; restart Sani before computer control can use it.",
-        )
-    } else if !host_granted {
-        (
-            "permission_required",
-            "Grant Accessibility and Screen Recording to enable computer control.",
-        )
-    } else if driver == "not_authorized" {
-        (
-            "driver_permission_required",
-            "The process that moves the pointer reports a denied macOS permission while Sani itself is granted. Sani's driver runs as its own child and shares Sani's grants, so this means an older daemon generation is still answering: Sani will reclaim the endpoint, restart Sani if it persists.",
-        )
-    } else if driver == "policy_locked" {
-        (
-            "policy_locked",
-            "The driver's capability policy idled out and is refusing every action, including its own permission probe. This is not a revoked macOS permission. Sani restarts the driver to re-approve it.",
-        )
-    } else if driver == "unverified" {
-        (
-            "unverified",
-            "Sani is granted, but the driver could not be asked and Sani's own read is all this report can stand behind.",
-        )
-    } else if driver == "missing" {
-        (
-            "unavailable",
-            "Sani’s packaged computer-control driver is missing or stopped.",
-        )
-    } else if driver == "policy_invalid" {
-        (
-            "unavailable",
-            "Sani’s computer-control driver is not running with the approved capability policy.",
-        )
-    } else if driver == "unavailable" {
-        (
-            "unavailable",
-            "Sani’s computer-control driver is not accepting live connections. Sani tried one private-driver recovery; restart Sani if it remains unavailable.",
-        )
+    let sidecar_reachable = runtime.is_ok();
+    let payload = runtime.as_ref().ok();
+    let found = payload
+        .and_then(|value| value.get("driver"))
+        .and_then(|driver| driver.get("found"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let posture_ok = payload
+        .and_then(|value| value.get("driver"))
+        .and_then(|driver| driver.get("posture_ok"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let state = if recovery.is_err() && !driver_running {
+        ControlState::DriverStopped
     } else {
-        ("ready", "Computer control is ready.")
-    };
-    let driver_fields = match &probe {
-        sani_core::DriverProbe::Answered {
-            accessibility,
-            screen_recording,
-        } => (
-            permission_label(Some(*accessibility)),
-            permission_label(Some(*screen_recording)),
-        ),
-        other => (other.label().to_string(), other.label().to_string()),
+        control_state_of(
+            grants_granted,
+            restart_required,
+            driver_running,
+            sidecar_reachable,
+            found,
+            posture_ok,
+            &probe,
+        )
     };
     ComputerControlSnapshot {
-        status: status.into(),
-        message: message.into(),
-        accessibility,
-        screen_recording,
-        driver_accessibility: driver_fields.0,
-        driver_screen_recording: driver_fields.1,
-        driver_detail: probe_detail(&probe),
-        permission_mode: sani_core::staged_permission_mode(&app).as_str().to_string(),
+        status: status_word(state).to_string(),
+        message: control_message(state).to_string(),
+        accessibility: accessibility_state.as_str().to_string(),
+        screen_recording: screen_recording_state.as_str().to_string(),
+        permission_authority: PERMISSION_AUTHORITY.to_string(),
+        driver_running,
+        driver_pid,
+        driver_endpoint,
+        driver_mode: observed_mode
+            .unwrap_or_else(|| sani_core::staged_permission_mode(&app).as_str().to_string()),
+        driver_probe: probe.label().to_string(),
+        driver_detail: match &probe {
+            sani_core::DriverProbe::Answered { .. } => String::new(),
+            sani_core::DriverProbe::PolicyLocked { detail }
+            | sani_core::DriverProbe::Unreachable { detail }
+            | sani_core::DriverProbe::Malformed { detail } => detail.clone(),
+            sani_core::DriverProbe::Timeout => {
+                "the driver did not answer the read-only probe within its budget".to_string()
+            }
+        },
+        active_sessions: sessions,
         restart_required,
-        runtime: driver.into(),
+        runtime: runtime_word(state).to_string(),
         app_path: running_bundle_path(),
-    }
-}
-
-/// Never guesses: an unanswered probe is reported as unknown, not as granted.
-fn permission_label(granted: Option<bool>) -> String {
-    match granted {
-        Some(true) => "granted".to_string(),
-        Some(false) => "denied".to_string(),
-        None => "unknown".to_string(),
     }
 }
 
 #[cfg(test)]
 mod control_tests {
-    use super::driver_readiness;
+    use super::{
+        control_state_of, runtime_word, status_word, ControlState,
+    };
     use crate::sani_core::DriverProbe;
-    use serde_json::json;
-
-    fn live() -> serde_json::Value {
-        json!({"driver":{"found":true,"posture_ok":true}})
-    }
 
     fn answered(a: bool, s: bool) -> DriverProbe {
         DriverProbe::Answered {
@@ -812,70 +809,123 @@ mod control_tests {
         }
     }
 
-    #[test]
-    fn transport_success_does_not_make_a_missing_driver_ready() {
-        let granted = answered(true, true);
-        assert_eq!(
-            driver_readiness(
-                &json!({"driver":{"found":false,"posture_ok":false}}),
-                &granted,
-                true
-            ),
-            "missing"
-        );
-        assert_eq!(
-            driver_readiness(
-                &json!({"driver":{"found":true,"posture_ok":false}}),
-                &granted,
-                true
-            ),
-            "policy_invalid"
-        );
-        assert_eq!(driver_readiness(&live(), &granted, true), "ready");
+    /// Grants in, daemon up and running, sidecar reachable, correct mode.
+    fn healthy(probe: DriverProbe) -> ControlState {
+        control_state_of(true, false, true, true, true, true, &probe)
     }
 
     #[test]
-    fn a_driver_that_answers_denied_is_not_ready_even_when_sani_is_granted() {
+    fn a_granted_mac_with_a_live_daemon_is_never_reported_as_unauthorized() {
+        // The exact contradiction the old page could show: System Settings on,
+        // Sani saying `not_authorized` forever. An unanswered probe, a timeout or
+        // a malformed answer may not produce it, because embedded mode attributes
+        // the daemon to this host and this host's grants were just read.
+        for probe in [
+            DriverProbe::Timeout,
+            DriverProbe::Unreachable {
+                detail: "socket closed".into(),
+            },
+            DriverProbe::Malformed {
+                detail: "not json".into(),
+            },
+        ] {
+            assert_eq!(healthy(probe), ControlState::Ready);
+        }
         assert_eq!(
-            driver_readiness(&live(), &answered(false, true), true),
-            "not_authorized"
-        );
-        assert_eq!(
-            driver_readiness(&live(), &answered(true, false), true),
-            "not_authorized"
+            healthy(answered(true, true)),
+            ControlState::Ready,
+            "explicitly granted"
         );
     }
 
     #[test]
-    fn a_policy_lockout_is_reported_as_itself_not_as_a_revoked_permission() {
-        let locked = DriverProbe::PolicyLocked {
+    fn only_a_denial_the_driver_itself_answered_reads_as_not_authorized() {
+        assert_eq!(
+            healthy(answered(false, true)),
+            ControlState::NotAuthorized
+        );
+        assert_eq!(
+            healthy(answered(true, false)),
+            ControlState::NotAuthorized
+        );
+    }
+
+    #[test]
+    fn a_policy_lockout_is_its_own_state_never_a_permission_one() {
+        let locked = healthy(DriverProbe::PolicyLocked {
             detail: "Policy loading error: capability manifest idle timeout exceeded".into(),
-        };
-        assert_eq!(driver_readiness(&live(), &locked, true), "policy_locked");
+        });
+        assert_eq!(locked, ControlState::PolicyLocked);
+        assert_eq!(status_word(locked), "policy_locked");
+        assert_ne!(runtime_word(locked), runtime_word(ControlState::NotAuthorized));
     }
 
     #[test]
-    fn an_unanswered_probe_on_a_granted_host_still_runs_ready_by_host_attribution() {
-        // Embedded attribution makes Sani's own read authoritative for the
-        // daemon, so a timeout is not a denial -- but the probe label still says
-        // "unanswered" rather than "granted", so nothing is claimed silently.
-        assert_eq!(
-            driver_readiness(&live(), &DriverProbe::Timeout, true),
-            "ready"
+    fn each_state_has_one_distinct_pair_of_words() {
+        let states = [
+            ControlState::Ready,
+            ControlState::RestartRequired,
+            ControlState::PermissionRequired,
+            ControlState::DriverMissing,
+            ControlState::DriverStopped,
+            ControlState::WrongMode,
+            ControlState::NotAuthorized,
+            ControlState::PolicyLocked,
+            ControlState::SidecarUnavailable,
+        ];
+        for state in states {
+            assert!(!status_word(state).is_empty());
+            assert!(!runtime_word(state).is_empty());
+            assert_eq!(
+                states.iter().filter(|other| runtime_word(**other) == runtime_word(state)).count(),
+                1,
+                "{state:?} shares its runtime word"
+            );
+        }
+    }
+
+    #[test]
+    fn waiting_for_a_grant_is_never_called_a_denial() {
+        // "Sani says denied while System Settings says on" was the reported
+        // symptom. A grant that has not been given is a different fact from a
+        // driver answering that macOS refused it, and the two words differ.
+        assert_ne!(
+            runtime_word(ControlState::PermissionRequired),
+            runtime_word(ControlState::NotAuthorized)
         );
-        let unreachable = DriverProbe::Unreachable { detail: "x".into() };
-        assert_eq!(driver_readiness(&live(), &unreachable, true), "ready");
+        assert_eq!(status_word(ControlState::PermissionRequired), "permission_required");
     }
 
     #[test]
-    fn an_unanswered_probe_without_a_host_grant_is_never_called_ready() {
+    fn priority_runs_from_the_outermost_cause_inward() {
+        // A restart is required even if everything else looks fine, and a missing
+        // macOS grant outranks a daemon that has not started yet.
         assert_eq!(
-            driver_readiness(&live(), &DriverProbe::Timeout, false),
-            "unverified"
+            control_state_of(true, true, true, true, true, true, &answered(true, true)),
+            ControlState::RestartRequired
+        );
+        assert_eq!(
+            control_state_of(false, false, false, false, false, false, &DriverProbe::Timeout),
+            ControlState::PermissionRequired
+        );
+        assert_eq!(
+            control_state_of(true, false, true, false, true, true, &answered(true, true)),
+            ControlState::SidecarUnavailable
+        );
+        assert_eq!(
+            control_state_of(true, false, true, true, false, false, &DriverProbe::Timeout),
+            ControlState::DriverMissing
+        );
+        assert_eq!(
+            control_state_of(true, false, true, true, true, false, &DriverProbe::Timeout),
+            ControlState::WrongMode
+        );
+        assert_eq!(
+            control_state_of(true, false, false, true, true, true, &DriverProbe::Timeout),
+            ControlState::DriverStopped
         );
     }
 }
-
 
 #[tauri::command]
 pub fn open_permission_settings(pane: String) {
@@ -962,8 +1012,7 @@ pub fn final_health(app: AppHandle) -> FinalHealth {
     let mic = permissions::status().is_granted();
     let access = system_permissions::accessibility().is_granted()
         || system_permissions::screen_recording().is_granted();
-    let creds = settings::secret_read(OPENROUTER_KEY_SERVICE).is_some()
-        || settings::secret_read(TYPESAFE_KEY_SERVICE).is_some();
+    let creds = settings::secret_read(OPENROUTER_KEY_SERVICE).is_some();
 
     let checks = vec![
         HealthCheck {

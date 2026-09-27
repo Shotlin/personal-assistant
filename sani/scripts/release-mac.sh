@@ -37,5 +37,16 @@ def digest(p):
     return digest.hexdigest()
 pathlib.Path(out).write_text(json.dumps({"source_revision": revision, "architecture": arch, "protocol": 1, "components": {"sani-stt": digest(stt), "sani-core": digest(core), "cua-driver": digest(cua)}}, indent=2) + "\n")
 PY
+# The frozen sidecar reports its own provenance from this file (assistant.core.
+# identity): every run result names the revision that produced it. The runtime
+# directory is bundled wholesale, so the file ships inside the app.
+python3 - "$HERE/src-tauri/binaries/sani-core-runtime/build-info.json" "$REVISION" <<'PY'
+import json, pathlib, sys, datetime
+out, revision = sys.argv[1:]
+pathlib.Path(out).write_text(json.dumps({
+    "revision": revision,
+    "built_at": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+}, indent=2) + "\n")
+PY
 (cd "$HERE" && npm run tauri -- build)
 echo "release bundle: $HERE/src-tauri/target/release/bundle/macos/Sani.app"

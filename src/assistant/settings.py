@@ -10,7 +10,6 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SUPPORTED_MODEL_PROVIDERS = {"openrouter", "openai", "generic_openai_compatible"}
-SUPPORTED_VELO_PROVIDERS = {"openrouter", "typesafe"}
 SUPPORTED_APP_ENVS = {"development", "production"}
 SUPPORTED_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
@@ -95,30 +94,21 @@ class Settings(BaseSettings):
     # decision -> local recipe). Feature flag for staged rollout and
     # rollback (master plan 15.2/WP8): false sends every non-exact turn to
     # the general agent exactly as before WP6.
-    compact_planner_enabled: bool = False
 
-    # Velo (standalone quick-control agent: JEV decision engine + CUA driver).
-    # Opt-in flag: the gateway runtime never consults these; only
-    # scripts/run_velo.py does, and it fails closed when disabled.
-    velo_enabled: bool = False
-    # This is deliberately independent from Deep Agent's MODEL_PROVIDER.
-    # Velo must only ever use the route explicitly selected by the desktop
-    # application; it may not infer a route from whichever credential exists.
+    # Velo controller (master plan sections 4-5): JEV is the structured
+    # decision service for interpretation; provider code stays behind one
+    # interface and fails closed -- an unavailable JEV is reported, never
+    # silently substituted with another model.
+    velo_jev_enabled: bool = False
     velo_provider: str = "openrouter"
     typesafe_api_key: str = ""
     velo_jev_model: str = "jev-latest"
-    # Optional override for the System One API root. Empty = the official
-    # https://api.typesafe.ai. Useful only for a proxy/gateway that speaks
-    # the native System One contract (Noul/Choice/Score) -- OpenRouter's
-    # OpenAI-compatible chat API cannot serve JEV decisions.
+    # Only a System One-compatible root (Noul/Choice over /v1/systemone).
     velo_typesafe_base_url: str = ""
-    velo_max_steps: int = 20
-    velo_max_runtime_seconds: int = 120
-    velo_recent_history_steps: int = 5
-    # Tunable via env but not advertised in .env.example; tune only from
-    # real testing (Velo spec section 14).
-    velo_max_same_action_repeats: int = 2
-    velo_max_consecutive_failed_actions: int = 2
+    velo_max_decision_seconds: int = 30
+    # An ordinary local command is one action, not a 13-minute campaign:
+    # Route A/B tasks carry their own, much shorter deadline.
+    velo_command_deadline_seconds: int = 90
 
     @property
     def is_production(self) -> bool:
@@ -167,47 +157,32 @@ class Settings(BaseSettings):
         if self.status_quiet_seconds <= 0:
             errors.append(f"STATUS_QUIET_SECONDS must be > 0, got {self.status_quiet_seconds}")
 
-        # Velo limits are validated only when Velo is enabled: a flag-off
-        # gateway never fails because of Velo-specific values. One external
-        # credential rule (Sani master doc): OPENROUTER_API_KEY alone drives
-        # the Deep Agent and JEV; a direct TYPESAFE_API_KEY also works.
-        if self.velo_enabled:
-            if self.velo_provider not in SUPPORTED_VELO_PROVIDERS:
+        if self.velo_jev_enabled:
+            if self.velo_provider not in {"openrouter", "typesafe"}:
                 errors.append(
-                    "VELO_PROVIDER must be one of "
-                    f"{sorted(SUPPORTED_VELO_PROVIDERS)}, got {self.velo_provider!r}"
+                    f"VELO_PROVIDER must be 'openrouter' or 'typesafe', "
+                    f"got {self.velo_provider!r}"
                 )
             elif self.velo_provider == "openrouter" and not self.openrouter_api_key:
                 errors.append("VELO_PROVIDER=openrouter requires OPENROUTER_API_KEY")
             elif self.velo_provider == "typesafe" and not self.typesafe_api_key:
                 errors.append("VELO_PROVIDER=typesafe requires TYPESAFE_API_KEY")
-            if self.velo_max_steps <= 0:
-                errors.append(f"VELO_MAX_STEPS must be > 0, got {self.velo_max_steps}")
             if self.velo_typesafe_base_url and not self.velo_typesafe_base_url.startswith(
-                ("http://", "https://")
+                "https://"
             ):
                 errors.append(
-                    "VELO_TYPESAFE_BASE_URL must be an http(s) URL "
-                    f"(got {self.velo_typesafe_base_url!r})"
+                    f"VELO_TYPESAFE_BASE_URL must be an https:// URL (got "
+                    f"{self.velo_typesafe_base_url!r})"
                 )
-            if self.velo_max_runtime_seconds <= 0:
+            if self.velo_max_decision_seconds <= 0:
                 errors.append(
-                    f"VELO_MAX_RUNTIME_SECONDS must be > 0, got {self.velo_max_runtime_seconds}"
+                    f"VELO_MAX_DECISION_SECONDS must be > 0, got {self.velo_max_decision_seconds}"
                 )
-            if self.velo_recent_history_steps < 1:
-                errors.append(
-                    f"VELO_RECENT_HISTORY_STEPS must be >= 1, got {self.velo_recent_history_steps}"
-                )
-            if self.velo_max_same_action_repeats < 1:
-                errors.append(
-                    f"VELO_MAX_SAME_ACTION_REPEATS must be >= 1, "
-                    f"got {self.velo_max_same_action_repeats}"
-                )
-            if self.velo_max_consecutive_failed_actions < 1:
-                errors.append(
-                    f"VELO_MAX_CONSECUTIVE_FAILED_ACTIONS must be >= 1, "
-                    f"got {self.velo_max_consecutive_failed_actions}"
-                )
+        if self.velo_command_deadline_seconds <= 0:
+            errors.append(
+                f"VELO_COMMAND_DEADLINE_SECONDS must be > 0, got "
+                f"{self.velo_command_deadline_seconds}"
+            )
 
         if self.model_provider not in SUPPORTED_MODEL_PROVIDERS:
             errors.append(
@@ -239,7 +214,9 @@ class Settings(BaseSettings):
                     f"(got {self.cua_permission_mode!r}); unrestricted mode is not allowed"
                 )
             if self.cua_permission_mode == "bounded" and not self.cua_capability_manifest_path:
-                errors.append("CUA_ENABLED=true with bounded mode requires CUA_CAPABILITY_MANIFEST_PATH")
+                errors.append(
+                    "CUA_ENABLED=true with bounded mode requires CUA_CAPABILITY_MANIFEST_PATH"
+                )
             if self.cua_capability_manifest_path and not (
                 self.cua_capability_manifest_path.startswith("/")
             ):

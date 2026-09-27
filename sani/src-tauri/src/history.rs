@@ -276,14 +276,19 @@ impl History {
             .map_err(|e| e.to_string())
     }
 
-    pub fn append_activity(&self, record: &ActivityRecord) -> Result<(), String> {
+    pub fn append_activity(&self, record: &ActivityRecord) -> Result<i64, String> {
+        // The sequence is assigned HERE, from the table's own maximum: a
+        // process-local counter restarts at 1 on every app restart and then
+        // collides with persisted rows (their PRIMARY KEY rejects the
+        // insert), silently dropping all activity from that session. MAX+1
+        // under the connection mutex is monotonic across restarts.
         let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO run_activity (sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![record.sequence, record.conversation_id, record.run_id, record.agent_id, record.event_type, record.timestamp, record.label, record.status],
+             VALUES ((SELECT COALESCE(MAX(sequence), 0) + 1 FROM run_activity), ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![record.conversation_id, record.run_id, record.agent_id, record.event_type, record.timestamp, record.label, record.status],
         ).map_err(|e| e.to_string())?;
-        Ok(())
+        Ok(conn.last_insert_rowid())
     }
 
     pub fn activity(&self, conversation_id: &str) -> Result<Vec<ActivityRecord>, String> {

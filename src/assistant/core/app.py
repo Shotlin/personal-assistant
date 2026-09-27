@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from assistant.core.identity import engine_identity
 from assistant.core.protocol import (
     AGENT_CANCELLED,
     AGENT_COMPLETED,
@@ -185,7 +186,12 @@ class SaniCoreApp:
         await session.send(response_from_request(request, result).to_frame())
 
     async def _handle_agents_list(self, session: _Session, request: Request) -> None:
-        result = {"agents": [descriptor.as_dict() for descriptor in self._registry.list()]}
+        result = {
+            "agents": [descriptor.as_dict() for descriptor in self._registry.list()],
+            # Build provenance, straight from the running process: which code
+            # produced every answer this session serves (master plan stage 1).
+            "engine": engine_identity(),
+        }
         await session.send(response_from_request(request, result).to_frame())
 
     async def _handle_run_start(self, session: _Session, request: Request) -> None:

@@ -57,6 +57,11 @@ const DRIVER_PERMISSION_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long a foreign daemon is given to shut down politely before Sani
 /// signals it directly.
 const DRIVER_STOP_TIMEOUT: Duration = Duration::from_secs(4);
+/// Upper bound on waiting for Sani's **own** daemon to disappear once it has
+/// been signalled, at quit and at restart. That signal is not polite, so this
+/// only covers the kernel reaping the process; a daemon that somehow ignores it
+/// must still not be able to hang quitting.
+const DRIVER_STOP_WAIT: Duration = Duration::from_secs(2);
 /// A driver respawn storm is a symptom, never a recovery: two bounded restarts
 /// inside this window means the fault is not a stale child, and the second one
 /// is refused so the failing reason reaches the UI instead of a herd of
@@ -446,25 +451,12 @@ impl SaniCoreConfig {
         if !settings.reasoning_model.trim().is_empty() {
             env.push(("MODEL_NAME".to_string(), settings.reasoning_model.clone()));
         }
-        // Enabled deliberately: the sidecar then validates the JEV credential
-        // at startup instead of failing on the first Velo turn.
-        env.push(("VELO_ENABLED".to_string(), "true".to_string()));
-        env.push(("VELO_PROVIDER".to_string(), settings.velo_provider.clone()));
-        env.push(("VELO_JEV_MODEL".to_string(), settings.velo_model.clone()));
-
         // Credentials go to the child's environment only -- never argv, never
-        // the log. Only the variable names are ever written out.
-        for (service, variable) in [
-            (
-                crate::onboarding::OPENROUTER_KEY_SERVICE,
-                "OPENROUTER_API_KEY",
-            ),
-            (crate::onboarding::TYPESAFE_KEY_SERVICE, "TYPESAFE_API_KEY"),
-        ] {
-            if let Some(key) = crate::settings::secret_read(service) {
-                if !key.trim().is_empty() {
-                    env.push((variable.to_string(), key));
-                }
+        // the log. Only the variable name is ever written out.
+        let openrouter = crate::settings::secret_read(crate::onboarding::OPENROUTER_KEY_SERVICE);
+        if let Some(key) = openrouter {
+            if !key.trim().is_empty() {
+                env.push(("OPENROUTER_API_KEY".to_string(), key));
             }
         }
         log::info!(
@@ -584,6 +576,137 @@ impl DriverProbe {
     }
 }
 
+/// Frontend poke saying "the computer-control picture may have changed".
+///
+/// Deliberately a poke, not a payload: building the full status costs three
+/// driver calls, and the page opens rarely. The watchdog already knows the cheap
+/// signals, so it announces a change and the renderer pulls the truth -- which
+/// is also what stops the Computer Control page from keeping a state it sampled
+/// before the driver came back.
+pub const COMPUTER_CONTROL: &str = "sani://computer-control";
+
+struct CliRun {
+    stdout: String,
+    stderr: String,
+    code: i32,
+}
+
+/// Why a read-only driver call produced nothing at all.
+#[derive(Debug, PartialEq, Eq)]
+enum CliFailure {
+    /// The bound expired. Distinct from a refusal: nothing was answered.
+    TimedOut,
+    /// The command could not be run -- no binary, or it died mid-call.
+    Failed(String),
+}
+
+/// One bounded, read-only call against Sani's own driver endpoint.
+fn run_driver_cli(command: &Path, args: &[&str], budget: Duration) -> Result<CliRun, CliFailure> {
+    let child = std::process::Command::new(command)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|err| CliFailure::Failed(format!("the driver command could not be run: {err}")))?;
+    match wait_with_timeout(child, budget) {
+        None => Err(CliFailure::TimedOut),
+        Some(Ok(output)) => Ok(CliRun {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            code: output.status.code().unwrap_or(-1),
+        }),
+        Some(Err(err)) => Err(CliFailure::Failed(format!(
+            "the driver command failed: {err}"
+        ))),
+    }
+}
+
+/// How many driver sessions are live right now.
+///
+/// `None` means the question could not be answered -- which is not the same fact
+/// as `Some(0)`, because the page must not report a quiet zero for a daemon it
+/// cannot reach.
+pub async fn driver_session_count(app: AppHandle) -> Option<usize> {
+    tokio::task::spawn_blocking(move || read_driver_session_count(&app))
+        .await
+        .ok()
+        .flatten()
+}
+
+fn read_driver_session_count(app: &AppHandle) -> Option<usize> {
+    let cua = SaniCoreConfig::resolve(app).ok()?.cua?;
+    let run = run_driver_cli(
+        &cua.command,
+        &["sessions", "--json", "--socket", cua.socket.to_string_lossy().as_ref()],
+        DRIVER_PERMISSION_TIMEOUT,
+    )
+    .ok()?;
+    if run.code != 0 {
+        return None;
+    }
+    serde_json::from_str::<Value>(run.stdout.trim())
+        .ok()?
+        .get("count")?
+        .as_u64()
+        .map(|count| count as usize)
+}
+
+/// The authorization mode the running daemon reports for itself.
+///
+/// Reported rather than assumed: the setting says what Sani asked for, and only
+/// the daemon knows what it is enforcing -- a generation that started before a
+/// settings change keeps running with the old mode, and a status page printing
+/// the requested value would be describing a daemon it is not looking at.
+pub async fn driver_mode(app: AppHandle) -> Option<String> {
+    tokio::task::spawn_blocking(move || read_driver_mode(&app))
+        .await
+        .ok()
+        .flatten()
+}
+
+fn read_driver_mode(app: &AppHandle) -> Option<String> {
+    let cua = SaniCoreConfig::resolve(app).ok()?.cua?;
+    let run = run_driver_cli(
+        &cua.command,
+        &["status", "--socket", cua.socket.to_string_lossy().as_ref()],
+        DRIVER_PERMISSION_TIMEOUT,
+    )
+    .ok()?;
+    if run.code != 0 {
+        return None;
+    }
+    parse_permission_mode(&run.stdout)
+}
+
+fn parse_permission_mode(text: &str) -> Option<String> {
+    let line = text
+        .lines()
+        .find(|candidate| candidate.contains("permission mode:"))?;
+    let value = line.split("permission mode:").nth(1)?.trim();
+    // Real shapes: "bounded (trusted_startup_configuration)" and
+    // "standard (built_in_default)". The parenthetical says where the mode came
+    // from, which is the daemon's business and not the page's.
+    value
+        .split_whitespace()
+        .next()
+        .map(|word| word.trim_matches(',').to_string())
+        .filter(|word| !word.is_empty())
+}
+
+/// The driver generation Sani owns: pid, endpoint path, and whether it is still
+/// running. `None` when this install never started one.
+pub fn driver_generation(app: &AppHandle) -> Option<(Option<u32>, String, bool)> {
+    let state = app.state::<SaniCoreState>();
+    let mut guard = state.cua_driver.lock().ok()?;
+    let driver = guard.as_mut()?;
+    Some((
+        driver.child.id(),
+        driver.socket.to_string_lossy().into_owned(),
+        matches!(driver.child.try_wait(), Ok(None)),
+    ))
+}
+
 /// The embedded daemon's authority, read over Sani's private socket.
 ///
 /// This is a cross-check, not the gate. Embedded mode attributes the daemon to
@@ -606,38 +729,21 @@ fn read_driver_probe(app: &AppHandle) -> DriverProbe {
             detail: "Sani's packaged computer-control driver is missing".to_string(),
         };
     };
-    let child = match std::process::Command::new(&cua.command)
-        .args([
+    match run_driver_cli(
+        &cua.command,
+        &[
             "call",
             "check_permissions",
             "{\"prompt\": false}",
             "--socket",
             cua.socket.to_string_lossy().as_ref(),
-        ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(err) => {
-            return DriverProbe::Unreachable {
-                detail: format!("the permission probe could not be run: {err}"),
-            }
-        }
-    };
-    let output = match wait_with_timeout(child, DRIVER_PERMISSION_TIMEOUT) {
-        Some(Ok(output)) => output,
-        Some(Err(err)) => {
-            return DriverProbe::Unreachable {
-                detail: format!("the permission probe failed: {err}"),
-            }
-        }
-        None => return DriverProbe::Timeout,
-    };
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    classify_probe_output(&stdout, &stderr, output.status.code().unwrap_or(-1))
+        ],
+        DRIVER_PERMISSION_TIMEOUT,
+    ) {
+        Err(CliFailure::TimedOut) => DriverProbe::Timeout,
+        Err(CliFailure::Failed(detail)) => DriverProbe::Unreachable { detail },
+        Ok(run) => classify_probe_output(&run.stdout, &run.stderr, run.code),
+    }
 }
 
 /// Turn a finished probe's output into a classified answer.
@@ -1197,6 +1303,9 @@ pub struct SaniCoreState {
     /// back, the core never noticed. Recovery re-launches the core when (and
     /// only when) it is actually running without CUA.
     core_has_cua: std::sync::atomic::AtomicBool,
+    /// The last cheap computer-control signal the watchdog published, so the
+    /// page is poked when something actually changed rather than every tick.
+    control_signal: Mutex<Option<(String, String, bool, bool)>>,
     /// All ownership-changing IPC operations are serialized. Three WebViews
     /// ask for the registry during launch; without this gate, one could take
     /// the client while another concluded it had died and spawned a second
@@ -1236,14 +1345,11 @@ fn live_control(app: &AppHandle) -> Option<RunControl> {
         .and_then(|guard| guard.clone())
 }
 
-async fn stop_embedded_cua_driver(driver: EmbeddedCuaDriver) {
-    let socket = driver.socket.clone();
-    let mut child = driver.child;
-    if let Err(err) = child.kill().await {
-        log::debug!("embedded CUA driver was already stopped: {err}");
-    }
-    let _ = child.wait().await;
-    if let Err(err) = std::fs::remove_file(&socket) {
+/// Remove Sani's private endpoint after its daemon is gone. The driver refuses
+/// to bind over a stale socket, so leaving this behind hands the next launch a
+/// startup failure.
+fn remove_driver_socket(socket: &Path) {
+    if let Err(err) = std::fs::remove_file(socket) {
         if err.kind() != std::io::ErrorKind::NotFound {
             log::warn!(
                 "could not remove stale CUA socket {}: {err}",
@@ -1251,6 +1357,22 @@ async fn stop_embedded_cua_driver(driver: EmbeddedCuaDriver) {
             );
         }
     }
+}
+
+/// Stop Sani's own daemon: signal it, reap it, then clear the endpoint.
+///
+/// `DRIVER_STOP_WAIT` bounds the reap so a wedged child can never hang quitting;
+/// the signal itself is not polite.
+async fn stop_embedded_cua_driver(driver: EmbeddedCuaDriver) {
+    let socket = driver.socket.clone();
+    let mut child = driver.child;
+    if let Err(err) = child.kill().await {
+        log::debug!("embedded CUA driver was already stopped: {err}");
+    }
+    if tokio::time::timeout(DRIVER_STOP_WAIT, child.wait()).await.is_err() {
+        log::warn!("embedded CUA driver did not exit within the stop budget");
+    }
+    remove_driver_socket(&socket);
 }
 
 /// The daemon's launch arguments for one mode.
@@ -1461,7 +1583,15 @@ pub fn shutdown_embedded_cua_driver(app: &AppHandle) {
         .ok()
         .and_then(|mut guard| guard.take());
     if let Some(driver) = driver {
-        tauri::async_runtime::spawn(stop_embedded_cua_driver(driver));
+        // `block_on`, never `spawn`. This runs from `RunEvent::ExitRequested`,
+        // and a task spawned here can be dropped before it ever polls: measured
+        // on the installed build 2026-09-25, the daemon outlived the quit with
+        // its socket file still in place, leaving a process that holds Sani's
+        // Accessibility and Screen Recording rights running after Sani is gone.
+        // The exit handler runs on the main thread, not a runtime worker, so
+        // blocking is the supported way to finish teardown before Sani stops --
+        // and `DRIVER_STOP_WAIT` bounds how long it may take.
+        tauri::async_runtime::block_on(stop_embedded_cua_driver(driver));
     }
 }
 
@@ -1512,6 +1642,7 @@ async fn start_unlocked(app: &AppHandle) -> Result<Value, String> {
         previous.shutdown().await;
     }
     log::info!("sani-core sidecar started");
+    CORE_STARTED_ONCE.store(true, Ordering::Relaxed);
     Ok(json!({"status": "started"}))
 }
 
@@ -1790,6 +1921,44 @@ pub const RUNTIME_STATUS: &str = "sani://agent-status";
 
 /// How often the supervisor checks the sidecar.
 const SUPERVISOR_INTERVAL: Duration = Duration::from_secs(20);
+/// How often the supervisor checks the driver. Deliberately faster than the
+/// sidecar: a crashed driver leaves its endpoint behind, and the driver refuses
+/// to bind a replacement over it -- its own words are "the owning host must
+/// prove and remove its stale socket before spawn". Until this loop clears and
+/// respawns it, every computer-control call in the app fails.
+const DRIVER_WATCHDOG_INTERVAL: Duration = Duration::from_secs(5);
+
+/// What the driver watchdog should do next, given what it observed.
+#[derive(Debug, PartialEq, Eq)]
+enum DriverWatchdogAction {
+    /// Nothing to do: our own generation is live and answering.
+    Leave,
+    /// Reclaim the endpoint and start a replacement generation.
+    Recover,
+    /// No driver is configured (dev build, or the bundle lost its helper).
+    Skip,
+}
+
+fn driver_watchdog_action(
+    configured: bool,
+    child_alive: bool,
+    endpoint_ready: bool,
+    turn_live: bool,
+) -> DriverWatchdogAction {
+    if !configured {
+        return DriverWatchdogAction::Skip;
+    }
+    // A run that is streaming owns the desktop right now; replacing its daemon
+    // mid-turn would abandon the session it is acting through.
+    if turn_live {
+        return DriverWatchdogAction::Leave;
+    }
+    if child_alive && endpoint_ready {
+        DriverWatchdogAction::Leave
+    } else {
+        DriverWatchdogAction::Recover
+    }
+}
 
 /// True while a run is streaming.
 pub fn is_run_live(app: &AppHandle) -> bool {
@@ -1818,8 +1987,20 @@ pub fn cancel_current_run(app: &AppHandle) -> bool {
 pub fn spawn_supervisor(app: AppHandle) {
     std::thread::spawn(move || {
         let mut last_online: Option<bool> = None;
+        let mut tick = 0usize;
+        let core_every = (SUPERVISOR_INTERVAL.as_secs() / DRIVER_WATCHDOG_INTERVAL.as_secs())
+            .max(1) as usize;
         loop {
-            std::thread::sleep(SUPERVISOR_INTERVAL);
+            std::thread::sleep(DRIVER_WATCHDOG_INTERVAL);
+            tick += 1;
+            match tauri::async_runtime::block_on(driver_watchdog_tick(app.clone())) {
+                Ok(Some(note)) => log::info!("driver watchdog: {note}"),
+                Ok(None) => {}
+                Err(err) => log::warn!("driver watchdog: {err}"),
+            }
+            if tick % core_every != 0 {
+                continue;
+            }
             if is_run_live(&app) {
                 continue;
             }
@@ -1836,6 +2017,104 @@ pub fn spawn_supervisor(app: AppHandle) {
             }
         }
     });
+}
+
+/// One watchdog pass over Sani's own embedded driver.
+///
+/// Reads only the state Sani already owns -- the driver's socket path and child
+/// handle -- because deciding "is the driver alive" must not cost a settings
+/// read, a Keychain lookup and a process spawn every few seconds. Recovery,
+/// which is rare, is what resolves the full configuration.
+/// Whether [`start_unlocked`] has ever completed. The watchdog must not treat
+/// "no driver tracked yet" as "the driver was lost": during launch the core is
+/// still coming up, and recovering into that window would restart a sidecar that
+/// was never broken.
+static CORE_STARTED_ONCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Publish a change to the computer-control picture to whoever is listening.
+///
+/// Pokes only on a real difference: the Computer Control page answers one by
+/// pulling a full status, and a poke on every tick would keep a hidden window
+/// refreshing forever.
+fn poke_control_status(app: &AppHandle, signal: (String, String, bool, bool)) {
+    let state = app.state::<SaniCoreState>();
+    let mut last = match state.control_signal.lock() {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
+    if last.as_ref() == Some(&signal) {
+        return;
+    }
+    *last = Some(signal);
+    drop(last);
+    let _ = app.emit(COMPUTER_CONTROL, "changed");
+}
+
+async fn driver_watchdog_tick(app: AppHandle) -> Result<Option<String>, String> {
+    let (socket, child_alive) = {
+        let state = app.state::<SaniCoreState>();
+        let mut guard = state
+            .cua_driver
+            .lock()
+            .map_err(|_| "embedded CUA driver state poisoned".to_string())?;
+        match guard.as_mut() {
+            Some(driver) => (
+                Some(driver.socket.clone()),
+                matches!(driver.child.try_wait(), Ok(None)),
+            ),
+            None => (None, false),
+        }
+    };
+    let endpoint_ready = match socket.as_ref() {
+        Some(socket) => embedded_driver_socket_ready(socket).await,
+        None => false,
+    };
+    // The grants are cheap syscalls and this is the only place a grant made in
+    // System Settings while the page sits open gets noticed.
+    poke_control_status(
+        &app,
+        (
+            crate::system_permissions::accessibility()
+                .as_str()
+                .to_string(),
+            crate::system_permissions::screen_recording()
+                .as_str()
+                .to_string(),
+            child_alive,
+            endpoint_ready,
+        ),
+    );
+    if socket.is_none() {
+        // No generation tracked: either this install has no driver, or the
+        // sidecar is running without computer control. The second case is the
+        // one `recover_embedded_cua_driver` repairs, by un-latching the core.
+        let core_without_cua = !app
+            .state::<SaniCoreState>()
+            .core_has_cua
+            .load(Ordering::Relaxed);
+        if !CORE_STARTED_ONCE.load(Ordering::Relaxed)
+            || !core_without_cua
+            || !allow_recovery()
+        {
+            return Ok(None);
+        }
+        recover_embedded_cua_driver(&app).await?;
+        return Ok(Some(
+            "restarted the sidecar so it runs with the recovered CUA driver".to_string(),
+        ));
+    };
+    match driver_watchdog_action(true, child_alive, endpoint_ready, is_run_live(&app)) {
+        DriverWatchdogAction::Leave | DriverWatchdogAction::Skip => Ok(None),
+        DriverWatchdogAction::Recover => {
+            log::warn!(
+                "the embedded driver is not live (child running: {child_alive}, \
+                 endpoint accepting: {endpoint_ready}); reclaiming Sani's private socket"
+            );
+            recover_embedded_cua_driver(&app)
+                .await
+                .map(|_| Some("reclaimed the endpoint and started a replacement driver".to_string()))
+        }
+    }
 }
 
 async fn ensure_running(app: AppHandle) -> Result<(), String> {
@@ -1918,6 +2197,22 @@ mod tests {
         assert!(!embedded_driver_needs_recovery(true, true));
     }
 
+    #[test]
+    fn the_watchdog_recovers_a_dead_driver_but_never_interferes_with_a_live_turn() {
+        use DriverWatchdogAction::{Leave, Recover, Skip};
+        assert_eq!(
+            driver_watchdog_action(false, true, true, false),
+            Skip
+        );
+        assert_eq!(driver_watchdog_action(true, true, true, false), Leave);
+        // Either half failing means no usable daemon: both are recoveries.
+        assert_eq!(driver_watchdog_action(true, false, true, false), Recover);
+        assert_eq!(driver_watchdog_action(true, true, false, false), Recover);
+        // A streaming run owns the session; swapping the daemon under it would
+        // abandon the very session it is acting through.
+        assert_eq!(driver_watchdog_action(true, false, false, true), Leave);
+    }
+
     /// The exact `ps` shape of the fault this must catch: a driver from the
     /// previous Sani generation, reparented to launchd, still carrying Sani's
     /// private socket path in its arguments.
@@ -1994,6 +2289,21 @@ mod tests {
             manifest: PathBuf::from("/Applications/Sani.app/Contents/Resources/config/cua-capabilities.yaml"),
             mode,
         }
+    }
+
+    #[test]
+    fn the_reported_mode_is_read_from_the_daemon_not_from_the_setting() {
+        // Both shapes captured live from `cua-driver status`.
+        assert_eq!(
+            parse_permission_mode("  permission mode: bounded (trusted_startup_configuration)\n"),
+            Some("bounded".to_string())
+        );
+        assert_eq!(
+            parse_permission_mode("  permission mode: standard (built_in_default)\n"),
+            Some("standard".to_string())
+        );
+        assert_eq!(parse_permission_mode("Cua Driver daemon is not running\n"), None);
+        assert_eq!(parse_permission_mode("permission mode:\n"), None);
     }
 
     #[test]
@@ -2418,5 +2728,52 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("did not respond in time"));
+    }
+
+    #[test]
+    fn stopping_the_daemon_reaps_the_child_and_clears_the_endpoint() {
+        // Quitting has two obligations, and a teardown that is spawned rather
+        // than awaited meets neither: the daemon keeps running with Sani's
+        // Accessibility and Screen Recording rights, and the socket file it
+        // leaves behind makes the next launch fail to bind. Both are asserted
+        // against a real child process here.
+        let dir = std::env::temp_dir().join(format!("sani-driver-stop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let socket = dir.join("cua-driver.sock");
+        std::fs::write(&socket, "").unwrap();
+
+        let pid = std::sync::Arc::new(std::sync::Mutex::new(0u32));
+        let pid_inside = pid.clone();
+        let socket_inside = socket.clone();
+
+        // Spawning a tokio child needs the reactor, so the whole interaction
+        // runs inside the runtime that production would use.
+        tauri::async_runtime::block_on(async move {
+            let child = tokio::process::Command::new("/bin/sleep")
+                .arg("60")
+                .kill_on_drop(true)
+                .spawn()
+                .expect("spawn a stand-in daemon");
+            *pid_inside.lock().unwrap() = child.id().expect("the stand-in daemon has a pid");
+            stop_embedded_cua_driver(EmbeddedCuaDriver {
+                child,
+                socket: socket_inside,
+            })
+            .await;
+        });
+
+        let pid = *pid.lock().unwrap();
+        assert!(pid > 0, "the stand-in daemon reported a pid");
+        assert!(!socket.exists(), "the endpoint file must be cleared on stop");
+        let still_alive = std::process::Command::new("/bin/kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        assert!(!still_alive, "daemon {pid} outlived the stop");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

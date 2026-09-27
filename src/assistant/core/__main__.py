@@ -100,9 +100,18 @@ async def _connect_stdio() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
 async def main() -> None:
     _configure_logging()
     from assistant.core.agents import build_default_registry, build_status_provider
+    from assistant.core.identity import engine_identity
     from assistant.settings import Settings
 
     settings = Settings()
+    # Startup provenance: the log line and the served identity agree, so
+    # "which build am I talking to" is answerable from the first frame on.
+    identity = engine_identity()
+    logger.info(
+        "sani-core: starting revision=%s built_at=%s",
+        identity["revision"] or "unknown",
+        identity["built_at"] or "unknown",
+    )
     reader, writer = await _connect_stdio()
     registry = build_default_registry(settings)
     status_provider = build_status_provider(settings)

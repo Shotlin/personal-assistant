@@ -51,4 +51,7 @@ async def test_failed_outcome_reports_error_not_crash() -> None:
     result = await wrapped[0].ainvoke({})
     # A failed outcome renders its message as plain agent-visible text; the
     # contract is bounded text, not an exception and not a dataclass repr.
-    assert result == "element not found"
+    # The text is preserved and a next move is named: a bare "element not found"
+    # reads to the model as a dead end, which is how a task used to stop there.
+    assert str(result).startswith("element not found")
+    assert "include_screenshot: true" in str(result)

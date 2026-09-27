@@ -1,27 +1,24 @@
-"""sani-core agent entry tests (Stage G): velo + deep against fakes.
+"""The sani-core executor entry, against injected fakes.
 
-The real CUA/JEV/model stacks are injected; nothing here touches the
-driver, the network, or a model provider.
+What is covered here is the contract the sidecar runs on: token and progress
+events from a streamed model, cooperative cancellation, the registry that names
+the one executor twice, and the status payload the desktop UI reads. Nothing
+touches the driver, the network, or a model provider.
 """
 
 import asyncio
-import contextlib
-from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
 
 from assistant.core.agents import (
     DeepAgentEntry,
-    VeloAgentEntry,
+    LabeledAgentEntry,
     build_default_registry,
     build_status_provider,
-    velo_response,
 )
+from assistant.core.registry import AgentDescriptor
 from assistant.settings import Settings
-from assistant.velo.agent import VeloAgent
-from assistant.velo.types import VeloActionKind, VeloLimits, VeloStatus
-from tests.velo.fakes import FakeCua, ScriptedJev, act, done, observation, target
 
 
 def _settings(**overrides: Any) -> Settings:
@@ -31,8 +28,6 @@ def _settings(**overrides: Any) -> Settings:
         "model_base_url": "http://127.0.0.1:1",
         "model_api_key": "k",
         "model_name": "m",
-        "velo_enabled": False,
-        "typesafe_api_key": "",
         "openrouter_api_key": "",
     }
     base.update(overrides)
@@ -45,95 +40,6 @@ class _EventLog:
 
     async def __call__(self, kind: str, data: dict[str, Any]) -> None:
         self.events.append((kind, data))
-
-
-def _fake_velo_context(fake_cua: FakeCua, jev: ScriptedJev, cancel_log: list[str]) -> Any:
-    @contextlib.asynccontextmanager
-    async def context(settings: Settings) -> AsyncIterator[tuple[VeloAgent, Any]]:
-        agent = VeloAgent(fake_cua, jev, VeloLimits(max_steps=6))
-        yield agent, lambda: cancel_log.append("cancelled")
-
-    return context
-
-
-async def test_velo_entry_runs_and_streams_progress() -> None:
-    fake_cua = FakeCua(
-        observations=[
-            observation(),
-            observation(target("t1", "ok"), foreground_app="Google Chrome"),
-        ]
-    )
-    jev = ScriptedJev(act(VeloActionKind.LAUNCH_APP, app_name="com.google.Chrome"), done())
-    entry = VeloAgentEntry(_settings(), context_factory=_fake_velo_context(fake_cua, jev, []))
-    log = _EventLog()
-
-    result = await entry.run("Open Chrome", thread_id="", on_event=log, cancel_check=lambda: False)
-
-    assert result["status"] is VeloStatus.DONE.value
-    assert fake_cua.call_kinds("execute") == [("execute", "LAUNCH_APP:com.google.Chrome")]
-    assert [kind for kind, _ in log.events] and all(
-        kind == "agent.progress" for kind, _ in log.events
-    )
-    # Velo reports status/reason, not prose; the transcript needs a line to show.
-    assert result["response"]
-
-
-async def test_velo_response_is_honest_about_a_failed_run() -> None:
-    from assistant.velo.types import VeloMetrics, VeloResult
-
-    assert velo_response(VeloResult(status=VeloStatus.DONE, reason="Chrome is open")) == (
-        "Chrome is open"
-    )
-    assert velo_response(VeloResult(status=VeloStatus.DONE)) == "Done."
-    assert velo_response(
-        VeloResult(status=VeloStatus.FAILED, reason="target not found")
-    ) == "I couldn't finish that. target not found"
-    assert velo_response(
-        VeloResult(status=VeloStatus.STOPPED, reason="cancelled by user", metrics=VeloMetrics())
-    ) == "Stopped. cancelled by user"
-    assert "decide" in velo_response(VeloResult(status=VeloStatus.ASK_USER, reason="which one?"))
-
-
-class _YieldingCua(FakeCua):
-    """FakeCua that yields between steps so the event pump stays current."""
-
-    async def execute(self, decision, observation, objective) -> Any:
-        await asyncio.sleep(0)
-        return await super().execute(decision, observation, objective)
-
-
-async def test_velo_entry_cancel_during_run_stops_before_next_action() -> None:
-    fake_cua = _YieldingCua(observations=[observation(target("t1", "button"))])
-    jev = ScriptedJev(act(VeloActionKind.CLICK, target_id="t1"))
-    cancel_log: list[str] = []
-    entry = VeloAgentEntry(
-        _settings(), context_factory=_fake_velo_context(fake_cua, jev, cancel_log)
-    )
-
-    async def on_event(kind: str, data: dict[str, Any]) -> None:
-        if kind == "agent.progress" and "verify" in data.get("message", ""):
-            # The desktop host cancels mid-run; the loop must stop before
-            # the next action starts.
-            await entry.cancel()
-
-    result = await entry.run("click", thread_id="", on_event=on_event, cancel_check=lambda: False)
-
-    assert result["status"] is VeloStatus.STOPPED.value, result["reason"]
-    assert "cancel" in result["reason"].lower()
-    assert len(fake_cua.call_kinds("execute")) < 3  # bounded: no runaway repeats
-    assert cancel_log == ["cancelled"]
-
-
-async def test_velo_entry_default_context_fails_closed_without_infrastructure() -> None:
-    from assistant.velo.types import JevServiceError
-
-    # This machine has no credential configured and no CUA driver: the run
-    # must fail closed with a clear terminal error -- never a fallback.
-    entry = VeloAgentEntry(_settings())
-    with pytest.raises((JevServiceError, RuntimeError)):
-        await entry.run(
-            "Open Chrome", thread_id="", on_event=_EventLog(), cancel_check=lambda: False
-        )
 
 
 def _chunk(message_id: str, content: str = "", tool_names: list[str] | None = None) -> Any:
@@ -222,6 +128,56 @@ def test_default_registry_lists_velo_and_deep() -> None:
     assert names == ["deep", "velo"]
 
 
+def test_velo_is_the_controller_and_deep_is_the_executor() -> None:
+    """Velo owns intent and routing; the Deep Agent is the reasoning executor.
+
+    Both entries draw their runtime from one provider, so there is still no
+    second transport, checkpointer or agent to drift out of step -- but Velo is
+    no longer a mere label: it resolves ordinary commands locally and asks JEV
+    when interpretation is genuinely needed.
+    """
+    from assistant.velo.controller import VeloEntry
+
+    registry = build_default_registry(_settings())
+    velo = registry.get("velo")
+    assert velo is not None
+    assert isinstance(velo, VeloEntry)
+    assert velo.descriptor.name == "Velo"
+    deep = registry.get("deep")
+    assert isinstance(deep, DeepAgentEntry)
+    # One shared runtime: the controller hands Route C to the same executor.
+    assert velo._deep is deep
+
+
+async def test_the_label_delegates_the_whole_run_to_the_executor() -> None:
+    seen: dict[str, object] = {}
+
+    class Inner:
+        async def run(self, text, *, thread_id, on_event, cancel_check):
+            seen["text"] = text
+            seen["thread_id"] = thread_id
+            await on_event("agent.token", {"text": "hi"})
+            return {"status": "done", "response": "hi"}
+
+        async def cancel(self):
+            seen["cancelled"] = True
+
+    class Log:
+        async def __call__(self, kind, payload):
+            seen["event"] = (kind, payload)
+
+    entry = LabeledAgentEntry(Inner(), AgentDescriptor(id="velo", name="Velo", capabilities=()))
+    result = await entry.run(
+        "open chrome", thread_id="c1", on_event=Log(), cancel_check=lambda: False
+    )
+    await entry.cancel()
+
+    assert result == {"status": "done", "response": "hi"}
+    assert seen["text"] == "open chrome" and seen["thread_id"] == "c1"
+    assert seen["event"] == ("agent.token", {"text": "hi"})
+    assert seen["cancelled"] is True
+
+
 async def test_status_provider_reports_subsystems(tmp_path: Any) -> None:
     provider = build_status_provider(
         _settings(cua_enabled=False, memory_backend="sqlite", sani_data_dir=str(tmp_path))
@@ -229,4 +185,3 @@ async def test_status_provider_reports_subsystems(tmp_path: Any) -> None:
     payload = await provider()
     assert payload["driver"]["found"] is False
     assert payload["memory_backend"] == "sqlite"
-    assert payload["jev_credential"] == "none"

@@ -19,7 +19,12 @@ from assistant.tools.policy import (
 
 
 class _EmptyArgs(BaseModel):
-    pass
+    """A double for any CUA tool: the aimed fields have to exist in the schema,
+    because the adapter refuses an aimed action that does not address a surface."""
+
+    pid: int | None = None
+    window_id: int | None = None
+    element_token: str | None = None
 
 
 def fake_tool(name: str) -> StructuredTool:
@@ -69,23 +74,28 @@ def test_mutating_wrapped_and_observation_error_converted() -> None:
     assert wrapped[0].description != wrapped[1].description or True
 
 
+#: An aimed action has to address a surface; the adapter refuses it otherwise, so
+#: the double is called the way the driver is really called.
+AIMED = {"pid": 42, "window_id": 7}
+
+
 async def test_budget_gate_raises_at_ceiling() -> None:
     wrapped, _ = apply_tool_policy([fake_tool("click")])
     click = wrapped[0]
     budget = RunBudget(max_actions=2)
     cua_run_budget.set(budget)
 
-    assert await click.ainvoke({}) == "click-ran"
-    assert await click.ainvoke({}) == "click-ran"
+    assert await click.ainvoke(AIMED) == "click-ran"
+    assert await click.ainvoke(AIMED) == "click-ran"
     assert budget.used == 2
     with pytest.raises(CuaBudgetExceeded):
-        await click.ainvoke({})
+        await click.ainvoke(AIMED)
 
 
 async def test_budget_unset_does_not_block_but_wraps() -> None:
     wrapped, _ = apply_tool_policy([fake_tool("type_text")])
     cua_run_budget.set(None)
-    assert await wrapped[0].ainvoke({}) == "type_text-ran"
+    assert await wrapped[0].ainvoke(AIMED) == "type_text-ran"
 
 
 async def test_observation_tools_get_error_conversion_only() -> None:

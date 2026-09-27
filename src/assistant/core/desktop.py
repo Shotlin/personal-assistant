@@ -262,14 +262,4 @@ async def system_status(settings: Settings) -> dict[str, Any]:
             },
         ],
         "memory_backend": settings.memory_backend,
-        "jev_credential": _credential_kind(settings),
     }
-
-
-def _credential_kind(settings: Settings) -> str:
-    """Which JEV credential is configured -- presence only, never values."""
-    if settings.typesafe_api_key:
-        return "typesafe"
-    if settings.openrouter_api_key:
-        return "openrouter"
-    return "none"

@@ -19,7 +19,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +28,7 @@ from assistant.agent.context import RunBudget
 from assistant.memory.local import open_local_memory_resources
 from assistant.memory.postgres import open_memory_resources
 from assistant.models import build_chat_model
+from assistant.runtime.cua_faults import classify_exception
 from assistant.runtime.session import DesktopSessionManager, McpToolDesktopDriver
 from assistant.settings import Settings
 from assistant.tools.cua import open_cua_connection
@@ -38,8 +39,10 @@ logger = logging.getLogger("assistant.core.runtime")
 
 _SKILLS_ROOT = Path(__file__).resolve().parents[1] / "skills"
 
-#: The daemon's manifest idles sessions out after 30m; one bounded read-only
-#: ping every 5 minutes keeps the transport's session alive between turns.
+#: How often to touch the driver between turns. This is transport warmth only:
+#: the driver's capability policy no longer idles a standard-mode session out,
+#: and a dropped lease now rebuilds itself on the next call rather than waiting
+#: here to notice.
 KEEPALIVE_INTERVAL_SECONDS = 300
 
 
@@ -61,8 +64,14 @@ async def _driver_keepalive(connection: Any) -> None:
             await asyncio.wait_for(ping.ainvoke({}), timeout=30)
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001 -- a failed ping is not an outage
-            logger.warning("cua_keepalive_ping_failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 -- a failed ping is not an outage
+            # Named, because "keepalive failed" and "macOS revoked the grant" look
+            # identical in a log line and are not the same event at all.
+            logger.warning(
+                "cua_keepalive_ping_failed: %s",
+                classify_exception(exc).value,
+                exc_info=True,
+            )
 
 
 @dataclass
@@ -74,6 +83,10 @@ class SaniRuntime:
     desktop_sessions: DesktopSessionManager | None
     artifact_dir: str
     cua_enabled: bool
+    #: The wrapped computer-control tools by name. The deterministic fast path
+    #: drives these same objects, so the gate, targeting and budget it passes
+    #: through are exactly the agent's own.
+    cua_tools: dict[str, Any] = field(default_factory=dict)
 
     @property
     def tool_names(self) -> list[str]:
@@ -125,6 +138,7 @@ class SaniRuntime:
             desktop_sessions=desktop_sessions if settings.cua_enabled else None,
             artifact_dir=str(Path(settings.cua_artifact_dir).resolve()),
             cua_enabled=settings.cua_enabled,
+            cua_tools={tool.name: tool for tool in extra_tools},
         )
         await stack.aclose()
 
@@ -143,21 +157,33 @@ class SaniRuntime:
         )
 
     @contextlib.asynccontextmanager
-    async def run_scope(self, session_name: str) -> AsyncIterator[RunBudget]:
+    async def run_scope(
+        self, session_name: str, conversation: str = ""
+    ) -> AsyncIterator[RunBudget]:
         """Bind one turn's desktop handle and mutating-action budget.
 
         Yields the budget so the caller can report how much of it was used;
         the context tokens are reset on exit and can never leak into the
-        next run.
+        next run. ``conversation`` is what desktop continuity is keyed on.
         """
         budget = RunBudget()
         stack = contextlib.AsyncExitStack()
         try:
             run: Any = None
             if self.cua_enabled and self.desktop_sessions is not None:
-                run = await stack.enter_async_context(self.desktop_sessions.open(session_name))
+                # The driver session belongs to the conversation, not the message:
+                # a multi-turn task keeps the same session and the same cursor.
+                session_id = f"assistant-{conversation}" if conversation else None
+                run = await stack.enter_async_context(
+                    self.desktop_sessions.open(session_name, session_id=session_id)
+                )
             await stack.enter_async_context(
-                cua_run_scope(budget=budget, run=run, artifact_dir=self.artifact_dir)
+                cua_run_scope(
+                    budget=budget,
+                    run=run,
+                    artifact_dir=self.artifact_dir,
+                    conversation=conversation,
+                )
             )
             yield budget
         finally:

@@ -22,18 +22,25 @@ from assistant.tools.policy import (
     apply_tool_policy,
     cua_desktop_run,
     cua_run_budget,
+    cua_target_state,
 )
 from tests.helpers.fake_driver import FakeDriver, call_names
 
 
 class _ClickArgs(BaseModel):
+    # The real click schema addresses a surface; the adapter refuses an aimed
+    # action without it, so the double has to carry it too.
     session: str | None = None
+    pid: int | None = None
+    window_id: int | None = None
     element_token: str | None = None
 
 
 @pytest.fixture
 def _reset_policy_vars() -> Iterator[None]:
+    token = cua_target_state.set({"snapshots": {"42:7": "s00000001"}, "focus": (42, 7), "apps": {}})
     yield
+    cua_target_state.reset(token)
     cua_desktop_run.set(None)
     cua_run_budget.set(None)
 
@@ -63,7 +70,14 @@ async def test_trusted_session_overrides_model_supplied_session(
     async with manager.open("run-t") as session:
         cua_desktop_run.set(session)
         try:
-            await wrapped[0].ainvoke({"session": "model-chosen", "element_token": "tok-1"})
+            await wrapped[0].ainvoke(
+                {
+                    "session": "model-chosen",
+                    "pid": 42,
+                    "window_id": 7,
+                    "element_token": "s00000001:0",
+                }
+            )
         finally:
             cua_desktop_run.set(None)
     assert captured[0]["session"] == session.session_id
@@ -129,9 +143,17 @@ async def test_queued_action_does_not_dispatch_after_stop(_reset_policy_vars: No
         async with manager.open("queued") as session:
             token = cua_desktop_run.set(session)
             try:
-                first = asyncio.create_task(wrapped[0].ainvoke({"element_token": "first"}))
+                first = asyncio.create_task(
+                    wrapped[0].ainvoke(
+                        {"pid": 42, "window_id": 7, "element_token": "s00000001:0"}
+                    )
+                )
                 await entered.wait()
-                second = asyncio.create_task(wrapped[0].ainvoke({"element_token": "second"}))
+                second = asyncio.create_task(
+                    wrapped[0].ainvoke(
+                        {"pid": 42, "window_id": 7, "element_token": "s00000001:0"}
+                    )
+                )
                 await asyncio.sleep(0)
                 manager.cancel("queued")
                 release.set()
@@ -140,6 +162,6 @@ async def test_queued_action_does_not_dispatch_after_stop(_reset_policy_vars: No
                 cua_desktop_run.reset(token)
     finally:
         cua_run_budget.reset(budget_token)
-    assert calls == ["first"]
+    assert calls == ["s00000001:0"], "the queued action dispatched after the stop"
     assert "cancel" in str(results[1]).lower()
     assert budget.used == 1

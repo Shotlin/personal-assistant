@@ -28,7 +28,7 @@ interface SettingsContextValue {
   refresh: () => Promise<void>;
   saveGeneral: (patch: Parameters<typeof saveSettings>[0]) => Promise<void>;
   saveAi: (patch: Parameters<typeof applyAiSettings>[0]) => Promise<void>;
-  saveProviderKey: (provider: "openrouter" | "typesafe", candidate: string) => Promise<void>;
+  saveProviderKey: (provider: "openrouter", candidate: string) => Promise<void>;
   selectAgent: (agentId: string) => Promise<void>;
   installVoice: (model: string) => Promise<void>;
   useVoice: (model: string) => Promise<void>;

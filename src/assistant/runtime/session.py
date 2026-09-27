@@ -24,6 +24,14 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from assistant.runtime.cua_faults import (
+    RECOVERY_FOR,
+    CuaFault,
+    FaultRecovery,
+    classify_exception,
+    classify_text,
+)
+
 logger = logging.getLogger("assistant.runtime.session")
 
 
@@ -36,17 +44,29 @@ class DesktopLeaseBusy(RuntimeError):
 
 
 class DesktopDriverError(RuntimeError):
-    """A trusted controller call failed at the driver."""
+    """A trusted controller call failed at the driver.
+
+    Carries the classified fault, because "start_session failed" as a string
+    cannot be acted on: a session the driver invites back to life, a policy that
+    expired, a macOS permission that was never granted and a dropped transport
+    need four different responses, and only one of them is "abort the run".
+    """
+
+    def __init__(self, message: str, fault: CuaFault = CuaFault.UNKNOWN) -> None:
+        super().__init__(message)
+        self.fault = fault
+
+    @property
+    def recovery(self) -> FaultRecovery:
+        return RECOVERY_FOR[self.fault]
 
 
-#: Marker in the driver's own error text (live 2026-09-18) that the
-#: session ended and the driver EXPLICITLY invites one revival attempt.
-_SESSION_REVIVE_MARKERS = ("has ended and must be revived", "must be revived")
-
-
-def _session_revive_demanded(text: str) -> bool:
-    lowered = text.lower()
-    return any(marker in lowered for marker in _SESSION_REVIVE_MARKERS)
+#: Startup faults where a retry cannot act twice: the driver asked for the
+#: revival itself, or the transport carrying the call died. ``start_session`` is
+#: documented idempotent and answers "already active" rather than creating a
+#: second session, so both are safe to send again -- see the driver's own wording,
+#: captured live: "Call start_session with this id to revive it".
+_SESSION_RETRY_FAULTS = frozenset({CuaFault.SESSION, CuaFault.TRANSPORT})
 
 
 class DesktopDriver(Protocol):
@@ -100,14 +120,25 @@ class McpToolDesktopDriver:
             if required:
                 raise DesktopDriverError(
                     f"{name} is not exposed by the installed Cua Driver; "
-                    "cursor session continuity is unavailable"
+                    "cursor session continuity is unavailable",
+                    CuaFault.ACTION,
                 )
             return None
-        outcome = await tool.ainvoke(args)
+        try:
+            outcome = await tool.ainvoke(args)
+        except DesktopDriverError:
+            raise
+        except Exception as exc:  # noqa: BLE001 -- every driver error is a fault
+            text = str(exc) or type(exc).__name__
+            raise DesktopDriverError(
+                f"{name} failed: {text[:200]}", classify_exception(exc)
+            ) from exc
         status = getattr(outcome, "status", "ok")
         if status == "failed":
             text = str(getattr(outcome, "text", "") or "driver call failed")
-            raise DesktopDriverError(f"{name} failed: {text[:200]}")
+            raise DesktopDriverError(
+                f"{name} failed: {text[:200]}", classify_text(text)
+            )
         return outcome
 
     async def start_session(self, session: str, **kwargs: Any) -> Any:
@@ -137,7 +168,14 @@ class McpToolDesktopDriver:
 
 
 class DesktopRun:
-    """One run's desktop session handle (lazy, cancellable, self-cleaning)."""
+    """One run's desktop session handle (lazy, cancellable, self-cleaning).
+
+    The driver answers ``start_session`` with ``effective_scope: "window"`` and
+    ``desktop_capture_authorized: false``: a session is scoped to the windows it
+    names, and full-desktop capture is a separate grant. Sani does not ask for
+    the desktop scope -- window-scoped capture is what observation and aiming
+    need -- so nothing here should read that ``false`` as a permission failure.
+    """
 
     def __init__(
         self,
@@ -163,14 +201,18 @@ class DesktopRun:
         self._action_lock = asyncio.Lock()
 
     async def ensure_started(self) -> None:
-        """Start once; uncertain startup must not be retried implicitly.
+        """Start once; three different facts get three different policies.
 
-        One bounded exception (live incident 2026-09-18): when the driver
-        DEFINITIVELY reports the session ended and demands revival
-        ('... has ended and must be revived'), that error is not
-        uncertainty — it is an instruction. Exactly one revival attempt
-        is permitted; any other startup failure keeps the fail-closed
-        refusing-retry behavior.
+        * The driver **invited** a revival, or the transport carrying the call
+          died: either way the start demonstrably took no effect, and
+          ``start_session`` is documented idempotent, so one retry is safe. The
+          original 2026-09-18 incident was this case -- the driver said the
+          session had ended and that it must be revived, which is an instruction,
+          not an uncertainty.
+        * Anything else, including an expired policy or a missing macOS grant:
+          the latch holds for this run. That is not a permanent sentence -- the
+          latch lives on ``DesktopRun``, which is built per turn, so the next
+          request tries again after the host has repaired the cause.
         """
         async with self._activation_lock:
             self.require_active()
@@ -178,16 +220,18 @@ class DesktopRun:
             if self._started or not self._enabled:
                 return
             if self._start_attempted:
-                raise DesktopDriverError("session startup outcome unknown; refusing retry")
+                raise DesktopDriverError(
+                    "session startup outcome unknown; refusing retry",
+                    CuaFault.UNKNOWN,
+                )
             self._start_attempted = True
             try:
                 await self._driver.start_session(self.session_id)
             except DesktopDriverError as exc:
-                if not _session_revive_demanded(str(exc)):
+                if exc.fault not in _SESSION_RETRY_FAULTS:
                     raise
-                # The driver itself says the session must be revived;
-                # one explicit revival attempt, never a loop.
-                self._start_attempted = False
+                # Exactly one inline retry, never a loop: an attempt is safe
+                # here precisely because the driver says it took no effect.
                 await self._driver.start_session(self.session_id)
             self.require_active()
             await self._driver.set_cursor_motion(
@@ -263,11 +307,18 @@ class DesktopSessionManager:
         self._owner: str | None = None
 
     @asynccontextmanager
-    async def open(self, run_id: str) -> AsyncIterator[DesktopRun]:
+    async def open(
+        self, run_id: str, *, session_id: str | None = None
+    ) -> AsyncIterator[DesktopRun]:
         """Open one run-scoped desktop session handle.
 
         Activation is lazy: nothing touches the driver until the first
         desktop action asks ``ensure_started``. Cleanup is unconditional.
+
+        ``session_id`` may outlive the run. Naming the session after the
+        conversation keeps the driver-side session -- and the visible agent
+        cursor -- the same object across turns of one task, instead of ending and
+        reminting it for every message. The lease stays run-scoped either way.
         """
         if run_id in self._runs:
             raise DesktopLeaseBusy("run handle already registered")
@@ -279,7 +330,7 @@ class DesktopSessionManager:
 
         run = DesktopRun(
             run_id,
-            session_id=f"assistant-{run_id}",
+            session_id=session_id or f"assistant-{run_id}",
             driver=self._driver,
             config=self._config,
             enabled=self.enabled,

@@ -17,6 +17,13 @@ from langchain_core.tools import StructuredTool
 
 from assistant.runtime.runs import RunActionLedger, RunStore
 from assistant.tools.policy import apply_tool_policy, cua_run_scope
+from assistant.tools.result_normalizer import ToolOutcome
+
+#: What an aimed action has to be aimed AT. Since Phase 4 an action carrying an
+#: ``element_token`` is refused unless the same target was just observed, and a
+#: refused action never reaches the ledger -- these tests are about the ledger.
+PID, WINDOW_ID, SNAPSHOT = 4242, 7, "s00000001"
+AIMED = {"pid": PID, "window_id": WINDOW_ID}
 
 
 def _uid() -> str:
@@ -65,11 +72,31 @@ async def ledger_env():
         await store.close()
 
 
-async def _invoke_wrapped(tool: StructuredTool, ledger: RunActionLedger) -> Any:
+def _observation_tool() -> StructuredTool:
+    """A ``get_window_state`` answer in the shape the driver really reports."""
 
-    wrapped, _ = apply_tool_policy([tool])
+    async def coro(**kwargs: Any) -> ToolOutcome:
+        return ToolOutcome(
+            status="ok",
+            effect="confirmed",
+            text="observed",
+            structured={"pid": PID, "window_id": WINDOW_ID, "snapshot_id": SNAPSHOT},
+        )
+
+    return StructuredTool(
+        name="get_window_state",
+        description="",
+        args_schema={"type": "object", "properties": {}},
+        coroutine=coro,
+    )
+
+
+async def _invoke_wrapped(tool: StructuredTool, ledger: RunActionLedger) -> Any:
+    """One mutating action taken the way the loop takes it: observe, then aim."""
+    wrapped, _ = apply_tool_policy([_observation_tool(), tool])
     async with cua_run_scope(budget=None, run=None, ledger=ledger):
-        return await wrapped[0].ainvoke({"element_token": "e1", "session": ""})
+        await wrapped[0].ainvoke({**AIMED})
+        return await wrapped[1].ainvoke({**AIMED, "element_token": f"{SNAPSHOT}:0", "session": ""})
 
 
 async def test_mutating_call_writes_planned_then_confirmed(ledger_env) -> None:
@@ -111,19 +138,24 @@ async def test_observation_tools_do_not_create_ledger_rows(ledger_env) -> None:
 
 async def test_no_ledger_in_scope_means_no_rows(ledger_env) -> None:
     store, _ledger, run_id = ledger_env
-    tool = _mutating_tool()
-    wrapped, _ = apply_tool_policy([tool])
-    await wrapped[0].ainvoke({"element_token": "e1"})
+    wrapped, _ = apply_tool_policy([_observation_tool(), _mutating_tool()])
+    async with cua_run_scope(budget=None, run=None):
+        await wrapped[0].ainvoke({**AIMED})
+        dispatched = await wrapped[1].ainvoke({**AIMED, "element_token": f"{SNAPSHOT}:0"})
+    assert "refused" not in str(dispatched), "the action must really have dispatched"
     assert await store.run_actions(run_id) == []
 
 
 async def test_digest_differs_per_arguments(ledger_env) -> None:
     store, ledger, _run_id = ledger_env
-    wrapped, _ = apply_tool_policy([_mutating_tool()])
+    wrapped, _ = apply_tool_policy(
+        [_observation_tool(), _mutating_tool(), _mutating_tool()]
+    )
 
     async with cua_run_scope(budget=None, run=None, ledger=ledger):
-        await wrapped[0].ainvoke({"element_token": "e1"})
-        await wrapped[0].ainvoke({"element_token": "e2"})
+        await wrapped[0].ainvoke({**AIMED})
+        await wrapped[1].ainvoke({**AIMED, "element_token": f"{SNAPSHOT}:0"})
+        await wrapped[2].ainvoke({**AIMED, "element_token": f"{SNAPSHOT}:1"})
     actions = await store.run_actions(ledger.run_id)
     assert len(actions) == 2
     assert actions[0]["args_digest"] != actions[1]["args_digest"]

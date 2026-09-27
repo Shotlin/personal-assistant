@@ -125,17 +125,6 @@ export default function SettingsDrawer({ onClose }: SettingsDrawerProps) {
             onBlur={(e) => void saveAi({ reasoning_model: e.target.value })}
           />
         </label>
-        <label className="settings-row">
-          <span>Velo provider</span>
-          <select value={settings.velo_provider} onChange={(e) => void saveAi({ velo_provider: e.target.value as "openrouter" | "typesafe" })}>
-            <option value="openrouter">OpenRouter</option>
-            <option value="typesafe">TypeSafe</option>
-          </select>
-        </label>
-        <label className="settings-row">
-          <span>Velo model</span>
-          <input defaultValue={settings.velo_model} aria-label="Velo model ID" onBlur={(e) => void saveAi({ velo_model: e.target.value })} />
-        </label>
         <button className="mini-btn" onClick={() => void invoke("show_main_settings")}>Open Full Settings</button>
 
         <div className="settings-group">Shortcut</div>

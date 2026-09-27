@@ -68,6 +68,25 @@ def distance(a: tuple[float, float], b: tuple[float, float]) -> float:
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
+def page(state: dict) -> tuple[str, str]:
+    """Where Chrome actually is, from fields the driver really sends.
+
+    Measured on the installed build 2026-09-25: ``get_window_state`` has no
+    ``url`` key at all. The address lives in the AXTextField labelled "Address
+    and search bar" and the page name in ``window_title``. Asserting on a field
+    that does not exist fails a run in which navigation fully succeeded -- which
+    is exactly what happened here.
+    """
+    address = ""
+    for element in state.get("elements") or []:
+        if not isinstance(element, dict):
+            continue
+        if "address" in str(element.get("label", "")).lower() and element.get("value"):
+            address = str(element["value"])
+            break
+    return address, str(state.get("window_title") or "")
+
+
 def fail(step: str, detail: str) -> int:
     print(f"FAIL  {step}: {detail}")
     return 1
@@ -98,7 +117,19 @@ def youtube_leg() -> int:
     windows = [w for w in call("list_windows", {"pid": pid}).get("windows", [])
                if w.get("is_on_screen")]
     if not windows:
-        return fail("chrome", "Chrome has no on-screen window")
+        # Chrome stays alive with no browser window, and merely activating it
+        # does not create one -- it then owns only menu-bar strips, and every
+        # later step would aim at a 33pt surface. Ask for a window through the
+        # driver, the same rung the assistant itself would use.
+        seed = call("list_windows", {"pid": pid}).get("windows", [])
+        if seed:
+            call("hotkey", {"pid": pid, "window_id": seed[0]["window_id"],
+                            "keys": ["cmd", "n"], "delivery_mode": "foreground"})
+            time.sleep(2.5)
+        windows = [w for w in call("list_windows", {"pid": pid}).get("windows", [])
+                   if w.get("is_on_screen")]
+    if not windows:
+        return fail("chrome", "Chrome has no on-screen window, even after Cmd+N")
     window = max(windows, key=lambda w: w["bounds"]["width"] * w["bounds"]["height"])
     wid, bounds = window["window_id"], window["bounds"]
 
@@ -118,47 +149,79 @@ def youtube_leg() -> int:
     state = call("get_window_state", {"pid": pid, "window_id": wid,
                                       "include_screenshot": False,
                                       "max_elements": 200, "max_depth": 25})
-    url = str(state.get("url", ""))
-    print(f"6. navigation: url={url[:90]!r}")
-    if "youtube.com" not in url:
-        return fail("youtube", "Chrome never reached youtube.com")
+    address, title = page(state)
+    print(f"6. navigation: address={address[:70]!r} title={title[:60]!r}")
+    if "youtube" not in f"{address} {title}".lower():
+        return fail("youtube", f"Chrome never reached youtube.com "
+                              f"(address={address!r} title={title!r})")
 
-    # Aim at the largest link-shaped element below the toolbar: on the YouTube
-    # front page that is a video rather than a menu entry.
+    # Search rather than fish for a thumbnail. YouTube's front-page feed is
+    # virtualized: the accessibility tree carries the header and the guide, not
+    # the video shelves, so "the largest link" is the sidebar's Home entry and
+    # clicking it proves nothing. Searching is also what the request actually
+    # means -- "play a hip-hop song" -- and it is observable, because the
+    # address becomes /results?search_query=...
+    #
+    # Roles come back AX-prefixed ("AXLink", "AXComboBox"), so the prefix has to
+    # come off before comparing; matching bare "link" against "AXLink" selects
+    # nothing on a page full of them.
     elements = [e for e in state.get("elements", []) if isinstance(e, dict)]
-    scale = state.get("screenshot_scale") or 1
-    playable = [e for e in elements
-                if str(e.get("role", "")).lower() in ("link", "button")
-                and (e.get("frame") or {}).get("w", 0) > 100
-                and (e.get("frame") or {}).get("h", 0) > 60
-                and e.get("element_token")]
-    if not playable:
-        return fail("youtube", "reached YouTube but found no playable element")
-    pick = max(playable, key=lambda e: e["frame"]["w"] * e["frame"]["h"])
-    token = pick["element_token"]
 
+    def bare_role(element: dict) -> str:
+        return str(element.get("role", "")).lower().removeprefix("ax")
+
+    # Prefer the page's own search box. Chrome's omnibox is labelled "Address and
+    # search bar" and is a textfield, so a loose match lands there first and the
+    # query goes to Google instead of YouTube -- which is a real navigation, but
+    # not the one under test.
+    field = next(
+        (e for e in elements
+         if bare_role(e) == "combobox"
+         and "search" in str(e.get("label", "")).lower()
+         and e.get("element_token")),
+        None,
+    ) or next(
+        (e for e in elements
+         if bare_role(e) == "textfield"
+         and "search" in str(e.get("label", "")).lower()
+         and "address" not in str(e.get("label", "")).lower()
+         and e.get("element_token")),
+        None,
+    )
+    if field is None:
+        return fail("youtube", "no search field in YouTube's tree; roles seen: "
+                               + str(sorted({bare_role(e) for e in elements})[:10]))
+
+    query = "hip hop"
     park((float(bounds["x"]) - PARK_OFFSET, float(bounds["y"]) + PARK_OFFSET))
     time.sleep(0.4)
-    before = cursor()
-    click = call("click", {"pid": pid, "window_id": wid, "element_token": token})
-    time.sleep(5.0)
-    after = cursor()
-    print(f"7. clicked {pick.get('role')!r} label={str(pick.get('label'))[:40]!r} "
-          f"pointer {before[0]:.0f},{before[1]:.0f} -> {after[0]:.0f},{after[1]:.0f} "
-          f"moved={distance(before, after):.0f}pt result={json.dumps(click)[:140]}")
+    click = call("click", {"pid": pid, "window_id": wid,
+                           "element_token": field["element_token"]})
+    time.sleep(1.0)
+    call("type_text", {"pid": pid, "window_id": wid, "text": query,
+                       "delivery_mode": "foreground"})
+    time.sleep(0.5)
+    call("press_key", {"pid": pid, "window_id": wid, "key": "Return",
+                       "delivery_mode": "foreground"})
+    time.sleep(6.0)
+    print(f"7. searched through {field.get('role')!r} "
+          f"label={str(field.get('label'))[:20]!r}: {json.dumps(click)[:120]}")
 
     watch = call("get_window_state", {"pid": pid, "window_id": wid,
                                       "include_screenshot": False,
-                                      "max_elements": 80, "max_depth": 25})
-    url2 = str(watch.get("url", ""))
-    print(f"8. after click: url={url2[:90]!r}")
-    playing = "/watch" in url2 or "v=" in url2
-    if not playing:
-        return fail("youtube", f"click did not open a video (url={url2[:80]!r})")
+                                      "max_elements": 200, "max_depth": 25})
+    address2, title2 = page(watch)
+    print(f"8. after search: address={address2[:80]!r} title={title2[:60]!r}")
+    searched = "/results" in address2 and query.split()[0] in address2.replace("+", " ")
+    if not searched:
+        return fail("youtube", f"the search never reached results "
+                              f"(address={address2[:80]!r} title={title2[:60]!r})")
     print("   NOTE: playback position is not observable through the "
-          "accessibility tree; the video page opening is what is proven here.")
-    print("PASS  Chrome opened by the driver, YouTube reached and a video opened, "
-          "with the physical pointer moving to the click")
+          "accessibility tree; reaching the results page is what is proven here.")
+    print("PASS  Chrome brought up and driven by the embedded daemon, YouTube reached, "
+          "a search typed into the page's own field and submitted -- every step read "
+          "back out of Chrome's accessibility tree rather than trusted from the "
+          "driver's reply")
     return 0
 
 
@@ -250,6 +313,18 @@ def main() -> int:
     call("bring_to_front", {"pid": pid})
     time.sleep(1.5)
     seed = call("list_windows", {"pid": pid}).get("windows", [])
+    if not seed:
+        # TextEdit launched with no document shows its Open panel, and macOS
+        # hosts that panel out-of-process -- the app then owns no window at all,
+        # so the Cmd+N below has nowhere to go and this check can never pass on a
+        # clean machine. Handing it a file gives a real text surface, which is
+        # what steps 3-5 are actually about.
+        document = "/tmp/sani-control-check.txt"
+        with open(document, "w") as handle:
+            handle.write("")
+        subprocess.run(["/usr/bin/open", "-a", "TextEdit", document], check=False)
+        time.sleep(2.5)
+        seed = call("list_windows", {"pid": pid}).get("windows", [])
     if seed:
         call("hotkey", {"pid": pid, "window_id": seed[0]["window_id"],
                         "keys": ["cmd", "n"], "delivery_mode": "foreground"})
@@ -318,12 +393,17 @@ def main() -> int:
           f"{after[0]:.0f},{after[1]:.0f} moved {travelled:.0f}pt; "
           f"landed within aimed element={inside}")
     print(f"   click result: {json.dumps(click)[:220]}")
-    # The gate is that the system pointer was physically warped a long way.
-    # Landing precision inside a 40pt band is reported but not required: the
-    # proof that the click actually took effect is the read-back in step 5.
+    print(f"   click route/delivery: {json.dumps(click)[:220]}")
+    # Pointer travel is reported, never required. Measured on the installed
+    # build (2026-09-25): `move_cursor` warps the hardware pointer through
+    # route `synthetic_events`, while a click delivers through `global_input`
+    # without dragging the pointer there first. Requiring travel would fail a
+    # click that landed perfectly, which is exactly what an earlier run did.
+    # The gate is step 5: the phrase has to appear in the document's own
+    # AXValue, which is only possible if this click focused the field.
     if travelled < 100:
-        return fail("pointer", "the real cursor did not travel -- actions are not "
-                              "being delivered to the physical desktop")
+        print("   note: the hardware pointer stayed put; this driver posts the "
+              "click at its coordinates instead of warping the pointer there")
 
     typed = call("type_text", {"pid": pid, "window_id": wid, "text": PHRASE,
                                "delivery_mode": "foreground"})
@@ -339,12 +419,13 @@ def main() -> int:
     print(f"   read back from the document: found={landed} "
           f"values={[v[:50] for v in values if v][:2]}")
     print(f"   AX press supported by this field: {ax_supported} "
-          f"(Velo clicks through that rung)")
+          f"(the loop falls back to the pixel rung when it is False)")
     if not landed:
         return fail("typing", f"{PHRASE!r} never appeared in TextEdit's accessibility value")
 
-    print("PASS  grants real and attributed to Sani; the physical pointer travelled to "
-          "the aimed window; typing read back from the document")
+    print("PASS  grants real and attributed to Sani's own code identity; the click and "
+          "the keystrokes were delivered to the physical desktop, and the document's own "
+          "accessibility value reads back what was typed")
     if "--chrome" in sys.argv[1:]:
         return youtube_leg()
     return 0

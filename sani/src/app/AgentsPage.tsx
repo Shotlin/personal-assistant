@@ -1,7 +1,7 @@
 import { useSettings } from "./settings/SettingsContext";
 
 const friendly: Record<string, { description: string; capabilities: string[] }> = {
-  velo: { description: "Fast computer-control agent. Velo handles fast desktop actions such as opening applications, navigating interfaces, clicking, typing and interacting with your computer.", capabilities: ["Computer control", "Desktop actions", "Quick execution"] },
+  velo: { description: "The name Sani answers to for desktop work: opening applications, navigating interfaces, clicking, typing and verifying what changed. Same engine as Deep Agent, offered under this name.", capabilities: ["Computer control", "Desktop actions", "Observation and verification"] },
   deep: { description: "Reasoning and memory agent. Deep Agent handles deeper reasoning, planning, longer conversations, memory and tasks that benefit from Sani skills.", capabilities: ["Reasoning", "Memory", "Skills"] },
 };
 

@@ -57,13 +57,31 @@ pub struct SttEvent {
     #[serde(default)]
     pub gen: u64,
     /// Measured end-of-speech -> commit gap, in ms. The tuning datum.
+    /// Signed: the sidecar reports a *negative* remaining silence when the
+    /// deadline has already passed, and an unsigned field here dropped the whole
+    /// `resumed` note -- the same class of fault as `vad` above, caught only
+    /// because unparseable lines now log.
     #[serde(default)]
-    pub silence_ms: u32,
-    #[serde(default)]
+    pub silence_ms: i64,
+    /// A confidence score on partial events. Lenient on purpose: the sidecar
+    /// once put its model label in this field, a strict `f64` made the whole
+    /// `ready` line unparseable, and the reader dropped it without a word --
+    /// which is how the mic sat at "Preparing voice model" forever.
+    #[serde(default, deserialize_with = "lenient_f64")]
     pub vad: f64,
     /// Which model produced this (`silero-v5` / `rms-fallback`).
     #[serde(default)]
     pub vad_model: String,
+}
+
+/// Read a number, or 0.0 for anything that isn't one. A field the sidecar
+/// repurposes must never be able to swallow an entire event.
+fn lenient_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value.as_f64().unwrap_or(0.0))
 }
 
 pub struct SpeechHandle {
@@ -474,6 +492,10 @@ pub fn start(app: AppHandle, model: &str, turn_end_ms: u32) -> Result<Arc<Speech
                 break;
             }
             let Ok(event) = serde_json::from_str::<SttEvent>(&line) else {
+                // Loud on purpose. Silently skipping a line is how a contract
+                // drift between this struct and the sidecar turned into a mic
+                // that never reported ready and a log with nothing in it.
+                log::warn!("[stt] unparseable sidecar line: {}", line.chars().take(200).collect::<String>());
                 continue;
             };
             match event.kind.as_str() {
@@ -547,8 +569,38 @@ pub fn setup_hint(err: &str) -> String {
 mod tests {
     use super::{
         owned_cache_model_path, parse_voice_catalog, voice_catalogue_error, voice_mutation_allowed,
+        SttEvent,
     };
     use crate::app_state::UiState;
+
+    #[test]
+    fn the_ready_line_the_sidecar_actually_sends_deserialises() {
+        // The shipped worker emits `vad_model`. It once emitted `vad` carrying a
+        // string, which made this very line unparseable -- and because an
+        // unparseable line was skipped in silence, the microphone sat at
+        // "Preparing voice model" forever with nothing in the log.
+        let current: SttEvent = serde_json::from_str(
+            r#"{"type":"ready","model":"small-streaming-en","vad_model":"rms-fallback"}"#,
+        )
+        .expect("the ready line the sidecar sends must parse");
+        assert_eq!(current.kind, "ready");
+        assert_eq!(current.vad_model, "rms-fallback");
+
+        // A repurposed numeric field can no longer swallow the whole event.
+        let drifted: SttEvent =
+            serde_json::from_str(r#"{"type":"ready","model":"m","vad":"silero-v5"}"#)
+                .expect("a string where a number is expected must not drop the event");
+        assert_eq!(drifted.kind, "ready");
+        assert_eq!(drifted.vad, 0.0);
+
+        // Captured from the live log: the worker sends a negative remaining
+        // silence, and an unsigned field dropped this note entirely.
+        let negative: SttEvent =
+            serde_json::from_str(r#"{"type":"note","reason":"resumed","gen":2,"silence_ms":-53}"#)
+                .expect("a negative silence_ms must parse");
+        assert_eq!(negative.reason, "resumed");
+        assert_eq!(negative.silence_ms, -53);
+    }
 
     #[test]
     fn accepts_the_sidecars_catalog_shape() {

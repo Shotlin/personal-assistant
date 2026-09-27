@@ -32,17 +32,12 @@ export interface SetupProgressEvent {
 export interface AiConfig {
   reasoning_provider: string;
   reasoning_model: string;
-  velo_provider: string;
-  velo_model: string;
   has_openrouter: boolean;
-  has_typesafe: boolean;
 }
 
 export interface AiConfigPatch {
   reasoning_provider?: string;
   reasoning_model?: string;
-  velo_provider?: string;
-  velo_model?: string;
 }
 
 export type KeyStatus =

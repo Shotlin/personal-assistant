@@ -237,7 +237,11 @@ async def test_agents_list_returns_registered_descriptors() -> None:
             "type": "response",
             "id": "1",
             "ok": True,
-            "result": {"agents": [{"id": "fake", "name": "Fake", "capabilities": ["chat"]}]},
+            "result": {
+                "agents": [{"id": "fake", "name": "Fake", "capabilities": ["chat"]}],
+                # Build provenance rides along with every agents.list answer.
+                "engine": {"protocol": 1, "revision": "", "built_at": ""},
+            },
             "error": "",
         }
     finally:
