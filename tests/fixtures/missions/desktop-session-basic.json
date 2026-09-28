@@ -1,0 +1,22 @@
+{
+  "fixture_id": "desktop-session-basic",
+  "description": "Synthetic desktop scene for bounded work-item tests: one running browser with a search field and one distractor window. All names are public Apple bundle ids or fixture text; no account, workspace, or secret data.",
+  "apps": [
+    {"pid": 4101, "name": "FixtureBrowser", "bundle_id": "com.fixture.browser", "running": true, "active": true, "window_ids": [771]}
+  ],
+  "windows": [
+    {"pid": 4101, "window_id": 771, "title": "Fixture Search — local test page", "bounds": {"x": 10, "y": 10, "width": 1200, "height": 800}, "is_on_screen": true}
+  ],
+  "window_elements": {
+    "4101:771": {
+      "pid": 4101,
+      "window_id": 771,
+      "snapshot_id": "fixture-snap-771-a",
+      "elements": [
+        {"role": "AXTextField", "label": "Search", "value": "", "element_token": "tok-search-1"},
+        {"role": "AXButton", "label": "Search", "element_token": "tok-go-1"},
+        {"role": "AXStaticText", "label": "fixture-local-results", "element_token": "tok-static-1"}
+      ]
+    }
+  }
+}

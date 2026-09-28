@@ -41,13 +41,14 @@ class _FakeAgent:
         thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
+        run_id: str = "",
     ) -> dict[str, Any]:
         self.threads.append(thread_id)
         await on_event("step", {"n": 1})
         await on_event("step", {"n": 2})
         return {"status": "done", "echo": text}
 
-    async def cancel(self) -> None:
+    async def cancel(self, run_id: str | None = None) -> None:
         return None
 
 
@@ -70,12 +71,13 @@ class _GatedAgent:
         thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
+        run_id: str = "",
     ) -> dict[str, Any]:
         self.started.set()
         await self.release.wait()
         return {"status": "done"}
 
-    async def cancel(self) -> None:
+    async def cancel(self, run_id: str | None = None) -> None:
         return None
 
 
@@ -97,13 +99,14 @@ class _SlowCancellableAgent:
         thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
+        run_id: str = "",
     ) -> dict[str, Any]:
         await on_event("step", {"n": 0})
         while not cancel_check():
             await asyncio.sleep(0.01)
         raise asyncio.CancelledError
 
-    async def cancel(self) -> None:
+    async def cancel(self, run_id: str | None = None) -> None:
         self.cancel_calls += 1
 
 
@@ -122,10 +125,11 @@ class _ExplodingAgent:
         thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
+        run_id: str = "",
     ) -> dict[str, Any]:
         raise RuntimeError("boom")
 
-    async def cancel(self) -> None:
+    async def cancel(self, run_id: str | None = None) -> None:
         return None
 
 
@@ -147,11 +151,12 @@ class _StallingAgent:
         thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
+        run_id: str = "",
     ) -> dict[str, Any]:
         await asyncio.sleep(3600)
         return {"status": "done"}
 
-    async def cancel(self) -> None:
+    async def cancel(self, run_id: str | None = None) -> None:
         self.cancel_calls += 1
 
 
@@ -241,6 +246,9 @@ async def test_agents_list_returns_registered_descriptors() -> None:
                 "agents": [{"id": "fake", "name": "Fake", "capabilities": ["chat"]}],
                 # Build provenance rides along with every agents.list answer.
                 "engine": {"protocol": 1, "revision": "", "built_at": ""},
+                # T07 handshake (file 03 §3): additive version + features.
+                "protocol_version": 2,
+                "features": [],
             },
             "error": "",
         }

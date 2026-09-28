@@ -6,7 +6,7 @@ application serves any traffic (Phase 1 spec, Task 1 acceptance).
 
 from __future__ import annotations
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SUPPORTED_MODEL_PROVIDERS = {"openrouter", "openai", "generic_openai_compatible"}
@@ -109,6 +109,23 @@ class Settings(BaseSettings):
     # An ordinary local command is one action, not a 13-minute campaign:
     # Route A/B tasks carry their own, much shorter deadline.
     velo_command_deadline_seconds: int = 90
+
+    # Jarvis Phase 1 (docs/astra/jarvis-next-2026-09-27-58dac9c, file 03 §11).
+    # Both capabilities ship default-off: the host turns them on only for an
+    # isolated acceptance instance. Enabling missions composes durable
+    # MissionService ownership above the existing Velo fast path; disabling it
+    # restores the exact pre-mission shell. RSI mode is immutable here: no
+    # setting, model, or tool may switch it away from observation_only -- the
+    # experiment plane does not exist in this process.
+    jarvis_missions_enabled: bool = False
+    # Trusted host configuration for mission scope (C02/N04): the bundle ids
+    # a mission may operate on. Host-controlled configuration, never a model
+    # output; an empty list means no app is in scope, so actions on an
+    # identified app are refused (missing identity is never a wildcard).
+    # Read only through MissionService._scope_for; nothing else widens scope.
+    mission_allowed_apps: list[str] = Field(default_factory=list)
+    sani_tts_enabled: bool = False
+    rsi_mode: str = "observation_only"
 
     @property
     def is_production(self) -> bool:

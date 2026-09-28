@@ -21,6 +21,7 @@ Two rules shape everything here:
 from __future__ import annotations
 
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -248,9 +249,11 @@ class NoProgressTracker:
     The historical loop's ``OBSERVE``/``WAIT`` branches ran ahead of its
     repeated-mutation check, so identical steps could consume the budget one
     decision at a time. Every step of every route registers here with the
-    scene digest it observed; a digest that repeats (immediately, or after any
-    number of interleaved steps — alternation is not progress) increments the
-    no-progress count whatever the step's kind was.
+    scene digest it observed. A digest that repeats within the look-back
+    window -- immediately, or after alternating screens (A, B, A, B is the
+    classic stall the last-digest-only counter evaded; A09/RF-12) --
+    increments the no-progress count whatever the step's kind was. Only a
+    genuinely new digest outside the window resets the count.
     """
 
     max_steps_without_change: int = MAX_STEPS_WITHOUT_CHANGE
@@ -258,30 +261,35 @@ class NoProgressTracker:
     steps_without_change: int = 0
     recovery_attempts: int = 0
     _last_digest: str = ""
+    _recent: "deque[str]" = field(default_factory=deque, repr=False)
 
     def register(self, kind: ProgressKind, scene_digest: str) -> bool:
         """Record one step; ``False`` when the run must stop and report.
 
         ``scene_digest`` is a short stable hash of what observation last saw.
-        A repeated digest counts as no progress whatever kind of step produced
-        it, so observe/wait/recover cannot launder a stall into progress. A
-        genuinely new digest resets the count: real change keeps a bounded
-        task free to continue.
+        A digest seen within the no-progress window counts as no progress
+        whatever kind of step produced it, so observe/wait/recover cannot
+        launder a stall into progress and two alternating screens cannot
+        reset each other forever.
         """
         if kind is ProgressKind.RECOVERY:
             self.recovery_attempts += 1
             if self.recovery_attempts > self.max_recovery_attempts:
                 return False
         digest = scene_digest or f"<{kind.value}:undigested>"
+        window = self.max_steps_without_change
         if not scene_digest:
             # Nothing was observed: a blind step is never progress.
             self.steps_without_change += 1
-        elif digest == self._last_digest and self._last_digest:
+        elif digest in self._recent:
             self.steps_without_change += 1
         else:
             self.steps_without_change = 0
+        self._recent.append(digest)
+        while len(self._recent) > window:
+            self._recent.popleft()
         self._last_digest = digest
-        return self.steps_without_change < self.max_steps_without_change
+        return self.steps_without_change < window
 
     @property
     def exhausted(self) -> bool:

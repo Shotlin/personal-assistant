@@ -1,0 +1,124 @@
+[
+  {
+    "id": "RP01",
+    "expected": "Production Deep adapter accepts valid structured plan",
+    "actual": "ValueError: invalid plan submission: 1 validation error for PlanProposal"
+  },
+  {
+    "id": "RP02",
+    "expected": "PLAN role cannot invoke wrapped mutation",
+    "actual": {
+      "effects": 1,
+      "result": "clicked"
+    }
+  },
+  {
+    "id": "RP03",
+    "expected": "Strict mission mutation without action ledger is refused",
+    "actual": {
+      "effects": 1,
+      "result": "clicked"
+    }
+  },
+  {
+    "id": "RP04",
+    "expected": "Refused click cannot produce verified unit success",
+    "actual": {
+      "status": "COMPLETED",
+      "effect_outcome": "CONFIRMED",
+      "checks": 0
+    }
+  },
+  {
+    "id": "RP05",
+    "expected": "Proposed plan cannot broaden scope by supplying its old hash",
+    "actual": "ACCEPTED broadened app scope using copied hash"
+  },
+  {
+    "id": "RP06",
+    "expected": "Unknown/stale app identity is denied",
+    "actual": "PERMIT ISSUED for unknown stale surface"
+  },
+  {
+    "id": "RP07",
+    "expected": "Pause/resume creates explicit reconciliation or a resumable ready step",
+    "actual": {
+      "mission_status": "RUNNING",
+      "step_states": {
+        "s1": "RUNNING"
+      },
+      "next_item": null,
+      "old_attempt": "CANCELLED"
+    }
+  },
+  {
+    "id": "RP08",
+    "expected": "Secret-shaped raw goal is sanitized before mission persistence",
+    "actual": {
+      "raw_canary_retained": true
+    }
+  },
+  {
+    "id": "RP09",
+    "expected": "Changed evidence hash is rejected before verification",
+    "actual": {
+      "tampered_evidence_passed": true
+    }
+  },
+  {
+    "id": "RP10",
+    "expected": "All-skipped acceptance must be BLOCKED, never PASS",
+    "actual": {
+      "case_id": "verify-skipped-voice-probe",
+      "git_sha": "58dac9c88018674c2e780086953902f1ea135308",
+      "dirty_diff_sha256": "353f3d045e1f98bf9557381205b5e2bd3f05e2821f1942668949a3b9feaa83b7",
+      "bundle_manifest_sha256": "",
+      "os_arch": "Darwin-arm64",
+      "environment_kind": "V",
+      "fixture_seed": "",
+      "started_at": "2026-09-27T16:17:57.007770+00:00",
+      "command": ".venv/bin/python -m pytest tests/e2e/test_sani_voice.py -q -p no:cacheprovider",
+      "exit_code": 0,
+      "status": "PASS",
+      "expected": "suite completes with its documented oracle",
+      "observed": "ss                                                                       [100%]",
+      "evidence_refs": [
+        "/private/tmp/jarvis-p1-independent-review/skipped-voice-probe.log"
+      ],
+      "model_driver_call_counts": {},
+      "cost_known_or_unknown": "no paid calls",
+      "cleanup_result": "pending"
+    }
+  },
+  {
+    "id": "RP11",
+    "expected": "Zero Deep-call budget forbids invocation at provider boundary",
+    "actual": {
+      "calls": [
+        "PLAN"
+      ],
+      "persisted_deep_usage": {
+        "reserved": {},
+        "consumed": {},
+        "known_input_tokens": 0,
+        "known_output_tokens": 0,
+        "known_cache_tokens": 0,
+        "known_reasoning_tokens": 0,
+        "unknown_usage_calls": 0,
+        "known_cost_microunits": null,
+        "external_wait_ms": 0,
+        "active_ms": 0
+      }
+    }
+  },
+  {
+    "id": "RP12",
+    "expected": "One active desktop step per mission/owner before prior attempt settles",
+    "actual": {
+      "first_step": "s1",
+      "second_step_while_first_active": "s2",
+      "fence1": "",
+      "fence2": ""
+    }
+  }
+]

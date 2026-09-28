@@ -1,0 +1,1386 @@
+[
+  {
+    "path": "CLAUDE.md",
+    "sha256": "227947e1f88e7bec44c1a658c6a31bd910d779e0db36e1c68530e4730972903f"
+  },
+  {
+    "path": "README.md",
+    "sha256": "c0e5f4481a9db12383687ef88e1c2282cc8e60d7c9544e561343865f1f540803"
+  },
+  {
+    "path": "config/cua-capabilities.yaml",
+    "sha256": "265f513da6cee1cf915ff058ec23dbed629d5e8d002987148435c76ce4723171"
+  },
+  {
+    "path": "config/logging.yaml",
+    "sha256": "f54b9000f677203b737d26d3a91d92efed43c41ee47b7a28fe26036372c91a01"
+  },
+  {
+    "path": "pyproject.toml",
+    "sha256": "c50ac4d487c74b580483278abc5376d14b8dfb30c0ff01d475186e957be5726f"
+  },
+  {
+    "path": "sani/index.html",
+    "sha256": "281c434f4ff6fd865b01e5d1cf9a4a710779ff94ede31e6e275b9bc7b40b8b69"
+  },
+  {
+    "path": "sani/onboarding.html",
+    "sha256": "1fc6270914f8921c6ab9e4cbfb36e3add3f16cf1cbbeb5f3c4664ad3dd0bb2d7"
+  },
+  {
+    "path": "sani/package-lock.json",
+    "sha256": "1335232585e9d3e8836e7f5c2390257c02c37857a1367551d3b959f0138c6cad"
+  },
+  {
+    "path": "sani/package.json",
+    "sha256": "40e5f019a8232853266e154a001a90f063f3b869b414021478b6bd519ebcf12c"
+  },
+  {
+    "path": "sani/panel.html",
+    "sha256": "8faac52594e5d5f74159af484af2da09a581483319600395cd36523c84f62035"
+  },
+  {
+    "path": "sani/scripts/build-core.sh",
+    "sha256": "801ff593c82b74df959d8525b0e07370e75d19c6484c6112b7d4ceb557556591"
+  },
+  {
+    "path": "sani/scripts/build-cua-driver.sh",
+    "sha256": "a4648ad9f9f88dc3136f9a3b6fe70628271e8d92837132d102f381f4e2f0bc3d"
+  },
+  {
+    "path": "sani/scripts/build-sidecar.sh",
+    "sha256": "ee09866f9e204aeca26dc459cb459c487060a60d181080a1808f96a671156654"
+  },
+  {
+    "path": "sani/scripts/build-tts.sh",
+    "sha256": "016724294d1abfc1f418ebe344b604004a3ebc159dda09589a1b0c0351c68364"
+  },
+  {
+    "path": "sani/scripts/install-app.sh",
+    "sha256": "505ac8fc1b49022a2346c6b1bd04879fd2ea652d4e34d196733fe3f2887fca37"
+  },
+  {
+    "path": "sani/scripts/make_icon.py",
+    "sha256": "c28df0918866fced193994a03f96736e96d25f97543f8e2a0016f965d28c8373"
+  },
+  {
+    "path": "sani/scripts/probe-gateway-contract.sh",
+    "sha256": "1d28cb77a2ae6724fee92868a059974cc02e40301f8c572c8a31980b90cda719"
+  },
+  {
+    "path": "sani/scripts/probe-sidecar-speech.py",
+    "sha256": "422c0a5b0dcb26b307645eb071cb79da3b70e1f33a1976a022ac2b353c5bb2e0"
+  },
+  {
+    "path": "sani/scripts/probe-turn-endpointing-baseline.py",
+    "sha256": "b91e6b99f9b0dd675117d3f5800339ba640bae7d774944a83e72ae4d64cbe825"
+  },
+  {
+    "path": "sani/scripts/probe-voice-loop.sh",
+    "sha256": "d4cbb95dc54887271172d0d44a9723d44a1397b482f16897ab69317a062104b4"
+  },
+  {
+    "path": "sani/scripts/release-mac.sh",
+    "sha256": "da346ded76e581211257d9af064e22a342dc3ac1d353d48f79be639571525b16"
+  },
+  {
+    "path": "sani/scripts/setup-stt.sh",
+    "sha256": "0ed20c0b7ecb47ebb6b124c89935ef0a1c41ce15facf51339532da335177e07a"
+  },
+  {
+    "path": "sani/scripts/verify-computer-control.py",
+    "sha256": "243e2ad3d2679f9b5f0a74190cbd8e311a48fa6e541237d8c179b35661fc2f6c"
+  },
+  {
+    "path": "sani/src-tauri/Cargo.lock",
+    "sha256": "26bd74114c85d528e7e4e879ae60f602cbbf4ca990cec469f9f48d198fc9fb25"
+  },
+  {
+    "path": "sani/src-tauri/Cargo.toml",
+    "sha256": "531254ac4186faf0167253e1f91f5b4f9cd5e2bff1b1fc61e5dbb9885d2f31ea"
+  },
+  {
+    "path": "sani/src-tauri/Info.plist",
+    "sha256": "629285156f675d4503be6a224fb0675e8548a698b0ba111ac1f99157ffc0c3fe"
+  },
+  {
+    "path": "sani/src-tauri/build.rs",
+    "sha256": "030f09fc2c8c102a61ce04a5cb73cbf878a166a2eadcbe0f7f2f68561ffb1240"
+  },
+  {
+    "path": "sani/src-tauri/capabilities/default.json",
+    "sha256": "2fa7a27fdd6e360e2a804a59fa65939775726317d629dd3a04a8aa6c19b81a23"
+  },
+  {
+    "path": "sani/src-tauri/icons/128x128.png",
+    "sha256": "5f2e696e286387d11a27099e4c84449a8bffd05acc85d3c7d51cae6707ad2f7e"
+  },
+  {
+    "path": "sani/src-tauri/icons/128x128@2x.png",
+    "sha256": "53b2f820d6113cf6acecf62c19981c90db0152de9c3cfe8283b81f57361dc353"
+  },
+  {
+    "path": "sani/src-tauri/icons/32x32.png",
+    "sha256": "7014e9c33f8074ba459c720fb0795b41ef65e99c026290fa3ede6d3e1efa06a0"
+  },
+  {
+    "path": "sani/src-tauri/icons/64x64.png",
+    "sha256": "2e04f400184c664e5b9bc806390bdc37711e2484200e612ae77e26d2890eb83e"
+  },
+  {
+    "path": "sani/src-tauri/icons/Square107x107Logo.png",
+    "sha256": "88fa22bd8744cd3c4bef76aa764d37ffd1ed3da87ce395477c301738a0cc2602"
+  },
+  {
+    "path": "sani/src-tauri/icons/Square142x142Logo.png",
+    "sha256": "f57947a4635b6723377d1730145a965ab8d7ac4ecb55a3c3277924a4c21addcd"
+  },
+  {
+    "path": "sani/src-tauri/icons/Square150x150Logo.png",
+    "sha256": "00a7c09201be84b11664a6a3d7796ba973df4307c97d0154d966c97923ee2a12"
+  },
+  {
+    "path": "sani/src-tauri/icons/Square284x284Logo.png",
+    "sha256": "31ba58c55d4db0d348a5b5f372fdc0822acb08a65a5d6f80a9d71fdfdade37c2"
+  },
+  {
+    "path": "sani/src-tauri/icons/Square30x30Logo.png",
+    "sha256": "64959c044b1448de9c9b6a4828c2d6d349da2ef6936a21ef666e9097de5c0798"
+  },
+  {
+    "path": "sani/src-tauri/icons/Square310x310Logo.png",
+    "sha256": "34d404895c7b8c6d5ccf88aaa3b99fe429d6cda66bb625330fa49a63ca559ff2"
+  },
+  {
+    "path": "sani/src-tauri/icons/Square44x44Logo.png",
+    "sha256": "c0a293fd6186646fba0a7f326e5dc65976b4f6b79ec383b7cee1ffbd47e029f9"
+  },
+  {
+    "path": "sani/src-tauri/icons/Square71x71Logo.png",
+    "sha256": "7061caf320667c5646c6619ed48eedf74ac784edec7a4f2f623951dc41c74d15"
+  },
+  {
+    "path": "sani/src-tauri/icons/Square89x89Logo.png",
+    "sha256": "9778d2cfe34cf290eb56c9316809fcf7fc620a9d95d8a697912f580658af26f3"
+  },
+  {
+    "path": "sani/src-tauri/icons/StoreLogo.png",
+    "sha256": "ed75359414f51daf1266c229ae451d2c181ab279af888712c70c2f876126e75c"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml",
+    "sha256": "760d4b8a06bf7163dd010c33ad2cac9e4a75fa0177afaba042f83e311eef0c3e"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-hdpi/ic_launcher.png",
+    "sha256": "896df054defbd11fee3317e7adec916879a13dce92228453ef2ac0faaed2edbb"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-hdpi/ic_launcher_foreground.png",
+    "sha256": "6ad7a817f54d36b72f2fb60b438943679c1f8021977d8ce49f064b4ac6a976cf"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-hdpi/ic_launcher_round.png",
+    "sha256": "15e98dffaf5dca592cee0d881e785ab62cf428abc471890f4c406813b0c17486"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-mdpi/ic_launcher.png",
+    "sha256": "397496ef729f97736876cb1a487001bbb8c3751285eb67f0e8ea90f5e263ec2e"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-mdpi/ic_launcher_foreground.png",
+    "sha256": "c2902289d8cc3a7e631f6a101ea81f08f7e15b8dda54fbea8cfe565fb7528f31"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-mdpi/ic_launcher_round.png",
+    "sha256": "5ab22e3897e7d360b25adfa7eadcb6990e3ae268450f093521f92361136574f4"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-xhdpi/ic_launcher.png",
+    "sha256": "c841e56674324c6b7990583fdc70b0b34739e2e974deb4febacc306aff0e9a44"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_foreground.png",
+    "sha256": "4ef109dc365c844c5ab4ebe8194e9ea28a588f8e92eba275c7dc082c728993bd"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_round.png",
+    "sha256": "a2e84e96e606aa8a576d07435a49527d19978f8a605da9ae9d81b908b7f8804f"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher.png",
+    "sha256": "b628355ba08f12d317b515b1bc57a37209d01b2bb40cc511c1d817338ed8b593"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_foreground.png",
+    "sha256": "422f3360542f752046b833f1a11b747877a8ace13fa7a057751989e7a8610b9a"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_round.png",
+    "sha256": "5def5a4476a54014bb8d50ec931ee8051fb1e8c32af1de6d7ce10e38dc45409f"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher.png",
+    "sha256": "281bb2b629e952b529fcd765c87004271e667bea52af5aca7ab5d1512e2216b1"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_foreground.png",
+    "sha256": "fc59dacf36b806e02f03850989646cb3fc64f7f7d9ca264a0d0497d295347337"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_round.png",
+    "sha256": "867f1f9b7964e2bf3901c7f753fdc6b049ab01eb6b3ae466c323cce9801bc5ee"
+  },
+  {
+    "path": "sani/src-tauri/icons/android/values/ic_launcher_background.xml",
+    "sha256": "0687336f0ccc6f7ee09c7c95110667c63b75931238df779a21af401fb864cd34"
+  },
+  {
+    "path": "sani/src-tauri/icons/icon-1024.png",
+    "sha256": "c802e3b7f92ec2159c0b58d02c1d64ba076cb6fae05d44ea2cce1163d7d0e60c"
+  },
+  {
+    "path": "sani/src-tauri/icons/icon.icns",
+    "sha256": "edc83cf5b58e0651ba6948ac4a5a75b00d3cc9dec8a2622e2bfb03c41f76e2ba"
+  },
+  {
+    "path": "sani/src-tauri/icons/icon.ico",
+    "sha256": "f28a93a4943f5340b8bf303c25b93e7ad6102b533f7bd78bcc34b90cfe31861d"
+  },
+  {
+    "path": "sani/src-tauri/icons/icon.png",
+    "sha256": "6b32b359d2e6a2bbc9b76e9675f787fb01816620cf0b4e7ac7e3e2986a075928"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-20x20@1x.png",
+    "sha256": "478576eeee3f10e839891a0b5519c97632c248e2afaa4ae70c45bef947e52cbe"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-20x20@2x-1.png",
+    "sha256": "8465f9c88ca77d7c7aa66360c46a7b733dce02fefffa1dc1240854e7088804e6"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-20x20@2x.png",
+    "sha256": "8465f9c88ca77d7c7aa66360c46a7b733dce02fefffa1dc1240854e7088804e6"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-20x20@3x.png",
+    "sha256": "a07292d683dfcb6a3190f5f2048f549a5f8e28371a39137eaefceb35f1ba486e"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-29x29@1x.png",
+    "sha256": "8abbe02dbf8a3ca1f7e27dddee8a44a1a6ab5525802f5a894ee101bc2b88572a"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-29x29@2x-1.png",
+    "sha256": "8678f19b8aa76a7d79975b402a9163fc6665eb54dbb404b6d72aadfecf84a1fe"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-29x29@2x.png",
+    "sha256": "8678f19b8aa76a7d79975b402a9163fc6665eb54dbb404b6d72aadfecf84a1fe"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-29x29@3x.png",
+    "sha256": "6c31b17fab5f5b9dcb24d53770d6d76b1d1e47087be2a8911fc75d1379936e6d"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-40x40@1x.png",
+    "sha256": "8465f9c88ca77d7c7aa66360c46a7b733dce02fefffa1dc1240854e7088804e6"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-40x40@2x-1.png",
+    "sha256": "6fa0c73de88c5dad69f917ef6717fc240a0b7367c3266291c3df3269d38b2051"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-40x40@2x.png",
+    "sha256": "6fa0c73de88c5dad69f917ef6717fc240a0b7367c3266291c3df3269d38b2051"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-40x40@3x.png",
+    "sha256": "e9886810b99488ce86a50bd82fec1a320de8108cc73829839353d7522d4d162d"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-512@2x.png",
+    "sha256": "1261ac343d24418760d21e4046c8ef839f79db916f85cfbf4107fd56efb467e8"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-60x60@2x.png",
+    "sha256": "e9886810b99488ce86a50bd82fec1a320de8108cc73829839353d7522d4d162d"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-60x60@3x.png",
+    "sha256": "ab297575e65a760dd3ef411e8fe17ce966021c417209bb49c5143571457f79e9"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-76x76@1x.png",
+    "sha256": "e7c4768aaab865153ead1167f7ac7f52e97f35678a352d227be0f555b002959a"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-76x76@2x.png",
+    "sha256": "69862f8b1b6817b830230b7739b955873cd8f8c3c8c5ff26a0dee3d361cc263b"
+  },
+  {
+    "path": "sani/src-tauri/icons/ios/AppIcon-83.5x83.5@2x.png",
+    "sha256": "eb675e46e09f72e97e042b85f42fb2758f4d45b850c8ab66e04415ea180ea713"
+  },
+  {
+    "path": "sani/src-tauri/native/macos_work_area.m",
+    "sha256": "ec55a6d7c70d0b4055ef281829ff0bf9f6f36386cc580a2fde2d81464500bf27"
+  },
+  {
+    "path": "sani/src-tauri/native/mic_permission.m",
+    "sha256": "2beb1df6becaf765a7e665fe71e5783092b799ed02d64a9e839024c2ef040bc5"
+  },
+  {
+    "path": "sani/src-tauri/native/snapshot.m",
+    "sha256": "296484fb7692557d1d3492045073577a4cbb566205a71470373d80fbe161bc13"
+  },
+  {
+    "path": "sani/src-tauri/native/system_permissions.m",
+    "sha256": "e0e00b7039bf49b96ce46c56ffa54c51e3a1f65a82c0e2a48610aef952e800db"
+  },
+  {
+    "path": "sani/src-tauri/python/assets/silero_vad.onnx",
+    "sha256": "2623a2953f6ff3d2c1e61740c6cdb7168133479b267dfef114a4a3cc5bdd788f"
+  },
+  {
+    "path": "sani/src-tauri/python/sani_core_entry.py",
+    "sha256": "273f3ebbd9436e0217d3949aa8069e807888ebb4fc08220fa1992444cbab5402"
+  },
+  {
+    "path": "sani/src-tauri/python/sani_stt.py",
+    "sha256": "8e2eb328f74654bac732c4ae0d3abc8fc1cf8c9e0a34b3042e045b0c63d05190"
+  },
+  {
+    "path": "sani/src-tauri/python/sani_tts.py",
+    "sha256": "fcf102128bd26fd6ecd3c62bbe9a893ce502376c10a216f8087f6cd4727f0575"
+  },
+  {
+    "path": "sani/src-tauri/release-manifest.json",
+    "sha256": "9182a1f580c13492a5fb72f7e2b6a9d96ec2825d74c678bef4b75aadb4d66f30"
+  },
+  {
+    "path": "sani/src-tauri/src/app_state.rs",
+    "sha256": "b800fecdd1b316fbcbdb98644833e18e4f80dba98177db7812d91049f53382a2"
+  },
+  {
+    "path": "sani/src-tauri/src/audio.rs",
+    "sha256": "0826f11bf994d3c56ad9fe95a4afaa7cd3136c98c3213fdeff3171972e42f6ec"
+  },
+  {
+    "path": "sani/src-tauri/src/desktop_control.rs",
+    "sha256": "fcd094b7e527ee057ae2a2a6ef5682bc1a4d3181c494600fb1f5993eb8323626"
+  },
+  {
+    "path": "sani/src-tauri/src/history.rs",
+    "sha256": "dcde2f66030d06458d849131347f352f8ce55f397bda933a5be7f83640a74b9c"
+  },
+  {
+    "path": "sani/src-tauri/src/hotkey.rs",
+    "sha256": "d3b40195ea592c09e28fdb4d62cb8ae5f0d9eed8de1ad3b7f9a62bb8c96e861e"
+  },
+  {
+    "path": "sani/src-tauri/src/macos_work_area.rs",
+    "sha256": "98eab4b0fdd7681a6737564971547625c093336e2489e99cd18d1b7b81815315"
+  },
+  {
+    "path": "sani/src-tauri/src/main.rs",
+    "sha256": "58fce810b06d97fb6518f0f5dc371ad69fbbe8def8e2d6af702972bcc7c1c370"
+  },
+  {
+    "path": "sani/src-tauri/src/missions.rs",
+    "sha256": "6f332336f0339a8cbcd52a7726ccca45e126127424aa0e99a7594414b0f342df"
+  },
+  {
+    "path": "sani/src-tauri/src/onboarding.rs",
+    "sha256": "e11601a2068ba14c06ae7374917e1d3c0317ff22c8a5def605c607a88cbc2ac8"
+  },
+  {
+    "path": "sani/src-tauri/src/overlay_geometry.rs",
+    "sha256": "448d6d3728fa95431d73f16d230b82e724e3776624dcfd55d3551faad4aefe3d"
+  },
+  {
+    "path": "sani/src-tauri/src/permissions.rs",
+    "sha256": "31d3a99e3c66fa99971cb21b378de80a7a0067c8e7d7a9480e94ba271883e328"
+  },
+  {
+    "path": "sani/src-tauri/src/runtime.rs",
+    "sha256": "fab1844b30b3e7c21a3ca1c1e4ebdb5a6e89db162f7fa3b843e2e02e74262af8"
+  },
+  {
+    "path": "sani/src-tauri/src/sani_core.rs",
+    "sha256": "93e64a44e91acd1f5c4c9630cc0266c46af8d579a73ae1ff5f6489fa837dacac"
+  },
+  {
+    "path": "sani/src-tauri/src/settings.rs",
+    "sha256": "79622df0ad94114dad85661dc0f6f93bbc5b9d3cd2be3d8f784c481f25958689"
+  },
+  {
+    "path": "sani/src-tauri/src/setup.rs",
+    "sha256": "437a98a6354ebc05fa0f86b2887241cee3a855e11954c1029b56174f47257bc9"
+  },
+  {
+    "path": "sani/src-tauri/src/snapshot.rs",
+    "sha256": "976fa779ce568c02d347b3bb866c51bdb1478bf9cd69b6863eb3c7876a322059"
+  },
+  {
+    "path": "sani/src-tauri/src/speech.rs",
+    "sha256": "b9ff4a1688a0f59df682459c185dd19e5bda6316f76ba61d0aac16464e1f324e"
+  },
+  {
+    "path": "sani/src-tauri/src/system_permissions.rs",
+    "sha256": "d34427da8ce7a01edb5c9f472a3f39e081a9b90fdd6c8164dcf8f05576482baf"
+  },
+  {
+    "path": "sani/src-tauri/src/tts.rs",
+    "sha256": "ddf282e74f22449bccbe05acbed8af9de393a453a685e9088eaa358a6252b553"
+  },
+  {
+    "path": "sani/src-tauri/src/tts_protocol.rs",
+    "sha256": "047be51159a3735d996a2db0568cbb8e08bdc7f6fcbc71fd9bf604ae37256a6c"
+  },
+  {
+    "path": "sani/src-tauri/src/tts_queue.rs",
+    "sha256": "f74073f582cf6eb04f771e6bf142e4a0024aacbcccf6e1df4aa00692d6486250"
+  },
+  {
+    "path": "sani/src-tauri/src/window_geometry.rs",
+    "sha256": "3eb34f56c3e4587b01a25f5e0db980a81e7e64f9a88403b35c1685e737ba2be7"
+  },
+  {
+    "path": "sani/src-tauri/src/windows.rs",
+    "sha256": "11eb663a37368b72bcbc402cbf38e1aa8b91da92651b331b92a9d1b6b375c7d6"
+  },
+  {
+    "path": "sani/src-tauri/tauri.conf.json",
+    "sha256": "b789bb53a52ff52e2ab8a432a1b985379d3a87e192c7ee6c12d11aa8b73d7b82"
+  },
+  {
+    "path": "sani/src/app/AgentsPage.tsx",
+    "sha256": "ad180a6cda5b3b1c5b8ce9379911517b13d02033693f0573121f5495bf24acc4"
+  },
+  {
+    "path": "sani/src/app/ComputerControlGallery.tsx",
+    "sha256": "23114804aac17763855dfa6b9df54f0966f3e6246b05229be7adb6b902fd5819"
+  },
+  {
+    "path": "sani/src/app/ComputerControlPage.tsx",
+    "sha256": "76de73db9a61a0f1495f28fafdd5e314d9fb0631f7349966df81bef5c03129db"
+  },
+  {
+    "path": "sani/src/app/ComputerControlStatus.tsx",
+    "sha256": "d875d357f1553641c59d3030b8b6560ad436bd18212192a98543e80a9ffb91a6"
+  },
+  {
+    "path": "sani/src/app/ConversationsPage.tsx",
+    "sha256": "2ed8b259caec5a412a0cb7279861b31863988dbf70570b078dcf689315db075b"
+  },
+  {
+    "path": "sani/src/app/DiagnosticsPage.tsx",
+    "sha256": "49dd366805b089e4f9edeecc83da0cb0f605f58de8f52ab2cba7b5aca3dd28f1"
+  },
+  {
+    "path": "sani/src/app/MainApp.tsx",
+    "sha256": "30d35d06f87d5cfe69fd02559ddff04d70142b70ab3170aea6d8284653124aa1"
+  },
+  {
+    "path": "sani/src/app/OverlayApp.tsx",
+    "sha256": "002c4e80d5b1cb31637e02bd60124b8f17463de37f284b3b30a007046c96425f"
+  },
+  {
+    "path": "sani/src/app/OverlayLayoutEditor.tsx",
+    "sha256": "2674ac3bdb76c1fa3842ac2891b099754a3a96e56c9b00859a2a4026b4dc2deb"
+  },
+  {
+    "path": "sani/src/app/PanelApp.tsx",
+    "sha256": "fb91d28bc978ad6c085231b5ecad467c08f6dcb48626aee0f96d5b40eef945f8"
+  },
+  {
+    "path": "sani/src/app/main-main.tsx",
+    "sha256": "ab8069fcd149c7228d9402d9c0249923470c259c6666ee7975096b36f899334c"
+  },
+  {
+    "path": "sani/src/app/onboarding-main.tsx",
+    "sha256": "83581f3cd3783d6424ca0c14058d5546c71cead9fac36c45de6d36618b952bba"
+  },
+  {
+    "path": "sani/src/app/panel-main.tsx",
+    "sha256": "a978f0e1d7dcdefecb5250419fa19e24e007301f3f49d9cbaec13fe46f4eeaf6"
+  },
+  {
+    "path": "sani/src/app/pill-main.tsx",
+    "sha256": "02e43c78e00c1ba0906b69b443c2e9d6abf26f2a53f2f42477a4c42c6e0c813f"
+  },
+  {
+    "path": "sani/src/app/settings/FullSettings.tsx",
+    "sha256": "08b044e8381299cd9b5e96d095d699f43f39df2c89e165ff4be92494ffb608ac"
+  },
+  {
+    "path": "sani/src/app/settings/SettingsContext.tsx",
+    "sha256": "a7405e449dcfacd445c9cb598f7d4da775a99e27f6f36f7d610303ba348aee5c"
+  },
+  {
+    "path": "sani/src/components/ActivityTimeline.tsx",
+    "sha256": "4e67fdf9d3e73b45e49bfc46f6b71517d2c0622c3261e8ac982936d0ee732343"
+  },
+  {
+    "path": "sani/src/components/HistoryDrawer.tsx",
+    "sha256": "ca94c60ddf57ebb4bea5b1eb0bd6af48647881dccb7adf679fd3bc7100960e90"
+  },
+  {
+    "path": "sani/src/components/MainConversation.tsx",
+    "sha256": "97f5e448aac1500b49e7778310eb58bda87851ec6f9e19a60293b1cdf571d2f1"
+  },
+  {
+    "path": "sani/src/components/MainSidebar.tsx",
+    "sha256": "8834fd3ae3e2a48fc43689354154978cbaeaf94e7257dbb363ba14a19de23671"
+  },
+  {
+    "path": "sani/src/components/Message.tsx",
+    "sha256": "39b25b32704f917b2053329e1ccaf69f9a2857482618205da5ca059c0a9eae81"
+  },
+  {
+    "path": "sani/src/components/MissionStatus.tsx",
+    "sha256": "bcbb08284b26038b034827c832fdfdf167195ed9955f95aebb8fcd74c59bb2bc"
+  },
+  {
+    "path": "sani/src/components/SettingsDrawer.tsx",
+    "sha256": "4d78289a03474fa16e88f6da8044f0f5ecfdeecab99acee5510f15956f0ea5d7"
+  },
+  {
+    "path": "sani/src/components/Waveform.tsx",
+    "sha256": "56539378821e49f85bbe2f37cd23bff13345ce0177aadfb0faccb7401e82959d"
+  },
+  {
+    "path": "sani/src/lib/boot.ts",
+    "sha256": "2736688ccb66063da83c5ba06bbf7c176c10e6225d5a7f30a8c7c4fcbdf6155d"
+  },
+  {
+    "path": "sani/src/lib/tauri.ts",
+    "sha256": "864f8baf04338f96b3eef7e09c21850cf89780a2e49626dde05d5aadab3fda16"
+  },
+  {
+    "path": "sani/src/onboarding/ApiConfigurationStep.tsx",
+    "sha256": "fbec43592aee9b76de98207cc6d3d0ae39955224acd87635dd89b6f47f2c5c1f"
+  },
+  {
+    "path": "sani/src/onboarding/FinalCheckStep.tsx",
+    "sha256": "eb41ce3e4af2a4a2de0d1b28053233ab77a58824d85d7e02315503e3355e490b"
+  },
+  {
+    "path": "sani/src/onboarding/OnboardingApp.tsx",
+    "sha256": "37f510c9cdfcf817b91eac0da5d8c19b72b7352b38174b6251c131935263f820"
+  },
+  {
+    "path": "sani/src/onboarding/PermissionsStep.tsx",
+    "sha256": "2c1bb674ffa241291966b6d74ef8466de8895bb5e52bb17e80e4c6798aba79af"
+  },
+  {
+    "path": "sani/src/onboarding/PreferencesStep.tsx",
+    "sha256": "374d90a0ca36d026c571c88b0be2c0f8bc2f10035cd66331fb8db89ee3def36d"
+  },
+  {
+    "path": "sani/src/onboarding/ReadyStep.tsx",
+    "sha256": "4fa017dbea03f92b31f5f0d772f14ccf35b3899e2e7f883d2c0797c62c2dd1ad"
+  },
+  {
+    "path": "sani/src/onboarding/SetupProgressStep.tsx",
+    "sha256": "31fa83a287042dfeb48169784cdde6066340f386e9276765dbeefd479843f70a"
+  },
+  {
+    "path": "sani/src/onboarding/WelcomeStep.tsx",
+    "sha256": "991a196a18067f8953f4be1f338d6cbd709216f9abc885cb238f59ebbcc04923"
+  },
+  {
+    "path": "sani/src/onboarding/api.ts",
+    "sha256": "9eea81a6ed43a62e634fcea262fa1c1e17116ecc97d7a83905638ba8cd28a256"
+  },
+  {
+    "path": "sani/src/onboarding/components/SearchableSelect.tsx",
+    "sha256": "7107b775fcdf03939999068c7222b8e325714545c850081a9cc9e3bb72ba411e"
+  },
+  {
+    "path": "sani/src/onboarding/components/icons.tsx",
+    "sha256": "a122fddf0038b7d07c058325db3958b3b21e45c7270cc1762f837173b08b4909"
+  },
+  {
+    "path": "sani/src/onboarding/components/ui.tsx",
+    "sha256": "0091081b7f5232287110d95e79eed28b1ce7e9702f8080c022a449770354db36"
+  },
+  {
+    "path": "sani/src/onboarding/types.ts",
+    "sha256": "97c7673ba7a64e8259429548376dae2645b3506975b283804e6d09b6112f9216"
+  },
+  {
+    "path": "sani/src/styles/main.css",
+    "sha256": "623894e1574936f4e0886f8cafb13705e0c08393d51c309bf39be04636d354b9"
+  },
+  {
+    "path": "sani/src/styles/onboarding.css",
+    "sha256": "444df459a8b54e8a5875d0a802d9432826cd104fd80ef75167ede2df037a26ac"
+  },
+  {
+    "path": "sani/src/styles/panel.css",
+    "sha256": "8fac463da802fa23f073751f4fd7e4614c6ef60a0a3c77887ee9c73ff5218009"
+  },
+  {
+    "path": "sani/src/styles/pill.css",
+    "sha256": "a760d1c4ded8242d0475d175c5957fc7559704e7c2adcbcb68d00126cd0f659c"
+  },
+  {
+    "path": "sani/src/styles/tokens.css",
+    "sha256": "f1a477f5c56d79ebe6ae1fd533d15105653ddd90d916cae299adcb93176e1c39"
+  },
+  {
+    "path": "sani/tsconfig.json",
+    "sha256": "d47b694e379e18b9bb3c25403aa08a9ce50a5e8ab60cbcca5bbba848400eebee"
+  },
+  {
+    "path": "sani/tts/pyproject.toml",
+    "sha256": "9d8419dc6e773a42ad41275f4322c4db22f5d46d566e3a6fb99c7bead29f7c28"
+  },
+  {
+    "path": "sani/vite.config.ts",
+    "sha256": "2d01710c4dd6efb430fcd62b817052672cf8a49833e2398d37fc678b49d5b629"
+  },
+  {
+    "path": "scripts/benchmark_sani_core.py",
+    "sha256": "8a87e8f5025b7cc114ce75b95481ca70f1535b2b48b64f4f8eb5889463123037"
+  },
+  {
+    "path": "scripts/init_db.py",
+    "sha256": "1b419c7828657b1923fa0abbf01f9fa02db793ab2f44ff22985ff7bad85e2c18"
+  },
+  {
+    "path": "scripts/pick_model.py",
+    "sha256": "effb7043a230138875b266095ac35c37d378f3ca3900573ddd89a6fbf9e84f6a"
+  },
+  {
+    "path": "scripts/run_agent_api.sh",
+    "sha256": "a67dc7b2591a348044c2ab2fbeccce5639d7ab34ffb5fe5921f8ed12474c5b78"
+  },
+  {
+    "path": "scripts/verify-agent-loop.py",
+    "sha256": "1fb76480341c95967a08e875d3f18614a5750b2b9621af8fe5c48bdb527cb41f"
+  },
+  {
+    "path": "scripts/verify_cua.py",
+    "sha256": "e17ba29d2dc545db5a0e3169918844efe73cd53867c06dd6f7e5bde8a0b83db5"
+  },
+  {
+    "path": "scripts/verify_phase1.py",
+    "sha256": "425a39324de15895748695decbec1004c0c8109ed45ee95b0c148d4257c59655"
+  },
+  {
+    "path": "src/assistant/__init__.py",
+    "sha256": "f866f3e149d3d99c1049b1a2adcc6b91799628d0d61982c0ce82842e65e38ef0"
+  },
+  {
+    "path": "src/assistant/agent/__init__.py",
+    "sha256": "1614fd5d57e2122244b60560a4cce6a4c9d52d16f85040be034d035090dfc785"
+  },
+  {
+    "path": "src/assistant/agent/build.py",
+    "sha256": "71a9312d8dcea4475f3c9b209c9b2accf961f7c6021eac7ff229a481cfce4129"
+  },
+  {
+    "path": "src/assistant/agent/context.py",
+    "sha256": "e7f24028fe83b59a2a1f350e52f95f7d31ae2148fc5d5c4adbf99015c5b187eb"
+  },
+  {
+    "path": "src/assistant/agent/observation_trim.py",
+    "sha256": "4fb7898d3946e396d76e9e907e87dc8162d347256e314a05804ecf3f98f9829d"
+  },
+  {
+    "path": "src/assistant/agent/profiles.py",
+    "sha256": "d7f15605328d4d02d32d6c172b14fd6e49cdea93168e59f1fa7fbb05a5a5f2cb"
+  },
+  {
+    "path": "src/assistant/agent/system_prompt.py",
+    "sha256": "b04eba324bf1b5584a592cf7ce92b5992e92e70576d2fde9f5131d1fb8ccc019"
+  },
+  {
+    "path": "src/assistant/api/__init__.py",
+    "sha256": "b3ca3896052399d26c2d33aa7a85e36244c12bbab2ccdb3dde70d7de2ee16bb0"
+  },
+  {
+    "path": "src/assistant/api/auth.py",
+    "sha256": "76cc8a651ae047c7040fab048279a4745d8c5baaf020e2a1987b924ff8532759"
+  },
+  {
+    "path": "src/assistant/api/chat_route.py",
+    "sha256": "2fdffc611e9be6158618ce3ad2e92385294c047181b5f7ecc3d033bd33838f8a"
+  },
+  {
+    "path": "src/assistant/api/identity.py",
+    "sha256": "dd44984015cec01fd460e40e32774ce754c71a677f23513773187a75867c16cc"
+  },
+  {
+    "path": "src/assistant/api/models_route.py",
+    "sha256": "04a0ebad9358de6c3b9f6ceb2b6109524515dd3a51f413d97f3e1636dd25e554"
+  },
+  {
+    "path": "src/assistant/api/run_events_route.py",
+    "sha256": "62532815619e60d4735be5cbf3a7a70b3480192074b23864f474e466fc2a83de"
+  },
+  {
+    "path": "src/assistant/api/schemas.py",
+    "sha256": "279860dae2fba3703530849666a860d4099339352c298293f0993da3fcaf3f0c"
+  },
+  {
+    "path": "src/assistant/api/streaming.py",
+    "sha256": "277f9e58533f95510eb43e214e1ffe2158b672b29d2ce8b59887de2b49a9b6ac"
+  },
+  {
+    "path": "src/assistant/api/turns.py",
+    "sha256": "ae96c9da4a1f8805b9c7e4f0cceec312671f465eaeec223026f36e46863c210c"
+  },
+  {
+    "path": "src/assistant/core/__init__.py",
+    "sha256": "5ad81ab5e41def00a7dfde935a1ef333523a53b9e8165e77397a063fcebee42a"
+  },
+  {
+    "path": "src/assistant/core/__main__.py",
+    "sha256": "20137dd5b405a3990f5d5d51c24ab8d03ef35fdf339c72baa41203369151bfdb"
+  },
+  {
+    "path": "src/assistant/core/agents.py",
+    "sha256": "56ae1c6326810cfd15dd38a09f6b0d75becb8c29e5eee7fda0f6477e2a042152"
+  },
+  {
+    "path": "src/assistant/core/app.py",
+    "sha256": "c4ec2a1fe33489937406b5b4cb6355e549ecab0d6f1588d8c9727112ec2d9976"
+  },
+  {
+    "path": "src/assistant/core/desktop.py",
+    "sha256": "1b5c7a815f172d789bf22fdaf87e722a7b3f1db0b886ab6712610252fcf8aaca"
+  },
+  {
+    "path": "src/assistant/core/identity.py",
+    "sha256": "1178a81027e990f0893251d2ef5634fd4b582b432017858f83caa0c958bf65bf"
+  },
+  {
+    "path": "src/assistant/core/protocol.py",
+    "sha256": "b666e54175c3f1987722a07831e5a304489c2d394f592f6de54d84ea8e4f4b63"
+  },
+  {
+    "path": "src/assistant/core/registry.py",
+    "sha256": "7f73d710c19b06b43e449b6d2ef8ed9ed8786c7bcfa2ad167c25ecdaad681723"
+  },
+  {
+    "path": "src/assistant/core/runtime.py",
+    "sha256": "8f934654c0852860aa2acf7c363a38e2de637cc775fff9b495c9215e62a7f6b6"
+  },
+  {
+    "path": "src/assistant/main.py",
+    "sha256": "18ea65eaea8cee424d05be621875e9fdd06b8e5b673a0b6d1657092918fbbe2c"
+  },
+  {
+    "path": "src/assistant/memory/__init__.py",
+    "sha256": "61624a7a0fe920edea565b8a4f62783d1c9281de9d0665dac9ecdbe73349d2e5"
+  },
+  {
+    "path": "src/assistant/memory/local.py",
+    "sha256": "158568b3b6dc826e045088b215356bf17a336cda8b7e67121197e1e02da8eeb9"
+  },
+  {
+    "path": "src/assistant/memory/namespaces.py",
+    "sha256": "5c419aa6c958b3d9ac4666d3aa2c814a79bb13a3577c5c0c4e6e19f5c9a28b4b"
+  },
+  {
+    "path": "src/assistant/memory/policy.py",
+    "sha256": "17f5780ef1f1f5895474c269cc45ffeb0571b4a70f987c99eedab0b3d925704b"
+  },
+  {
+    "path": "src/assistant/memory/postgres.py",
+    "sha256": "24245e824f1c1f6963361037427a9097d89ad16e6bc4d7c4f500966e17bbfdbd"
+  },
+  {
+    "path": "src/assistant/missions/__init__.py",
+    "sha256": "082a3293347217c45f4bce595659b11a6b5524d6afd6dfd92b6e6aa43d842f8e"
+  },
+  {
+    "path": "src/assistant/missions/authority.py",
+    "sha256": "755524d12409c8eb094008a9287467c75d818323034fbeae2cfc7ad3e2a0c969"
+  },
+  {
+    "path": "src/assistant/missions/contracts.py",
+    "sha256": "acc179422edc46335e43e8c1063d163ade02412fcb27cd9fb10efe5fde8ddb4b"
+  },
+  {
+    "path": "src/assistant/missions/controller.py",
+    "sha256": "3bec3c7f9b549f99e52326262a40db6a2e74219750dc34234f267fadcec9002e"
+  },
+  {
+    "path": "src/assistant/missions/evidence.py",
+    "sha256": "2148d538938c0de92558a333d637a5b2af73d9820cb5cd0f753aebac15b41405"
+  },
+  {
+    "path": "src/assistant/missions/executor.py",
+    "sha256": "30e95e63dd6d81364568c9b8ed4b1b0b70ea7fbcfc00d05f43a62d0006f14ded"
+  },
+  {
+    "path": "src/assistant/missions/observer.py",
+    "sha256": "1e8a844e092ec4719afa2328229e138652e9d942f48687e279aef84bba70c8f6"
+  },
+  {
+    "path": "src/assistant/missions/recovery.py",
+    "sha256": "40b7ea76e1c2d98e83677e9cb5b91874586113e31cc23ea1cb842cd1a2831832"
+  },
+  {
+    "path": "src/assistant/missions/service.py",
+    "sha256": "a2b3cfcdc1b112e872f75a57f52a32717d56253e949e093922e9a49b71381b3d"
+  },
+  {
+    "path": "src/assistant/missions/store.py",
+    "sha256": "e59d06f357c9bea230acbc8e059434122000fea91b294e3de68c46b5ea77592b"
+  },
+  {
+    "path": "src/assistant/models/__init__.py",
+    "sha256": "5caf44381137c677ea74be370e90db9780e8ff5a579012485597fa18cd3856f2"
+  },
+  {
+    "path": "src/assistant/models/base.py",
+    "sha256": "83d65f3701bc6cd1228e0f4d31dd821396c1c31dca755b8d5cb297817d2f2804"
+  },
+  {
+    "path": "src/assistant/models/factory.py",
+    "sha256": "cfe391d15569bee1b1fd83306e6e9f7d902dc227c22b16a39b94dcc54653e179"
+  },
+  {
+    "path": "src/assistant/models/openai_compatible.py",
+    "sha256": "e55de4a78d3e508aae75798e425534e29c000ce7b550eb2d53f0936418acc6d5"
+  },
+  {
+    "path": "src/assistant/models/openai_provider.py",
+    "sha256": "f4abb6e26bdc4042e7ef73df18b7ce8a2ea09dfa0a38aa92265359902bb1cb7e"
+  },
+  {
+    "path": "src/assistant/models/openrouter.py",
+    "sha256": "5e9aaf8f7413ccf21c3af55596ed21795a51756020cc75461b7635a41ce5798c"
+  },
+  {
+    "path": "src/assistant/observability/__init__.py",
+    "sha256": "3378713c5fbd9ce73ee5d37ac8db1f2ff4702ff09c2cd74dfa69203b7c57e1b8"
+  },
+  {
+    "path": "src/assistant/observability/logging.py",
+    "sha256": "d9b9a07f3561bb5bf75504bd0ff228dccb6dbc59b9772d79f9a4a439a87522f9"
+  },
+  {
+    "path": "src/assistant/observability/timing.py",
+    "sha256": "844f0d9f16abe15e37713ca87a2bcdfc4bad3b43b4b5166999b0c9c7561cf853"
+  },
+  {
+    "path": "src/assistant/observability/usage.py",
+    "sha256": "10e694892c31abe064071d8c71eea3b7572528bc641f6a72cd95f818d4d3345a"
+  },
+  {
+    "path": "src/assistant/runtime/__init__.py",
+    "sha256": "04f2d1fcc55d13b13fdbe1a4ea5e466315331661c9d1728b1335a6487b948429"
+  },
+  {
+    "path": "src/assistant/runtime/cua_faults.py",
+    "sha256": "988a9b3ed5f4477daf187e82b00215741ab24dc012201120bd12ab4e69be48e6"
+  },
+  {
+    "path": "src/assistant/runtime/desktop_queue.py",
+    "sha256": "f3480de2e37e1f1306f144491c2d0c435431941d3ec7a0242d5374e34806ca61"
+  },
+  {
+    "path": "src/assistant/runtime/runs.py",
+    "sha256": "e8704addd5152dd0543e3f2cc87a7d57786323ace1d822e47d28ce8f79bdcbb6"
+  },
+  {
+    "path": "src/assistant/runtime/runs_local.py",
+    "sha256": "28a1e4c2552f398bf16ff8265e59e2c2dd975a117b35a3baac50e3e3b75b2c8f"
+  },
+  {
+    "path": "src/assistant/runtime/session.py",
+    "sha256": "56427e2078dc425efaf3b0a988fcd12853f027022f5cdd39271a1b6fad8e3044"
+  },
+  {
+    "path": "src/assistant/settings.py",
+    "sha256": "dda849f1a574c69ddb7ec99012601f30b666bd793e10e510c63380054d68ca67"
+  },
+  {
+    "path": "src/assistant/skills/computer-use/SKILL.md",
+    "sha256": "0d4517041e3fec6e0f70c8960f934eef071a7882ebba01b6eae07166bc7791ab"
+  },
+  {
+    "path": "src/assistant/skills/general-assistant/SKILL.md",
+    "sha256": "19adf0416dfb6ce3cf034fa315eef35c2f960d5f710cb5f7384233908df96efa"
+  },
+  {
+    "path": "src/assistant/skills/software-delegation/SKILL.md",
+    "sha256": "e8f42795d1778129a0942be252550e13a243b81857a4047831b0d3ca3733feb7"
+  },
+  {
+    "path": "src/assistant/tools/__init__.py",
+    "sha256": "ca9fb850fa94acfd6e90f49da989f6e6c548f919df76eaba827534e3daf663d5"
+  },
+  {
+    "path": "src/assistant/tools/cua.py",
+    "sha256": "c78dcc50802860b08f4347ef0d040687abb5ad0f4f382d7597277ae450d27496"
+  },
+  {
+    "path": "src/assistant/tools/policy.py",
+    "sha256": "a038393cfe4d08241ecd13d73476391f8c51b4daf8204528283dc23adeadd94b"
+  },
+  {
+    "path": "src/assistant/tools/registry.py",
+    "sha256": "6749f30828ea684cd5ff8074995138d9a8efc8e05ca216812504fe4c373c16b8"
+  },
+  {
+    "path": "src/assistant/tools/result_normalizer.py",
+    "sha256": "a0d1d16557d5da61323cebcc6238a5cec4a22a3a83d354b6c43a9a2949ea5c95"
+  },
+  {
+    "path": "src/assistant/velo/adapter.py",
+    "sha256": "aa92b92a6015be56487f793715fc87de310fdf15ae208e64ee0946a420795a9c"
+  },
+  {
+    "path": "src/assistant/velo/contracts.py",
+    "sha256": "c392ebb5459090e1e8a10ffcda99e8011e5a3c75d494663114494585e6e5b665"
+  },
+  {
+    "path": "src/assistant/velo/controller.py",
+    "sha256": "d5a40edb80b5d472cd0621f6116b50c51b55126a2dd154b116ec8ae6268f5e04"
+  },
+  {
+    "path": "src/assistant/velo/jev.py",
+    "sha256": "659de5840fffe27e911d60352dd66b837c1dd43643967de8683d1b8612dce54f"
+  },
+  {
+    "path": "src/assistant/velo/parse.py",
+    "sha256": "e5ecc08c0ecd360048a9a33df12eb4b88aea2f7f4f996f18020e361a6912c791"
+  },
+  {
+    "path": "src/assistant/velo/recipes.py",
+    "sha256": "42fa21c3788f73e74337ca22c811b6303cb151abe4be622a085b237a895ca69d"
+  },
+  {
+    "path": "src/assistant/velo/verify.py",
+    "sha256": "dbce37f794ae3f6ce0942124559f65a4368c5102765e306aae5c8d73a149a688"
+  },
+  {
+    "path": "tests/__init__.py",
+    "sha256": "500e1eecdc7577b158ff5ed6dfd3391f545e6da72f15c0de83c4eded99015654"
+  },
+  {
+    "path": "tests/conftest.py",
+    "sha256": "ae836f1a757829da31bb048cc8c18f3f3bd0d039404319074900b146eec675fe"
+  },
+  {
+    "path": "tests/e2e/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "tests/e2e/test_chat_continuity.py",
+    "sha256": "f2c25acf47233f38260e849ebad3d06235c81522453aa7f7d68ac96c529edc33"
+  },
+  {
+    "path": "tests/e2e/test_cua_calculator.py",
+    "sha256": "02ae1ec4e9b30c1d940f1a1a0d4e42e71e962461ea9861984036de61ea7284a6"
+  },
+  {
+    "path": "tests/e2e/test_sani_missions.py",
+    "sha256": "5affcf1a9ad9dca11309c51cc0f3277799e58ce9b00be7294c8e232800fb3ffa"
+  },
+  {
+    "path": "tests/e2e/test_sani_safety.py",
+    "sha256": "6a1ed5bd52bdbe92567435531f8ed2bf2d3ab0afef492d0f9f98a0f7296ad94d"
+  },
+  {
+    "path": "tests/e2e/test_sani_voice.py",
+    "sha256": "6dd50e84182d18821dd89dc5e3a3478144781914386205ec4cf49cde79652dc1"
+  },
+  {
+    "path": "tests/fixtures/missions/account-surface-unknown.json",
+    "sha256": "add1f08cd0ee6670736fa916e73c475972f39a423553c1ad2617a6f49cedc478"
+  },
+  {
+    "path": "tests/fixtures/missions/alternating-loop-screens.json",
+    "sha256": "137ee8c8e47c3a3f522739e6daca22ee0c472fe534ea2daf4691a37755493c4c"
+  },
+  {
+    "path": "tests/fixtures/missions/desktop-session-basic.json",
+    "sha256": "a8cddafaad9bed9ecbfbde1f3027c097bca38c4c919aa069f3dca74ceae7a820"
+  },
+  {
+    "path": "tests/fixtures/missions/state-sequences-redacted.json",
+    "sha256": "21f62f62a4565c4974cd5baf3477c4da533591c489f237924f2c64ec7432953f"
+  },
+  {
+    "path": "tests/fixtures/voice/audition.txt",
+    "sha256": "b99251a54aa317a5056dfb1cf82c944d4db1223b83f38c70c58969763d6180f2"
+  },
+  {
+    "path": "tests/helpers/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "tests/helpers/fake_driver.py",
+    "sha256": "578ea9a1991dc1a461c507f34a9bb96453cd29d8d0911a1caeb6b015f07e6ca4"
+  },
+  {
+    "path": "tests/helpers/gateway_app.py",
+    "sha256": "9751ad862a876eef76935057cae85ad92a84bfeb203b18be9f5511fb4dca0a52"
+  },
+  {
+    "path": "tests/helpers/mission_fakes.py",
+    "sha256": "830016dec28f23affa306aa4832cd451f306cfeb538773c5630151db3bb00582"
+  },
+  {
+    "path": "tests/helpers/scripted_model.py",
+    "sha256": "61d07d35960958168404548363497e84e5847c23ea0636f73bfeb90308c6f2b6"
+  },
+  {
+    "path": "tests/integration/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "tests/integration/test_action_ledger_dispatch.py",
+    "sha256": "65e7caa9b17e936200a2e0f3c87f822a037940e57d22232cdb30522eefeb4bf3"
+  },
+  {
+    "path": "tests/integration/test_deep_agent.py",
+    "sha256": "9364d1ea78352616b45a58c70eb8af8690d5ba15ba6871c3c9314442227d3c44"
+  },
+  {
+    "path": "tests/integration/test_desktop_stop.py",
+    "sha256": "e672a2ff595100a2bbfd30bfc1261e5e5d172c976fd6a933975c2e1fbbcde871"
+  },
+  {
+    "path": "tests/integration/test_gateway_action_ledger.py",
+    "sha256": "74f2c1b70bfb1246cdaff8958a88d25c653b5b6f1ad86f0b639e2d68144bb7f0"
+  },
+  {
+    "path": "tests/integration/test_gateway_streaming.py",
+    "sha256": "d249c681e508719ff21d6ab53ebeca52fb998858a3f31a01609fb0f1bd0b677b"
+  },
+  {
+    "path": "tests/integration/test_live_model.py",
+    "sha256": "9d16f2dc70346658358fb387ca7f7a8dd5c13ec0ac5e74997b40cf8675af5677"
+  },
+  {
+    "path": "tests/integration/test_mission_core.py",
+    "sha256": "0a3b595b75e0c179fa6abe0582a0e8669d0d446b3350982deae3a3eae33cd861"
+  },
+  {
+    "path": "tests/integration/test_mission_desktop_control.py",
+    "sha256": "735396183d665fd97c4f8352a092b4b7abe5f5a02b27ed0a75463f3591dc2698"
+  },
+  {
+    "path": "tests/integration/test_mission_ipc.py",
+    "sha256": "4b8f15f7ab3427703bf34c3bdd3c5ea55c59f33e78c2f971e000af3868f6ca99"
+  },
+  {
+    "path": "tests/integration/test_mission_observability.py",
+    "sha256": "10f10b4fd7bd96368b6b05cd71e9a0885dbc385041612540821e8269f52c4237"
+  },
+  {
+    "path": "tests/integration/test_mission_policy.py",
+    "sha256": "1e9ad1466ffc020b9e3d70a84a6ceaf1bc30b3969ba937ccd7f64d9054dbd744"
+  },
+  {
+    "path": "tests/integration/test_mission_restart.py",
+    "sha256": "76facb54c8fb91e0a4aa26433a9486983cd5cb72067d9f800452b63e1897e59f"
+  },
+  {
+    "path": "tests/integration/test_mission_sqlite.py",
+    "sha256": "975736ac047d754d884faf8850f00082751f8020e275aaad50650c2c91bf6447"
+  },
+  {
+    "path": "tests/integration/test_negative_routing_e2e.py",
+    "sha256": "c8c1ae7580ea76fa8494d7e030e92a3a987810eef30a54cdb4d5f0b0cabcde49"
+  },
+  {
+    "path": "tests/integration/test_performance_budgets.py",
+    "sha256": "a473a1e16f65196cb8afe05b7a4c898d2b9d708f106b636edd42e6d8ab67aab3"
+  },
+  {
+    "path": "tests/integration/test_postgres_persistence.py",
+    "sha256": "fe173f7e7f4c05c2138d5cd5c4aa537f800aca6251c97024eb9e9fd84c018a68"
+  },
+  {
+    "path": "tests/integration/test_production_run_store.py",
+    "sha256": "67169a37fc0f83f9a6a8b325df008561bc5e42a7f1b6179837e613564f886efd"
+  },
+  {
+    "path": "tests/integration/test_provider_timeout.py",
+    "sha256": "4f029a0d17a6cb67ca271ca747220c0a3cd3a1e65d67c078706bcd5f81db5637"
+  },
+  {
+    "path": "tests/integration/test_run_dedup.py",
+    "sha256": "8a3e1f901da989166bf3392a7f8d2a6be794d7162fe29ddd3dc40544ba649f22"
+  },
+  {
+    "path": "tests/integration/test_run_events_route.py",
+    "sha256": "acd4565e8857c215c665e394fb17f1ed83f4aa24980fe1c01127b1be2f389e71"
+  },
+  {
+    "path": "tests/integration/test_run_ledger.py",
+    "sha256": "4eaa902f4c3dfce3afb99a65a51dafe1b9fca624cfab61783177c94427873000"
+  },
+  {
+    "path": "tests/integration/test_run_store_safety.py",
+    "sha256": "98d867eed82e2d5a8f16538de17f1603d48f47ddf186eb605a5f1faf5f0b300b"
+  },
+  {
+    "path": "tests/integration/test_scenarios.py",
+    "sha256": "93225d65b6c61204bcce4c94c88676de58b3bc4931f11e678de6a5ef76b7aed3"
+  },
+  {
+    "path": "tests/performance/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "tests/performance/test_mission_budgets.py",
+    "sha256": "71b5b34637ca9d51131fd10526313e512c9c0408be4a7de8cd1dd12ef0477179"
+  },
+  {
+    "path": "tests/unit/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "tests/unit/test_auth.py",
+    "sha256": "6ff059b7e0f79397c1fd4cdb851f9e6e2a77e5f38e19ec15954befee5ba9ea78"
+  },
+  {
+    "path": "tests/unit/test_core_agents.py",
+    "sha256": "9abfc0568f61cd0c9d7423f899d34a213fcaddb2d2f98a55f0381dcdf5a3ee6c"
+  },
+  {
+    "path": "tests/unit/test_core_desktop.py",
+    "sha256": "86ce02e527f2645fec0de5c742381f1eb7efe9d3f55d2472e174fdb7dd1e8a6b"
+  },
+  {
+    "path": "tests/unit/test_core_runtime.py",
+    "sha256": "3926e62ebbb19005535973f39f98c2d39bbae0683e4c464ebad5d8862c9937e4"
+  },
+  {
+    "path": "tests/unit/test_cua_daemon_guard.py",
+    "sha256": "be254c539f9a023f357dee16a6cefb10ffabb33d81267e0eeb6670a87d290bb4"
+  },
+  {
+    "path": "tests/unit/test_cua_embedded_socket.py",
+    "sha256": "87fbaf8220872539ce44b4acafc6f1840009c8769013402ff3c08c66d821bc2a"
+  },
+  {
+    "path": "tests/unit/test_cua_faults.py",
+    "sha256": "2e3fb50296be39d385e861fdf188177222407aae64038576393bc0d0ed8b94e3"
+  },
+  {
+    "path": "tests/unit/test_cua_loop_policy.py",
+    "sha256": "bf413b9720fac784f44f39f0f228055d468e4be48429eaac0fdb0a924f79969a"
+  },
+  {
+    "path": "tests/unit/test_cua_manifest.py",
+    "sha256": "6e607f3b3faf8e3dc3316b0cf6a864bae7c7b4f38a7b73f2c0d47b4ca89cc862"
+  },
+  {
+    "path": "tests/unit/test_cua_tool_filter.py",
+    "sha256": "98e068e5f9481155cc824ac7471d16499b051f88352e4deddf13ea7f738eb921"
+  },
+  {
+    "path": "tests/unit/test_cua_transport_recovery.py",
+    "sha256": "c8ca0ec89e852edf514b416be850657f04ddb190a33d3d7eae00b8e6cec8db10"
+  },
+  {
+    "path": "tests/unit/test_desktop_continuity.py",
+    "sha256": "94e414127d6af28011676ade0ea2118d1659d0d2b8c5353f5a15235e11d97873"
+  },
+  {
+    "path": "tests/unit/test_desktop_session.py",
+    "sha256": "9890ca519e4ebe05eb4a80bc4c97ebac0296e0833a0a26966e7311f47e201dc5"
+  },
+  {
+    "path": "tests/unit/test_mcp_normalization.py",
+    "sha256": "ee5ef3e824f8b4904e2404092387869feb776e7876163c1e38df6a1add09c58b"
+  },
+  {
+    "path": "tests/unit/test_memory_local.py",
+    "sha256": "6b04c55c6c05c096a1748d673b334ffad0ed122eb8442bb4b207b287139c77bc"
+  },
+  {
+    "path": "tests/unit/test_memory_policy.py",
+    "sha256": "5ce4acb1ea39b18a3495c79616e63a9baac51d867ae86875b6d39fa7d2182f9f"
+  },
+  {
+    "path": "tests/unit/test_mission_authority.py",
+    "sha256": "416a7d69b85dba973af0609843e772d2b965c059b053e3fc9be9a139a4c267b0"
+  },
+  {
+    "path": "tests/unit/test_mission_budgets.py",
+    "sha256": "7b07c21135faac9498c46291c94ec1d023fee94b18fde1d148ce715c7a431b44"
+  },
+  {
+    "path": "tests/unit/test_mission_contracts.py",
+    "sha256": "4466860497c0686fb85e048e9567681da1df9f55e59374fcd34edf47e95421cf"
+  },
+  {
+    "path": "tests/unit/test_mission_controller.py",
+    "sha256": "f6decab2916e59c89d9f1afc634952918d8b5f47d7a85f8a0d84dde3da2f8eae"
+  },
+  {
+    "path": "tests/unit/test_mission_desktop_queue.py",
+    "sha256": "1fac67f87da39b25924aedf2458367997b87110d23ccfcababafcb9aebdcce96"
+  },
+  {
+    "path": "tests/unit/test_mission_evidence.py",
+    "sha256": "e22655ead6f8593fd82a62041d607726677567bdf320f30c6bf7c0a9c3ac1b80"
+  },
+  {
+    "path": "tests/unit/test_mission_executor.py",
+    "sha256": "b98751a7f6d9ec7b60cc34bc12a9a241219c5376d8f4c49b07f0bf5c477bda9f"
+  },
+  {
+    "path": "tests/unit/test_mission_observer.py",
+    "sha256": "956712c9432e1faf4148587aee9d76e8ea5f44829fd931b20405faa2ed1c18e1"
+  },
+  {
+    "path": "tests/unit/test_mission_recovery.py",
+    "sha256": "f4339a2faf0ce09b9b451b04d3ed641cb4c687e9e12d5509a37a826949476095"
+  },
+  {
+    "path": "tests/unit/test_mission_service.py",
+    "sha256": "769646a7ebd9edc7ee9eecb1da1500a4d576d3d65244c089d5c7a273ab474747"
+  },
+  {
+    "path": "tests/unit/test_mission_store.py",
+    "sha256": "efc358366a453d68f4b1733690cbe81d0d9b3ef2c1b48bacf78dbe8851ec47bd"
+  },
+  {
+    "path": "tests/unit/test_mission_verifiers.py",
+    "sha256": "609534fe53cf854b98f9b258cbc86c062c60e22e491a3ca334c389cb68cf86b0"
+  },
+  {
+    "path": "tests/unit/test_model_factory.py",
+    "sha256": "68c132564e6c76cfc15ea626892e8572a1e509aa3c74668ca5da0fd7e70a1b95"
+  },
+  {
+    "path": "tests/unit/test_namespaces_sani.py",
+    "sha256": "d7262345cb382304f91c356a7ba676bef868d05150c0dbe561776a3e29b6d9af"
+  },
+  {
+    "path": "tests/unit/test_observation_budget.py",
+    "sha256": "5e49870a470ed058fc4404cbb7b8bf85f004ca0cbe5149616a3b949d3ec1cb18"
+  },
+  {
+    "path": "tests/unit/test_observation_hard_cap.py",
+    "sha256": "377f37242e2b89b4f17e9b164892872e9ef4bf1a0247615b2f20bc2505c1d720"
+  },
+  {
+    "path": "tests/unit/test_openai_schema.py",
+    "sha256": "1763f6593310d0884a8951d63cc81358145caf66ca70a8e9b789fd895d6cc3fd"
+  },
+  {
+    "path": "tests/unit/test_phase1_oracles.py",
+    "sha256": "c5f792e1d1e7141128e9089d3ce205db583c5c209be9626d6af7099a1bf751ee"
+  },
+  {
+    "path": "tests/unit/test_run_timeline.py",
+    "sha256": "b548e34048787ffab81d155edb06568cfc5317c4e96f349ef5a912b23e9928fb"
+  },
+  {
+    "path": "tests/unit/test_runs_local.py",
+    "sha256": "f6a8ae21ba36fdda462bc4b4b4903b9f001bba3171b884b2e5726915fea7595b"
+  },
+  {
+    "path": "tests/unit/test_sani_core_app.py",
+    "sha256": "2e3524a951eb22d14eea180dc2523b0b23b3e199047836858c81f486e08b5656"
+  },
+  {
+    "path": "tests/unit/test_sani_core_protocol.py",
+    "sha256": "b799bb4e345ab1d19e294fe7ad606b25d0dcf50c80c9fd9cc31add37cc291ccd"
+  },
+  {
+    "path": "tests/unit/test_sani_core_registry.py",
+    "sha256": "38bf746afc81bc09de73a1a83bd89c1e4cec3e49511f42552201e19e47a8880e"
+  },
+  {
+    "path": "tests/unit/test_sani_stt_models.py",
+    "sha256": "e0762e4068409464e7bda059062b9f9a365412e31b39e4154f5c1cd7b6ee9947"
+  },
+  {
+    "path": "tests/unit/test_sani_tts_worker.py",
+    "sha256": "1437701b5b75957e7fce1f483f318886183ca6388c715767763f882f52d1a23a"
+  },
+  {
+    "path": "tests/unit/test_session_mapping.py",
+    "sha256": "6b17830697b1ab544368bf75aaf8b30d701c2a8d127b61b09a5645faad0f9b41"
+  },
+  {
+    "path": "tests/unit/test_session_revive.py",
+    "sha256": "4410336fca27fc18d56956fe3affd1e9685385d11ff4dda14c4f305a1718c228"
+  },
+  {
+    "path": "tests/unit/test_settings_flags.py",
+    "sha256": "333b6fe07ab329673afa36d8d722a75f661f0c71fe55051660aa0c37e77fce68"
+  },
+  {
+    "path": "tests/unit/test_skill_frontmatter.py",
+    "sha256": "348e8091ed968856d4bccee7d48c79f000bd1d43b7f786d91369decc53c5295f"
+  },
+  {
+    "path": "tests/unit/test_stream_desktop_lifecycle.py",
+    "sha256": "9efb0d0e4505b56b7b2cd011d7cef42d86485677ddac342645f3fb5b78a87931"
+  },
+  {
+    "path": "tests/unit/test_streaming.py",
+    "sha256": "7a019b3a06d70f4cf4544f9f4b45efaa480f32baa6a9b9cffc4beea6fb5f7ec9"
+  },
+  {
+    "path": "tests/unit/test_tool_outcome_conversion.py",
+    "sha256": "cdcbb49ddceb4a20741375eb2e95ba38b8641013d350df1ef2741dff2e10a760"
+  },
+  {
+    "path": "tests/unit/test_trusted_session_binding.py",
+    "sha256": "4b294c623dd4734a1f868ba525f09c9c903a1e8e3a523a913a35d32349eb090b"
+  },
+  {
+    "path": "tests/unit/test_usage_ledger.py",
+    "sha256": "73d855e64d8c12b6ae6fedf8eec85d80f8ee33347040d370f9aa8482751c2cbf"
+  },
+  {
+    "path": "tests/unit/test_velo_adapter.py",
+    "sha256": "358aed2dae9cb4ef4cfb7598251a40e6bb040c83afd857ab6244d7d9070ff3af"
+  },
+  {
+    "path": "tests/unit/test_velo_contracts.py",
+    "sha256": "5530fa87593092fd48fc1e91cad4f3040965a0e68f59ccb1e4a874a70a714e2a"
+  },
+  {
+    "path": "tests/unit/test_velo_controller.py",
+    "sha256": "2a20eb477296b2c534e1399ccfe97fa5c149b84d6cbadf8a59270c612a813095"
+  },
+  {
+    "path": "tests/unit/test_velo_jev.py",
+    "sha256": "dfea2e01328073435dd9de8c4f909910c14c3e2450dadc3dd29353e3967b3564"
+  },
+  {
+    "path": "tests/unit/test_velo_live_regressions.py",
+    "sha256": "7a73171a2dbe9cc64ea19a62cec47f954140ab6fd5804741f09b5d752525e713"
+  },
+  {
+    "path": "tests/unit/test_velo_parse.py",
+    "sha256": "6f34e1cad74ec400309b3f2f2f9b0dec473fa09f1b01d6a3d520d37f00db2179"
+  },
+  {
+    "path": "tests/unit/test_velo_recipes.py",
+    "sha256": "2856c764a184d4dc7368488482e6ff3601bbfe51dd07bc4d3fb9dbdcaadd1af7"
+  },
+  {
+    "path": "tests/unit/test_verify_phase1_launcher.py",
+    "sha256": "59d6c5fe17ebf3b68e302e44bb40545c82bef5fca06419fce5cab0a5253d9eb8"
+  },
+  {
+    "path": "tests/unit/velo_fakes.py",
+    "sha256": "b03ea2b71012c65c6609e8c59b005e5f72d22faff0bdef6571d6921439624433"
+  },
+  {
+    "path": "uv.lock",
+    "sha256": "1c9cd65ce1719aec9a9f24ba2a9eae9ce0a0ca87113dad71680b6908fe02475f"
+  }
+]

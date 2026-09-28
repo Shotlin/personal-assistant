@@ -1,0 +1,22 @@
+{
+  "fixture_id": "state-sequences-redacted",
+  "description": "Redacted mission-state sequences for store tests: request, plan, steps, attempts, and result shapes with synthetic ids only. No conversation text, accounts, or machine-specific paths.",
+  "request": {
+    "request_id": "req-fixture-0001",
+    "conversation_id": "conv-fixture-0001",
+    "owner_id": "fixture-owner",
+    "input_origin": "typed_final",
+    "input_revision": 1,
+    "text": "fixture: open the fixture browser",
+    "submitted_at_ms": 1769472000000
+  },
+  "steps": [
+    {"step_id": "s1", "ordinal": 1, "objective": "fixture: bring fixture browser forward", "dependencies": [], "executor": "velo", "recipe_id": "open_app"},
+    {"step_id": "s2", "ordinal": 2, "objective": "fixture: observe the result", "dependencies": ["s1"], "executor": "velo", "recipe_id": "semantic_ui"}
+  ],
+  "results": {
+    "success": {"status": "COMPLETED", "effect_outcome": "CONFIRMED"},
+    "unknown": {"status": "COMPLETED", "effect_outcome": "UNKNOWN"},
+    "cancelled": {"status": "CANCELLED", "effect_outcome": "NOT_ATTEMPTED"}
+  }
+}

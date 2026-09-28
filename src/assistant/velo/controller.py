@@ -25,12 +25,15 @@ import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from assistant.missions.contracts import CancellationToken
 
 from assistant.core.protocol import AGENT_PROGRESS
 from assistant.core.registry import AgentDescriptor
-from assistant.observability.timing import RunTimeline
 from assistant.memory.namespaces import thread_id_for_sani
+from assistant.observability.timing import RunTimeline
 from assistant.tools.policy import cua_target_state
 from assistant.velo.adapter import CuaAdapter
 from assistant.velo.contracts import (
@@ -40,7 +43,6 @@ from assistant.velo.contracts import (
     JevDecisionRequest,
     JevDecisionService,
     JevServiceError,
-    NoProgressTracker,
     OutcomeState,
     Route,
     TaskCancelled,
@@ -70,7 +72,8 @@ class VeloEntry:
         self._get_runtime = get_runtime
         self._deep = deep_entry
         self._jev_factory = jev_factory
-        self._cancelled = False
+        # A07 fix: per-run cancellation instead of one shared boolean.
+        self._run_tokens: dict[str, CancellationToken] = {}
 
     @property
     def descriptor(self) -> AgentDescriptor:
@@ -80,9 +83,19 @@ class VeloEntry:
             capabilities=("computer-control", "desktop", "reasoning", "memory"),
         )
 
-    async def cancel(self) -> None:
-        self._cancelled = True
-        await self._deep.cancel()
+    async def cancel(self, run_id: str | None = None) -> None:
+        if run_id is None:
+            for active in list(self._run_tokens.values()):
+                active.cancel()
+            await self._deep.cancel()
+            return
+        token: CancellationToken | None = self._run_tokens.get(run_id)
+        if token is not None:
+            token.cancel()
+
+    def _is_cancelled(self, run_key: str, cancel_check: IsCancelled) -> bool:
+        token = self._run_tokens.get(run_key)
+        return bool(token and token.is_cancelled) or cancel_check()
 
     # -- entry ----------------------------------------------------------------
 
@@ -93,8 +106,35 @@ class VeloEntry:
         thread_id: str,
         on_event: OnEvent,
         cancel_check: IsCancelled,
+        run_id: str = "",
     ) -> dict[str, Any]:
-        self._cancelled = False
+        from assistant.missions.contracts import CancellationToken
+
+        token = CancellationToken()
+        run_key = run_id or f"velo-{uuid.uuid4().hex[:8]}"
+        self._run_tokens[run_key] = token
+        try:
+            return await self._run_scoped(
+                text,
+                thread_id=thread_id,
+                on_event=on_event,
+                cancel_check=cancel_check,
+                run_key=run_key,
+                token=token,
+            )
+        finally:
+            self._run_tokens.pop(run_key, None)
+
+    async def _run_scoped(
+        self,
+        text: str,
+        *,
+        thread_id: str,
+        on_event: OnEvent,
+        cancel_check: IsCancelled,
+        run_key: str,
+        token: CancellationToken,
+    ) -> dict[str, Any]:
         conversation = thread_id.strip() or f"core-{uuid.uuid4().hex[:8]}"
         timeline = RunTimeline(f"velo-{uuid.uuid4().hex[:8]}")
 
@@ -111,11 +151,11 @@ class VeloEntry:
             # Route A: explicit input decided this; no model call belongs here.
             timeline.mark("route_decided", metadata={"route": Route.LOCAL.value})
             result = await self._run_local(
-                command, conversation, event_with_timing, cancel_check
+                command, conversation, event_with_timing, cancel_check, run_key
             )
         else:
-            candidates = await self._candidates(text, event_with_timing, cancel_check)
-            if cancel_check() or self._cancelled:
+            candidates = await self._candidates(text, event_with_timing, cancel_check, run_key)
+            if self._is_cancelled(run_key, cancel_check):
                 # A stop that landed while probing the scene ends the run. It
                 # must never fall through to the planner, which acts.
                 result = self._stopped_result(conversation, route=Route.JEV.value)
@@ -127,6 +167,7 @@ class VeloEntry:
                     conversation,
                     event_with_timing,
                     cancel_check,
+                    run_key,
                 )
             else:
                 timeline.mark("route_decided", metadata={"route": Route.PLAN.value})
@@ -134,7 +175,7 @@ class VeloEntry:
                     text,
                     thread_id=thread_id,
                     on_event=event_with_timing,
-                    cancel_check=lambda: cancel_check() or self._cancelled,
+                    cancel_check=lambda: self._is_cancelled(run_key, cancel_check),
                 )
                 result["route"] = Route.PLAN.value
 
@@ -165,6 +206,7 @@ class VeloEntry:
         conversation: str,
         on_event: OnEvent,
         cancel_check: IsCancelled,
+        run_key: str = "",
     ) -> dict[str, Any]:
         runtime = await self._get_runtime()
         async with runtime.run_scope(
@@ -226,8 +268,21 @@ class VeloEntry:
     ) -> dict[str, Any]:
         from assistant.core.identity import engine_identity
 
+        # A02/RF-01: the turn status must match what actually happened. Only a
+        # confirmed or honestly-negative outcome reads as a completed turn; an
+        # UNKNOWN or cancelled unit is reported as blocked/cancelled, never
+        # laundered into "done" (the host maps done -> completed).
+        status = {
+            OutcomeState.CONFIRMED: "done",
+            OutcomeState.NO_EFFECT: "done",
+            OutcomeState.ACCEPTED: "done",
+            OutcomeState.DISPATCHED: "blocked",
+            OutcomeState.UNKNOWN: "blocked",
+            OutcomeState.FAILED: "failed",
+            OutcomeState.CANCELLED: "cancelled",
+        }.get(outcome.state, "blocked")
         return {
-            "status": "done",
+            "status": status,
             "thread_id": thread_id_for_sani(task.conversation) if task.conversation else "",
             "response": outcome.answer,
             "route": Route.LOCAL.value,
@@ -241,7 +296,7 @@ class VeloEntry:
     # -- Route B ---------------------------------------------------------------
 
     async def _candidates(
-        self, text: str, on_event: OnEvent, cancel_check: IsCancelled
+        self, text: str, on_event: OnEvent, cancel_check: IsCancelled, run_key: str = ""
     ) -> tuple[Candidate, ...]:
         """A bounded candidate set for an instruction that did not parse.
 
@@ -259,7 +314,7 @@ class VeloEntry:
         try:
             async with runtime.run_scope(
                 f"core-{uuid.uuid4().hex[:8]}", conversation=""
-            ) as budget:
+            ):
                 probe = TaskState(instruction=cleaned, route=Route.JEV)
                 apps = await adapter.list_apps(probe)
             running = [a for a in apps if a.running and a.pid]
@@ -306,6 +361,7 @@ class VeloEntry:
         conversation: str,
         on_event: OnEvent,
         cancel_check: IsCancelled,
+        run_key: str = "",
     ) -> dict[str, Any]:
         """One JEV decision, then local execution of the chosen recipe."""
         jev = self._jev()
@@ -321,7 +377,7 @@ class VeloEntry:
                 # the raw id so the thread (and its memory) stays the same one.
                 thread_id=conversation,
                 on_event=on_event,
-                cancel_check=lambda: cancel_check() or self._cancelled,
+                cancel_check=lambda: self._is_cancelled(run_key, cancel_check),
             )
             result["route"] = Route.PLAN.value
             result["route_note"] = (
@@ -354,7 +410,7 @@ class VeloEntry:
                 "verified": False,
             }
         # A stop that landed during the request outranks the late answer.
-        if cancel_check() or self._cancelled:
+        if self._is_cancelled(run_key, cancel_check):
             return {
                 "status": "cancelled",
                 "thread_id": thread_id_for_sani(conversation),
@@ -365,7 +421,7 @@ class VeloEntry:
         if decision.need_more_evidence:
             # One targeted refresh, then the candidates are re-asked; if the
             # screen cannot disambiguate either, the user decides.
-            candidates = await self._candidates(text, on_event, cancel_check)
+            candidates = await self._candidates(text, on_event, cancel_check, run_key)
             if candidates:
                 request = JevDecisionRequest(
                     objective=text,

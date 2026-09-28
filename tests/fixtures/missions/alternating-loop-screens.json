@@ -1,0 +1,13 @@
+{
+  "fixture_id": "alternating-loop-screens",
+  "description": "Two alternating observation digests (screen A, screen B, screen A, ...) that previously evaded the no-progress breaker, which only compared the last digest. Used by the T01/T04 oracle: the executor must stop after the finite no-progress budget regardless of alternation.",
+  "screens": [
+    {"digest": "screen-A-3f91", "elements": [{"role": "AXButton", "label": "Load more", "element_token": "tok-a"}]},
+    {"digest": "screen-B-77c2", "elements": [{"role": "AXButton", "label": "Retry", "element_token": "tok-b"}]}
+  ],
+  "expected": {
+    "no_progress_ceiling": 4,
+    "must_stop_after_steps": 4,
+    "must_not_reach_steps": 12
+  }
+}

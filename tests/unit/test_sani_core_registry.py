@@ -27,10 +27,11 @@ class _StubAgent:
         thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
+        run_id: str = "",
     ) -> dict[str, Any]:
         raise NotImplementedError
 
-    async def cancel(self) -> None:
+    async def cancel(self, run_id: str | None = None) -> None:
         return None
 
 

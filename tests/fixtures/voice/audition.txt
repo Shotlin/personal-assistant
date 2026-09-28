@@ -1,0 +1,15 @@
+Sani, read this back to me exactly as written.
+Say "Sayan" and "Ananya" have a meeting in Bengaluru on 27 September 2026.
+Confirm the amount: ₹1,25,000 has moved from the operating account.
+The report references SQLite, Obsidian, the Deep Agent, and Jev — spell the last one.
+Open the file at /Users/fixture/reports/q3-summary.pdf and read the first line.
+TLAs to check: RSS, CPU, TTS, STT, CUA, IPC.
+Short status: Done. Two steps remain. Blocked — waiting for your approval.
+Ninety-second technical prose follows. The mission controller owns state
+transitions, budgets, claims and dispatch; the Deep Agent proposes strategy
+and reviews evidence but never grants scope; Velo executes bounded work
+items through the same policy-wrapped tools the model uses; JEV selects
+only mechanically available candidates; the acceptance gate completes a
+mission only when every required check passes with fresh evidence. When an
+effect cannot be confirmed, the honest answer is unknown — never success,
+never silence. Rates and dates: 27 September 2026, 14:30 IST, revision 3 of 7.

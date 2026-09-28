@@ -1035,24 +1035,38 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> CoreTransport<R, W> {
         text: &str,
         run_id: &str,
         thread_id: &str,
+        input_origin: Option<&str>,
         mut on_event: impl FnMut(Value) + Send,
         deadline: tokio::time::Instant,
         mut cancel: watch::Receiver<bool>,
+        mut control_rx: Option<
+            tokio::sync::mpsc::Receiver<
+                (Value, tokio::sync::oneshot::Sender<Result<Value, String>>),
+            >,
+        >,
     ) -> Result<Value, String> {
         let id = next_request_id();
+        let mut params = json!({
+            "agent_id": agent_id,
+            "text": text,
+            "run_id": run_id,
+            "thread_id": thread_id,
+        });
+        if let Some(origin) = input_origin {
+            params["input_origin"] = Value::String(origin.to_string());
+        }
         let request = json!({
             "type": "request",
             "id": id,
             "method": "run.start",
-            "params": {
-                "agent_id": agent_id,
-                "text": text,
-                "run_id": run_id,
-                "thread_id": thread_id,
-            },
+            "params": params,
         });
         self.send(&request).await?;
         let mut cancel_sent = false;
+        let mut pending_controls: std::collections::HashMap<
+            String,
+            tokio::sync::oneshot::Sender<Result<Value, String>>,
+        > = std::collections::HashMap::new();
         loop {
             tokio::select! {
                 frame = self.next_frame(deadline) => {
@@ -1067,7 +1081,39 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> CoreTransport<R, W> {
                     {
                         return decode_response(frame);
                     }
+                    // R08/F09: mission control responses route back to their
+                    // caller while the run keeps streaming (one reader).
+                    if frame_type == Some("response") {
+                        let resp_id =
+                            frame.get("id").and_then(Value::as_str).unwrap_or("");
+                        if let Some(responder) = pending_controls.remove(resp_id) {
+                            let _ = responder.send(decode_response(frame));
+                            continue;
+                        }
+                    }
                     log::debug!("sani-core: dropping unexpected frame during run: {frame}");
+                }
+                Some((control_params, responder)) = async {
+                    if let Some(rx) = control_rx.as_mut() {
+                        rx.recv().await
+                    } else {
+                        // Never resolves: keeps the arm inert without a
+                        // stream (R08 control router).
+                        std::future::pending().await
+                    }
+                } => {
+                    let control_id = next_request_id();
+                    pending_controls.insert(control_id.clone(), responder);
+                    let request = json!({
+                        "type": "request",
+                        "id": control_id,
+                        "method": control_params.get("method").cloned().unwrap_or_else(|| Value::String("mission.control".to_string())),
+                        "params": control_params.get("params").cloned().unwrap_or_else(|| json!({})),
+                    });
+                    if let Err(err) = self.send(&request).await {
+                        let _ = pending_controls.remove(&control_id);
+                        log::warn!("mission control send failed: {err}");
+                    }
                 }
                 _ = Self::wait_for_cancel(&mut cancel), if !cancel_sent => {
                     cancel_sent = true;
@@ -1185,8 +1231,14 @@ impl SaniCoreClient {
         text: &str,
         run_id: &str,
         thread_id: &str,
+        input_origin: Option<&str>,
         on_event: impl FnMut(Value) + Send,
         cancel: watch::Receiver<bool>,
+        control_rx: Option<
+            tokio::sync::mpsc::Receiver<
+                (Value, tokio::sync::oneshot::Sender<Result<Value, String>>),
+            >,
+        >,
     ) -> Result<Value, String> {
         if self.streaming {
             return Err("a run is already streaming".to_string());
@@ -1201,9 +1253,11 @@ impl SaniCoreClient {
                 text,
                 run_id,
                 thread_id,
+                input_origin,
                 on_event,
                 tokio::time::Instant::now() + RUN_DEADLINE,
                 cancel,
+                control_rx,
             )
             .await
     }
@@ -1311,6 +1365,13 @@ pub struct SaniCoreState {
     /// the client while another concluded it had died and spawned a second
     /// core process.
     operation: Arc<tokio::sync::Mutex<()>>,
+    /// R08: mission controls emitted while a run streams. The run loop
+    /// writes them on the same stream and routes responses back by id.
+    mission_controls: Mutex<
+        Option<tokio::sync::mpsc::Sender<
+            (Value, tokio::sync::oneshot::Sender<Result<Value, String>>),
+        >>,
+    >,
 }
 
 async fn operation_guard(app: &AppHandle) -> tokio::sync::OwnedMutexGuard<()> {
@@ -1814,10 +1875,37 @@ pub async fn run_turn(
     text: &str,
     thread_id: &str,
     mut on_event: impl FnMut(Value) + Send,
+    stable_run_id: Option<&str>,
+    input_origin: Option<&str>,
 ) -> Result<Value, String> {
+    // R05/F06: the host-local stop latch gates ADMISSION of new runs. Even
+    // with the model or IPC stalled, a latched stop refuses new work here
+    // before anything is dispatched to the core.
+    if app
+        .try_state::<crate::desktop_control::EmergencyStop>()
+        .map(|stop| stop.is_latched())
+        .unwrap_or(false)
+    {
+        return Err("emergency stop is latched; new runs are refused until it is reset".to_string());
+    }
     let _operation = operation_guard(app).await;
+    // C06/N09: the latch is RE-CHECKED after the operation lock admits this
+    // run — a stop pressed while this caller waited on the mutex must win,
+    // so admission can never carry a pre-wait "not latched" across a stop.
+    if app
+        .try_state::<crate::desktop_control::EmergencyStop>()
+        .map(|stop| stop.is_latched())
+        .unwrap_or(false)
+    {
+        return Err("emergency stop is latched; new runs are refused until it is reset".to_string());
+    }
     let mut client = take_client(app)?.ok_or_else(|| "sani-core is not running".to_string())?;
-    let run_id = uuid::Uuid::new_v4().simple().to_string();
+    // T08: the caller's stable message id IS the request identity, so the
+    // same finalized message dedups to one mission; a fresh id stays a new
+    // intentional request. Absent ids fall back to a fresh UUID.
+    let run_id = stable_run_id
+        .map(str::to_string)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
     let (control, cancel) = RunControl::new(run_id.clone());
     {
         let state = app.state::<SaniCoreState>();
@@ -1831,18 +1919,34 @@ pub async fn run_turn(
         }
         *guard = Some(control);
     }
+    // R08: mission controls route through this channel while the run
+    // streams; the loop owns the writer and matches responses by id.
+    let (control_tx, control_rx) = tokio::sync::mpsc::channel::<(
+        Value,
+        tokio::sync::oneshot::Sender<Result<Value, String>>,
+    )>(4);
+    app.state::<SaniCoreState>()
+        .mission_controls
+        .lock()
+        .map(|mut slot| *slot = Some(control_tx))
+        .unwrap_or(());
     let result = client
         .start_run(
             agent_id,
             text,
             &run_id,
             thread_id,
+            input_origin,
             move |frame| {
                 on_event(frame);
             },
             cancel,
+            Some(control_rx),
         )
         .await;
+    if let Ok(mut slot) = app.state::<SaniCoreState>().mission_controls.lock() {
+        *slot = None;
+    }
     if let Ok(mut guard) = app.state::<SaniCoreState>().live.lock() {
         *guard = None;
     }
@@ -1869,6 +1973,67 @@ pub async fn core_run(
                 log::warn!("sani-core: emit {CORE_EVENT} failed: {err}");
             }
         },
+        None,
+        None,
+    )
+    .await
+}
+
+/// R08/F09: a mission control (pause/resume/cancel/revise/priority) sent
+/// while a run streams. Routed through the stream loop's writer; when no
+/// run is live it is a plain request. The core validates the CAS.
+async fn route_mission_request(
+    app: &AppHandle,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    let parked = app
+        .state::<SaniCoreState>()
+        .mission_controls
+        .lock()
+        .map_err(|err| format!("mission control state poisoned: {err}"))?
+        .clone();
+    if let Some(tx) = parked {
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        tx.send((json!({"method": method, "params": params}), reply_tx))
+            .await
+            .map_err(|_| "the streaming run ended before the control was sent".to_string())?;
+        return reply_rx
+            .await
+            .map_err(|_| "the control response was dropped".to_string())?;
+    }
+    let mut client = take_client(app)?.ok_or_else(|| "sani-core is not running".to_string())?;
+    let result = client.request(method, params, REQUEST_TIMEOUT).await;
+    restore_client(app, client);
+    result
+}
+
+#[tauri::command]
+pub async fn mission_control_cmd(
+    app: AppHandle,
+    method: String,
+    params: Value,
+) -> Result<Value, String> {
+    route_mission_request(&app, &method, params).await
+}
+
+/// Read one mission's durable record (UI status truth; read-only).
+#[tauri::command]
+pub async fn mission_get_cmd(app: AppHandle, mission_id: String) -> Result<Value, String> {
+    route_mission_request(&app, "mission.get", json!({ "mission_id": mission_id })).await
+}
+
+/// Replay mission events after a reconnect cursor (read-only).
+#[tauri::command]
+pub async fn mission_events_cmd(
+    app: AppHandle,
+    mission_id: String,
+    after_sequence: i64,
+) -> Result<Value, String> {
+    route_mission_request(
+        &app,
+        "mission.events",
+        json!({ "mission_id": mission_id, "after_sequence": after_sequence }),
     )
     .await
 }
@@ -2634,9 +2799,11 @@ mod tests {
                 "hello",
                 "run-1",
                 "conv-9",
+                None,
                 |frame| events.push(frame),
                 tokio::time::Instant::now() + FAKE_TIMEOUT,
                 cancel_rx,
+                None,
             )
             .await
             .unwrap();
@@ -2694,9 +2861,11 @@ mod tests {
                 "open chrome",
                 "run-9",
                 "",
+                None,
                 |frame| events.push(frame),
                 tokio::time::Instant::now() + FAKE_TIMEOUT,
                 cancel_rx,
+                None,
             )
             .await
             .unwrap();
@@ -2721,9 +2890,11 @@ mod tests {
                 "hello",
                 "r",
                 "",
+                None,
                 |_| {},
                 tokio::time::Instant::now(),
                 cancel_rx,
+                None,
             )
             .await
             .unwrap_err();

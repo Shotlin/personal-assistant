@@ -1,0 +1,21 @@
+{
+ "case_id": "verify-integration",
+ "git_sha": "58dac9c88018674c2e780086953902f1ea135308",
+ "dirty_diff_sha256": "e48652add533f3b26a55586c264763bf718017cf7cf9a2c317bf9834e6687d4d",
+ "bundle_manifest_sha256": "",
+ "os_arch": "Darwin-arm64",
+ "environment_kind": "F",
+ "fixture_seed": "",
+ "started_at": "2026-09-27T16:04:19.642325+00:00",
+ "command": ".venv/bin/python -m pytest tests/integration/test_mission_sqlite.py tests/integration/test_mission_policy.py tests/integration/test_mission_core.py tests/integration/test_mission_ipc.py tests/integration/test_mission_restart.py tests/integration/test_mission_desktop_control.py tests/integration/test_mission_observability.py -q",
+ "exit_code": 0,
+ "status": "PASS",
+ "expected": "suite completes with its documented oracle",
+ "observed": "..........................................                               [100%]",
+ "evidence_refs": [
+  "/private/tmp/jarvis-p1-final/evidence/integration.log"
+ ],
+ "model_driver_call_counts": {},
+ "cost_known_or_unknown": "no paid calls",
+ "cleanup_result": "no live resources used"
+}

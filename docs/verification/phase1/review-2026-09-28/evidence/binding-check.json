@@ -1,0 +1,46 @@
+{
+  "head": "58dac9c88018674c2e780086953902f1ea135308",
+  "source_manifest_sha256": "007fb39445cd981303d635ea72d421aadb9790c93b6276ff89621db71e74ffc7",
+  "dirty_diff_sha256": "c10e71fcb0762551f30a2cfe89935f8ee5cec77e76c242033f4ef0311ad615ce",
+  "files": 666,
+  "manifest_matches": true,
+  "prior_review_changed": [],
+  "saved_junit": {
+    "unit.xml": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "585",
+        "time": "40.114",
+        "timestamp": "2026-09-28T01:59:41.437801+05:30",
+        "hostname": "Sayans-MacBook-Air.local"
+      }
+    ],
+    "integration.xml": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "47",
+        "time": "1.399",
+        "timestamp": "2026-09-28T02:00:22.453481+05:30",
+        "hostname": "Sayans-MacBook-Air.local"
+      }
+    ],
+    "performance.xml": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "7",
+        "time": "0.861",
+        "timestamp": "2026-09-28T02:00:24.689697+05:30",
+        "hostname": "Sayans-MacBook-Air.local"
+      }
+    ]
+  }
+}

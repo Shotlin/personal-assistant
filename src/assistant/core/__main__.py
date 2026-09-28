@@ -22,11 +22,11 @@ _STDIN_CHUNK_BYTES = 65536
 
 
 def _configure_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        stream=sys.stderr,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    # A05: the structured formatter redacts secrets (including exception
+    # text) before anything reaches stderr; plain basicConfig did not.
+    from assistant.observability.logging import setup_logging
+
+    setup_logging()
 
 
 def _pump_stdin_from_thread(reader: asyncio.StreamReader) -> None:
@@ -99,7 +99,11 @@ async def _connect_stdio() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
 
 async def main() -> None:
     _configure_logging()
-    from assistant.core.agents import build_default_registry, build_status_provider
+    from assistant.core.agents import (
+        build_core_resources,
+        build_mission_provider,
+        build_status_provider,
+    )
     from assistant.core.identity import engine_identity
     from assistant.settings import Settings
 
@@ -113,9 +117,18 @@ async def main() -> None:
         identity["built_at"] or "unknown",
     )
     reader, writer = await _connect_stdio()
-    registry = build_default_registry(settings)
+    # ONE resource graph shared by the run path and the mission IPC (F08).
+    resources = build_core_resources(settings)
     status_provider = build_status_provider(settings)
-    await SaniCoreApp(registry, status_provider=status_provider).serve(reader, writer)
+    mission_provider = build_mission_provider(resources)
+    try:
+        await SaniCoreApp(
+            resources.registry,
+            status_provider=status_provider,
+            mission_provider=mission_provider,
+        ).serve(reader, writer)
+    finally:
+        await resources.aclose()
     logger.info("sani-core: stdin EOF; exiting cleanly")
 
 

@@ -1,0 +1,29 @@
+{
+ "case_id": "verify-unit",
+ "git_sha": "58dac9c88018674c2e780086953902f1ea135308",
+ "dirty_diff_sha256": "9032a33ce6b35259e0e993a0b6151241b35e67395cdce52544009b849d25434f",
+ "source_manifest_sha256": "d58f393e21a3ab563754328150f20c5a1eb352c44d851faf09c9f451e9ff358a",
+ "bundle_manifest_sha256": "",
+ "os_arch": "Darwin-arm64",
+ "environment_kind": "F",
+ "fixture_seed": "",
+ "started_at": "2026-09-28T19:16:54.055164+00:00",
+ "command": ".venv/bin/python -m pytest tests/unit -q",
+ "exit_code": 1,
+ "status": "FAIL",
+ "expected": "suite completes with its documented oracle",
+ "observed": "process exited 1 (junit: 610 cases, 4 failures, 0 errors, 0 skipped)",
+ "evidence_refs": [
+  "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-2026-09-29/evidence/gates-unit/unit.xml",
+  "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-2026-09-29/evidence/gates-unit/unit.log"
+ ],
+ "model_driver_call_counts": {},
+ "cost_known_or_unknown": "no paid calls",
+ "cleanup_result": "no live resources used",
+ "case_counts": {
+  "tests": 610,
+  "failures": 4,
+  "errors": 0,
+  "skipped": 0
+ }
+}

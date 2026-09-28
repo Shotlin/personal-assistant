@@ -1,0 +1,22 @@
+[
+  {
+    "file": "inputs/01_JARVIS_REQUIREMENTS.md",
+    "sha256": "aec2ec9b45eb8f22943632e39dd0857f61ae57b1930f050bb9d6306e2de05b22",
+    "bytes": 38240
+  },
+  {
+    "file": "inputs/02_ASTRA_REPOSITORY_ANALYSIS_AND_PHASE_PLANNING_PROMPT.md",
+    "sha256": "abe3a604975168b68fe5388b5828ce9a5fe0de2ebfefa28b53de647dcce6b739",
+    "bytes": 24340
+  },
+  {
+    "file": "inputs/03_JARVIS_CONTROLLED_SELF_IMPROVEMENT_RSI.md",
+    "sha256": "3d8604c717ef883aca3e3961aad74f29f3e4388238af403dc77903b4a86ae75e",
+    "bytes": 43233
+  },
+  {
+    "file": "inputs/04_ASTRA_ITERATIVE_JARVIS_PHASE_PLANNER_PROMPT.md",
+    "sha256": "04c7cac514dd4b6cf79ef9f4aafbce9791e408b97779dbccd8af49893b15c8e9",
+    "bytes": 36465
+  }
+]

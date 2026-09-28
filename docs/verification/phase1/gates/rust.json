@@ -1,0 +1,21 @@
+{
+ "case_id": "verify-rust",
+ "git_sha": "58dac9c88018674c2e780086953902f1ea135308",
+ "dirty_diff_sha256": "e48652add533f3b26a55586c264763bf718017cf7cf9a2c317bf9834e6687d4d",
+ "bundle_manifest_sha256": "",
+ "os_arch": "Darwin-arm64",
+ "environment_kind": "F",
+ "fixture_seed": "",
+ "started_at": "2026-09-27T16:04:22.043023+00:00",
+ "command": "cargo test --offline --locked --manifest-path sani/src-tauri/Cargo.toml",
+ "exit_code": 0,
+ "status": "PASS",
+ "expected": "suite completes with its documented oracle",
+ "observed": "test result: ok. 113 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+ "evidence_refs": [
+  "/private/tmp/jarvis-p1-final/evidence/rust.log"
+ ],
+ "model_driver_call_counts": {},
+ "cost_known_or_unknown": "no paid calls",
+ "cleanup_result": "no live resources used"
+}

@@ -14,6 +14,8 @@ export interface ChatMessage {
   run_id?: string | null;
   agent_id?: string | null;
   agent_name?: string | null;
+  /** C08/N10: persisted mission correlation from the host history store. */
+  mission_id?: string | null;
 }
 
 export interface Conversation {
@@ -48,7 +50,7 @@ export interface AgentDone {
   message_id: string;
   run_id: string;
   ok: boolean;
-  /** "completed" | "cancelled" | "failed" (FIX-03). */
+  /** "completed" | "cancelled" | "failed" | "mission_pending" (FIX-03 + RF-07). */
   status: string;
   error: string;
   agent_id: string;
@@ -57,6 +59,10 @@ export interface AgentDone {
   assistant_message_id: string;
   text: string;
   created_at: number;
+  /** C08/N10: the durable mission this turn belongs to, when mission-backed. */
+  mission_id?: string;
+  /** The mission status string straight from the core result, when present. */
+  mission_status?: string;
 }
 
 export interface AgentStart {
@@ -344,3 +350,64 @@ export const saveOverlayLayout = (draft: OverlayLayout) =>
 export const cancelOverlayPreview = () => invoke<OverlayEditorState>("cancel_overlay_preview");
 /** The native defaults Reset puts into the draft. Writes nothing, moves nothing. */
 export const resetOverlayDraft = () => invoke<OverlayLayout>("reset_overlay_draft");
+
+// ---------------------------------------------------------------- missions
+// Jarvis Phase 1 (R08): truthful mission status and owner controls.
+
+export type MissionStatusValue =
+  | "PLANNED"
+  | "RUNNING"
+  | "WAITING_EXTERNAL"
+  | "BLOCKED"
+  | "NEEDS_APPROVAL"
+  | "PAUSED"
+  | "VERIFYING"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELLED"
+  | "UNKNOWN";
+
+export interface MissionEventFrame {
+  sequence: number;
+  event_id: string;
+  mission_id: string;
+  kind: string;
+  safe_payload: Record<string, unknown>;
+  occurred_at_ms: number;
+}
+
+/** A mission control (pause/resume/cancel/revise/priority) — the host
+ * validates Compare-and-Swap expectations; the renderer cannot forge
+ * authority. */
+export const missionControl = (
+  missionId: string,
+  kind: "PAUSE" | "RESUME" | "CANCEL" | "REVISE" | "SET_PRIORITY",
+  expectedPlanVersion: number,
+  expectedControlEpoch: number,
+  reason = "",
+) =>
+  invoke<{ mission_id: string; status: MissionStatusValue }>("mission_control_cmd", {
+    method: "mission.control",
+    params: {
+      control_id: crypto.randomUUID(),
+      mission_id: missionId,
+      expected_plan_version: expectedPlanVersion,
+      expected_control_epoch: expectedControlEpoch,
+      kind,
+      reason,
+    },
+  });
+
+/** Read one mission's durable record (status truth for the UI). */
+export const missionGet = (missionId: string) =>
+  invoke<{ mission_id: string; status: MissionStatusValue; plan_version: number; control_epoch: number; verified: boolean }>(
+    "mission_get_cmd",
+    { missionId },
+  );
+
+/** Replay mission events after a reconnect cursor. */
+export const missionEvents = (missionId: string, afterSequence: number) =>
+  invoke<{ events: MissionEventFrame[]; cursor: number; chain_ok: boolean }>("mission_events_cmd", {
+    missionId,
+    afterSequence,
+  });

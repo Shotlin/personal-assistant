@@ -88,7 +88,9 @@ class JsonFormatter(logging.Formatter):
             "msg": redact(record.getMessage()),
         }
         if record.exc_info:
-            payload["exc"] = self.formatException(record.exc_info)
+            # A05: exception text is a secret sink like any other -- tool
+            # errors embed URLs, arguments, and occasionally credentials.
+            payload["exc"] = redact(self.formatException(record.exc_info))
         for key, value in record.__dict__.items():
             if key in _DEFAULT_RECORD_ATTRS or key.startswith("_"):
                 continue

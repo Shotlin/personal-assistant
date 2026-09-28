@@ -83,6 +83,34 @@ Postgres (`memory/postgres.py`, `runtime/runs.py`, `DATABASE_URL`) is a
 dev-only compatibility backend for them; the shipping backend is SQLite
 (`MEMORY_BACKEND=sqlite` + `SANI_DATA_DIR`).
 
+## Jarvis Phase 1 (missions) — default off
+
+`src/assistant/missions/` adds durable mission ownership ABOVE the existing
+Velo fast path (planning package: `docs/astra/jarvis-next-2026-09-27-58dac9c`,
+file 03 is the architecture; `docs/verification/phase1/` holds evidence):
+
+- `JARVIS_MISSIONS_ENABLED=false` by default. With it on, the `velo` slot is
+  a mission-backed entry: same Velo recipes/adapter/policy, same zero-model
+  fast route, plus durable request dedup, bounded work packets, scope/
+  budget/permit gates, and a deterministic acceptance gate.
+- Contracts (`jarvis.v1`) are strict: unknown fields in authority records
+  reject; UNKNOWN effect outcome is never reported as success.
+- Mission state lives in the SAME embedded `sani.db` (`missions*` tables,
+  own migration ledger `mission_schema_migrations`). The Rust UI history
+  stays a separate projection.
+- The Controller is the EXISTING Deep Agent in role-scoped invocations
+  (PLAN/RECOVER/REVIEW/CHAT). It proposes, never grants scope; a raw CUA
+  call from a Controller role is refused. No per-click model calls.
+- `SANI_TTS_ENABLED=false` by default; `sani/src-tauri/python/sani_tts.py`
+  is the output worker (framed stdio, no credentials, no egress). Engine
+  selection is pending owner audition (`docs/verification/phase1/VOICE_SELECTION.md`).
+- `RSI_MODE` is immutable `observation_only`: the Observer
+  (`missions/observer.py`) is read-only with a separate recommendation
+  sink; no experiment runner exists.
+- Phase 1 acceptance evidence: `.venv/bin/python scripts/verify_phase1.py
+  --suite <unit|integration|performance|rust|renderer|desktop|voice>`.
+  Live suites need an owner-issued `approved-test-config.json` + `--allow-live`.
+
 ## Conventions
 
 - Python 3.12, `uv run` for everything; ruff (line 100) + strict mypy must

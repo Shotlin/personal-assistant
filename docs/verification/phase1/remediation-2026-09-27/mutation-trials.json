@@ -1,0 +1,35 @@
+{
+ "trials": [
+  {
+   "trial": "disable entire surface-check (freshness/identity)",
+   "test": "tests/unit/test_mission_authority.py::test_rp06_empty_observed_app_denied",
+   "status": "OK (test failed under mutation)",
+   "exit": 1
+  },
+  {
+   "trial": "disable required-check completeness",
+   "test": "tests/unit/test_mission_store.py::test_completed_result_missing_required_check_is_conflict",
+   "status": "OK (test failed under mutation)",
+   "exit": 1
+  },
+  {
+   "trial": "disable Controller role refusal at dispatch",
+   "test": "tests/integration/test_mission_composition.py::test_rp02_role_refusal_at_real_policy_boundary",
+   "status": "OK (test failed under mutation)",
+   "exit": 1
+  },
+  {
+   "trial": "disable supported-recipe gate",
+   "test": "tests/unit/test_mission_executor.py::test_unknown_recipe_is_needs_controller_with_bounded_exception",
+   "status": "OK (test failed under mutation)",
+   "exit": 1
+  },
+  {
+   "trial": "disable service Deep reservation",
+   "test": "tests/unit/test_mission_service.py::test_rp11_zero_deep_budget_blocks_service_planning",
+   "status": "OK (test failed under mutation)",
+   "exit": 1
+  }
+ ],
+ "restore_check_exit": 0
+}

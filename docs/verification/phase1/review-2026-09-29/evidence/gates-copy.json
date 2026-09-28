@@ -1,0 +1,8 @@
+{
+  "root": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr",
+  "repo": "/Users/sayan/Documents/personal-assistant",
+  "evidence": "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-2026-09-29/evidence",
+  "files": 668,
+  "git": "read-only .git symlink for launcher identity; no Git writes",
+  "venv": "reused read-only via symlink"
+}

@@ -67,7 +67,23 @@ fn parse(frame: &Value) -> Option<CoreEvent> {
 /// renders. Velo reports a structured loop status rather than "done", and its
 /// non-DONE statuses are results the user must see, not successes.
 fn outcome_of(result: &Value) -> (bool, &'static str) {
+    // R08/F09: mission results carry an explicit mission_status. A mission
+    // that needs approval, paused, blocked, or waiting is NOT completed --
+    // the turn was delivered, the work is not done (RF-07).
+    if let Some(mission_status) = result.get("mission_status").and_then(Value::as_str) {
+        return match mission_status {
+            "COMPLETED" => (true, "completed"),
+            "CANCELLED" => (false, "cancelled"),
+            "NEEDS_APPROVAL" | "PAUSED" | "BLOCKED" | "WAITING_EXTERNAL" => {
+                (false, "mission_pending")
+            }
+            "FAILED" => (false, "failed"),
+            _ => (false, "failed"),
+        };
+    }
     match result.get("status").and_then(Value::as_str).unwrap_or("") {
+        // Legacy non-mission results: ASK_USER was the Velo ask-the-user
+        // phrasing and remains turn-completed (no mission status exists).
         "done" | "DONE" | "ASK_USER" => (true, "completed"),
         "cancelled" | "STOPPED" => (false, "cancelled"),
         _ => (false, "failed"),
@@ -97,6 +113,7 @@ pub async fn stream_turn(
     agent_name: String,
     text: String,
     thread_id: String,
+    input_origin: String,
 ) {
     let started_at = Instant::now();
     let live = Arc::new(Mutex::new(Streamed::default()));
@@ -169,7 +186,17 @@ pub async fn stream_turn(
         }
     };
 
-    let result = crate::sani_core::run_turn(&app, &agent_id, &text, &thread_id, sink).await;
+    let result =
+        crate::sani_core::run_turn(
+            &app,
+            &agent_id,
+            &text,
+            &thread_id,
+            sink,
+            Some(&message_id),
+            Some(input_origin.as_str()),
+        )
+        .await;
 
     // The sink was consumed with the run, so this read is uncontended.
     let streamed = live
@@ -200,6 +227,16 @@ pub async fn stream_turn(
         }
     };
 
+    // C08/N10: the durable mission correlation travels with the terminal
+    // event and the persisted message, so the renderer shows mission truth.
+    let mission_id = match &result {
+        Ok(value) => value
+            .get("mission_id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        Err(_) => String::new(),
+    };
     app_state::agent_finished(
         &app,
         &message_id,
@@ -210,6 +247,7 @@ pub async fn stream_turn(
         error,
         &agent_id,
         &agent_name,
+        &mission_id,
     );
     if !streamed.run_id.is_empty() {
         record_timing(

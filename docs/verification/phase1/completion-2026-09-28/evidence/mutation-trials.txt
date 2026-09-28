@@ -1,0 +1,7 @@
+FAILS-AS-REQUIRED  | NP11 default mission guard disabled | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+FAILS-AS-REQUIRED  | required-check completeness gate disabled | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+FAILS-AS-REQUIRED  | role refusal at policy boundary disabled | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+FAILS-AS-REQUIRED  | Deep reservation removed from planning | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+FAILS-AS-REQUIRED  | reconciliation aggregation short-circuits | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+FAILS-AS-REQUIRED  | superseded-lease refusal disabled | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+FAILS-AS-REQUIRED  | control revision screening disabled | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!

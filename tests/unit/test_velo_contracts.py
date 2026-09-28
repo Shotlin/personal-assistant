@@ -74,11 +74,21 @@ def test_no_progress_counts_across_alternating_kinds_not_just_mutations() -> Non
 
 
 def test_no_progress_alternating_distinct_digests_is_not_automatically_progress() -> None:
-    """observe/wait/recover producing A,B,A,B must still hit the ceiling."""
-    tracker = NoProgressTracker(max_steps_without_change=2)
-    assert tracker.register(ProgressKind.OBSERVATION, "a") is False or True
-    # a -> b -> a: every register is "new" against the immediately previous
-    # digest, so real change continues -- but the recovery cap still bounds it.
+    """A,B,A,B must trip the ceiling: alternation is not progress (A09 fix).
+
+    Oracle change, with counterexample: the previous version of this test
+    documented the old last-digest-only tracker under which A,B,A,B ran
+    forever -- the alternating-loop defect (audit A09, RF-12) proven by
+    ``tests/unit/test_phase1_oracles.py::test_alternating_observations_cannot_loop_forever``.
+    The windowed tracker now counts any digest seen within the look-back
+    window as no progress, while real change (an unseen digest) still
+    resets the count.
+    """
+    tracker = NoProgressTracker(max_steps_without_change=4)
+    digests = ["a", "b"]
+    results = [tracker.register(ProgressKind.OBSERVATION, digests[i % 2]) for i in range(8)]
+    assert not results[5], "the 6th register (4 repeats) must trip the breaker"
+    # The recovery cap still bounds blind recovery churn independently.
     tracker2 = NoProgressTracker(max_recovery_attempts=2)
     assert tracker2.register(ProgressKind.RECOVERY, "a")
     assert tracker2.register(ProgressKind.RECOVERY, "b")

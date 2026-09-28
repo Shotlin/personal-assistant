@@ -104,16 +104,34 @@ class FakeRuntime:
         return self
 
     @contextlib.asynccontextmanager
-    async def run_scope(self, session_name: str, conversation: str = ""):
+    async def run_scope(
+        self,
+        session_name: str,
+        conversation: str = "",
+        *,
+        ledger: Any | None = None,
+        mission_guard: Any | None = None,
+        mission_strict_audit: bool = False,
+        mission_withhold_screenshots: bool = False,
+        max_actions: int | None = None,
+    ):
         # The real policy context: carried focus and observed app identities
         # survive between scopes of the same conversation, exactly in
-        # production.
+        # production. Mission parameters forward exactly as SaniRuntime's
+        # scope does (R05: one code path for real dispatch and fakes).
         self.opened_scopes.append((session_name, conversation))
-        budget = RunBudget()
+        budget = RunBudget(max_actions=max_actions) if max_actions is not None else RunBudget()
         async with contextlib.AsyncExitStack() as stack:
             await stack.enter_async_context(
                 cua_run_scope(
-                    budget=budget, run=None, artifact_dir="", conversation=conversation
+                    budget=budget,
+                    run=None,
+                    ledger=ledger,
+                    artifact_dir="",
+                    conversation=conversation,
+                    mission_guard=mission_guard,
+                    mission_strict_audit=mission_strict_audit,
+                    mission_withhold_screenshots=mission_withhold_screenshots,
                 )
             )
             yield budget

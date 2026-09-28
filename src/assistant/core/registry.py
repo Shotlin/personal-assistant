@@ -35,13 +35,18 @@ class AgentProtocol(Protocol):
         thread_id: str,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
+        run_id: str = "",
     ) -> dict[str, Any]:
         """Run to completion, streaming progress via on_event(kind, data).
 
-        `thread_id` is the caller's conversation identity, supplied so a
+        ``thread_id`` is the caller's conversation identity, supplied so a
         stateful agent resumes the same thread across turns instead of
         starting a fresh one every run. Agents that hold no conversation
         state ignore it.
+
+        ``run_id`` is the stable request identity (Jarvis Phase 1, T08):
+        mission-backed entries key deduplication and per-run cancellation on
+        it. Legacy entries may ignore it.
 
         Returns the final result payload dict. A cooperative agent checks
         cancel_check between steps and lets CancelledError propagate; the
@@ -49,8 +54,13 @@ class AgentProtocol(Protocol):
         """
         ...
 
-    async def cancel(self) -> None:
-        """Ask the agent to stop cooperatively; best-effort, never blocking long."""
+    async def cancel(self, run_id: str | None = None) -> None:
+        """Ask the agent to stop cooperatively; best-effort, never blocking long.
+
+        ``run_id`` scopes the stop to one run (Jarvis Phase 1, A07): entries
+        run concurrently, so an unscoped stop must not poison unrelated runs.
+        ``None`` stops every run this entry currently tracks (legacy callers).
+        """
         ...
 
 

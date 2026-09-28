@@ -1,0 +1,26 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "/private/tmp/jarvis-native-review-lxk6brnx/sani/src-tauri/Cargo.toml"
+  ],
+  "exit": 101,
+  "env": {
+    "PATH": "/Applications/ChatGPT.app/Contents/Resources/codex-cli/codex-path:/Users/sayan/.nvm/versions/node/v24.21.0/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin:/Library/Apple/usr/bin:/opt/homebrew/bin:/Users/sayan/.codex/tmp/arg0/codex-arg0gDdHVt:/Applications/ChatGPT.app/Contents/Resources/codex-cli/codex-path:/Users/sayan/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/Users/sayan/.nvm/versions/node/v24.21.0/bin:/Users/sayan/.local/bin:/opt/homebrew/sbin:/Users/sayan/.cargo/bin:/Users/sayan/.docker/bin:/Users/sayan/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/Applications/ChatGPT.app/Contents/Resources:/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS:/Users/sayan/.docker/bin",
+    "HOME": "/private/tmp/jarvis-native-review-lxk6brnx/home",
+    "CARGO_HOME": "/private/tmp/jarvis-native-review-lxk6brnx/cargo-home",
+    "RUSTUP_HOME": "/Users/sayan/.rustup",
+    "CARGO_TARGET_DIR": "/private/tmp/jarvis-native-review-lxk6brnx/target",
+    "CARGO_NET_OFFLINE": "true",
+    "XDG_DATA_HOME": "/private/tmp/jarvis-native-review-lxk6brnx/data",
+    "XDG_CONFIG_HOME": "/private/tmp/jarvis-native-review-lxk6brnx/config",
+    "XDG_CACHE_HOME": "/private/tmp/jarvis-native-review-lxk6brnx/cache",
+    "TMPDIR": "/private/tmp/jarvis-native-review-lxk6brnx/tmp",
+    "SANI_TTS_ENABLED": "false",
+    "JARVIS_MISSIONS_ENABLED": "false",
+    "CI": "1"
+  }
+}

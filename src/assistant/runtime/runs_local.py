@@ -125,7 +125,12 @@ class SQLiteRunStore:
     def _setup_sync(self) -> None:
         self._conn.executescript(_RUN_SCHEMA)
         self._conn.executescript(_LEASE_SCHEMA)
-        self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+        # Monotonic only: another schema owner on this shared file (the
+        # mission tables keep their own migration ledger) may already have
+        # raised user_version; this legacy marker must never downgrade it.
+        current = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
+        if current < _SCHEMA_VERSION:
+            self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
 
     async def close(self) -> None:
         async with self._lock:

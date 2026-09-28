@@ -1,0 +1,44 @@
+src/assistant/velo/adapter.py:118:101: E501 Line too long (102 > 100)
+src/assistant/velo/adapter.py:367:5: F822 Undefined name `TaskCancelled` in `__all__`
+src/assistant/velo/contracts.py:151:19: UP037 [*] Remove quotes from type annotation
+src/assistant/velo/contracts.py:153:14: UP037 [*] Remove quotes from type annotation
+src/assistant/velo/contracts.py:264:14: UP037 [*] Remove quotes from type annotation
+src/assistant/velo/jev.py:75:9: I001 [*] Import block is un-sorted or un-formatted
+src/assistant/velo/jev.py:169:63: UP037 [*] Remove quotes from type annotation
+src/assistant/velo/jev.py:241:24: UP037 [*] Remove quotes from type annotation
+src/assistant/velo/parse.py:17:1: I001 [*] Import block is un-sorted or un-formatted
+src/assistant/velo/recipes.py:20:1: I001 [*] Import block is un-sorted or un-formatted
+src/assistant/velo/recipes.py:50:19: F821 Undefined name `Verification`
+src/assistant/velo/recipes.py:82:101: E501 Line too long (101 > 100)
+src/assistant/velo/recipes.py:123:6: F821 Undefined name `Verification`
+src/assistant/velo/recipes.py:370:101: E501 Line too long (109 > 100)
+src/assistant/velo/verify.py:80:101: E501 Line too long (114 > 100)
+src/assistant/velo/verify.py:102:101: E501 Line too long (109 > 100)
+src/assistant/velo/verify.py:104:101: E501 Line too long (124 > 100)
+src/assistant/velo/verify.py:140:101: E501 Line too long (103 > 100)
+src/assistant/velo/verify.py:143:101: E501 Line too long (103 > 100)
+src/assistant/velo/verify.py:164:101: E501 Line too long (102 > 100)
+src/assistant/velo/verify.py:165:101: E501 Line too long (122 > 100)
+src/assistant/velo/verify.py:202:101: E501 Line too long (102 > 100)
+src/assistant/velo/verify.py:203:101: E501 Line too long (122 > 100)
+src/assistant/velo/verify.py:231:101: E501 Line too long (102 > 100)
+src/assistant/velo/verify.py:232:101: E501 Line too long (122 > 100)
+tests/unit/test_velo_adapter.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_velo_controller.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_velo_controller.py:5:8: F401 [*] `contextlib` imported but unused
+tests/unit/test_velo_controller.py:10:37: F401 [*] `assistant.agent.context.RunBudget` imported but unused
+tests/unit/test_velo_controller.py:12:38: F401 [*] `assistant.velo.contracts.Candidate` imported but unused
+tests/unit/test_velo_controller.py:12:49: F401 [*] `assistant.velo.contracts.CandidateKind` imported but unused
+tests/unit/test_velo_jev.py:157:13: F841 Local variable `provider` is assigned to but never used
+tests/unit/test_velo_live_regressions.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_velo_live_regressions.py:5:8: F401 [*] `asyncio` imported but unused
+tests/unit/test_velo_live_regressions.py:13:5: F401 [*] `assistant.velo.contracts.Postcondition` imported but unused
+tests/unit/test_velo_live_regressions.py:14:5: F401 [*] `assistant.velo.contracts.PostconditionKind` imported but unused
+tests/unit/test_velo_live_regressions.py:23:5: F401 [*] `tests.unit.velo_fakes.FakeTool` imported but unused
+tests/unit/test_velo_live_regressions.py:174:5: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_velo_recipes.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_velo_recipes.py:11:5: F401 [*] `assistant.velo.contracts.PostconditionKind` imported but unused
+tests/unit/velo_fakes.py:15:69: F401 [*] `assistant.tools.policy.desktop_contexts` imported but unused
+tests/unit/velo_fakes.py:103:32: UP037 [*] Remove quotes from type annotation
+Found 42 errors.
+[*] 24 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).

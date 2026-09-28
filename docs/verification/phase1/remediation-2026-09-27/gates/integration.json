@@ -1,0 +1,29 @@
+{
+ "case_id": "verify-integration",
+ "git_sha": "58dac9c88018674c2e780086953902f1ea135308",
+ "dirty_diff_sha256": "c10e71fcb0762551f30a2cfe89935f8ee5cec77e76c242033f4ef0311ad615ce",
+ "source_manifest_sha256": "007fb39445cd981303d635ea72d421aadb9790c93b6276ff89621db71e74ffc7",
+ "bundle_manifest_sha256": "",
+ "os_arch": "Darwin-arm64",
+ "environment_kind": "F",
+ "fixture_seed": "",
+ "started_at": "2026-09-27T20:30:22.044352+00:00",
+ "command": ".venv/bin/python -m pytest tests/integration/test_mission_sqlite.py tests/integration/test_mission_policy.py tests/integration/test_mission_core.py tests/integration/test_mission_ipc.py tests/integration/test_mission_restart.py tests/integration/test_mission_desktop_control.py tests/integration/test_mission_observability.py -q",
+ "exit_code": 0,
+ "status": "PASS",
+ "expected": "suite completes with its documented oracle",
+ "observed": "47 cases, none skipped",
+ "evidence_refs": [
+  "/private/tmp/jarvis-r12-final3/integration.xml",
+  "/private/tmp/jarvis-r12-final3/integration.log"
+ ],
+ "model_driver_call_counts": {},
+ "cost_known_or_unknown": "no paid calls",
+ "cleanup_result": "no live resources used",
+ "case_counts": {
+  "tests": 47,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0
+ }
+}

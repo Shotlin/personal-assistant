@@ -400,6 +400,13 @@ RECOVERY_GUIDANCE: dict[str, str] = {
 }
 
 
+def _redacted(text: str) -> str:
+    """Secret-screen model-facing error text before it can reach a sink."""
+    from assistant.observability.logging import redact
+
+    return redact(text)
+
+
 def fault_message(fault: CuaFault, detail: str) -> str:
     """The same shape as :func:`fault_guidance`, for a fault known by rule.
 
@@ -410,7 +417,7 @@ def fault_message(fault: CuaFault, detail: str) -> str:
     from assistant.runtime.cua_faults import FAULT_MESSAGES
 
     recovery = RECOVERY_FOR[fault]
-    return (
+    return _redacted(
         f"Error: [{fault.value}] {FAULT_MESSAGES[fault]} {detail} "
         f"-> {RECOVERY_GUIDANCE[recovery.value]}"
     )
@@ -422,7 +429,7 @@ def fault_guidance(text: str, exc: BaseException | None = None) -> str:
 
     fault = classify_exception(exc) if exc is not None else classify_text(text)
     if fault is CuaFault.UNKNOWN:
-        return f"Error: {text}"
+        return _redacted(f"Error: {text}")
     recovery = RECOVERY_FOR[fault]
     return (
         f"Error: [{fault.value}] {FAULT_MESSAGES[fault]} "
@@ -472,6 +479,42 @@ if TYPE_CHECKING:  # pragma: no cover
 cua_action_ledger: contextvars.ContextVar[_RunActionLedger | None] = contextvars.ContextVar(
     "cua_action_ledger", default=None
 )
+
+#: Mission-mode dispatch guard (Jarvis Phase 1, T03). Set only by the bounded
+#: executor scope: when present, every mutating call is checked against the
+#: mission's authority (permit, scope, budget) before dispatch; a returned
+#: string is the refusal the agent sees. Legacy runs leave this unset and
+#: behave exactly as before.
+MissionDispatchGuard = Callable[[str, dict[str, Any]], Awaitable[str | None]]
+mission_dispatch_guard: contextvars.ContextVar[MissionDispatchGuard | None] = (
+    contextvars.ContextVar("mission_dispatch_guard", default=None)
+)
+
+#: Mission mode makes the action ledger authoritative: a failed intent write
+#: BLOCKS the mutation (fail closed, STORAGE_UNAVAILABLE) instead of the
+#: legacy fail-open behavior, which remains for non-mission runs.
+mission_audit_strict: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "mission_audit_strict", default=False
+)
+
+#: Mission mode withholds screenshots by default: captures are not diverted
+#: to artifact files (raw pixels never become retained evidence) and never
+#: pass inline to the model. Existing non-mission behavior is unchanged.
+mission_screenshots_withheld: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "mission_screenshots_withheld", default=False
+)
+
+#: Controller role enforcement (R02/F02): set invocation-locally by the
+#: mission controller around Deep graph calls. The REAL wrapped-tool
+#: dispatch checks it: PLAN/RECOVER/REVIEW/INFO roles may never dispatch a
+#: desktop tool, whatever tool reference the model obtained. Empty means no
+#: mission role is active (legacy chat keeps desktop tools).
+controller_role_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "controller_role", default=""
+)
+
+#: Roles that may not dispatch desktop tools through the wrapped inventory.
+DESKTOP_FORBIDDEN_ROLES = frozenset({"PLAN", "RECOVER", "REVIEW", "INFO"})
 
 #: The normalized payloads behind recent wrapped calls, keyed by a monotonic
 #: call index. The wrapper runs in its own task, so a ContextVar rebinding here
@@ -545,6 +588,9 @@ async def cua_run_scope(
     artifact_dir: str = "",
     ledger: Any | None = None,
     conversation: str = "",
+    mission_guard: MissionDispatchGuard | None = None,
+    mission_strict_audit: bool = False,
+    mission_withhold_screenshots: bool = False,
 ) -> AsyncIterator[None]:
     """Bind run-scoped policy state inside the scope that owns it.
 
@@ -552,11 +598,17 @@ async def cua_run_scope(
     tokens are reset on exit -- never set at import/wrap time, never left
     to leak across runs (master plan 7.2). ``ledger`` is the optional
     RunActionLedger for durable action accounting around real dispatch.
+
+    The mission-scoped guards (Jarvis Phase 1) follow the same lifecycle:
+    they default off, and the bounded executor passes them per dispatch.
     """
     budget_token = cua_run_budget.set(budget)
     run_token = cua_desktop_run.set(run)
     dir_token = cua_artifact_dir.set(artifact_dir)
     ledger_token = cua_action_ledger.set(ledger)
+    guard_token = mission_dispatch_guard.set(mission_guard)
+    strict_token = mission_audit_strict.set(mission_strict_audit)
+    withhold_token = mission_screenshots_withheld.set(mission_withhold_screenshots)
     carried = desktop_contexts.get(conversation) or {}
     state: dict[str, Any] = {
         "snapshots": {},
@@ -573,6 +625,9 @@ async def cua_run_scope(
         yield
     finally:
         desktop_contexts.save(conversation, state)
+        mission_screenshots_withheld.reset(withhold_token)
+        mission_audit_strict.reset(strict_token)
+        mission_dispatch_guard.reset(guard_token)
         cua_action_ledger.reset(ledger_token)
         cua_target_state.reset(target_token)
         cua_artifact_dir.reset(dir_token)
@@ -750,6 +805,12 @@ def _remember_target_state(name: str, kwargs: dict[str, Any], result: Any) -> No
     state = cua_target_state.get()
     if state is None:
         return
+    # R03: the observation timestamp is recorded when the observation
+    # actually happened; the authority layer consumes it as evidence and
+    # refuses stale/absent observations (never stamps one itself).
+    import time as _time
+
+    state["observed_at_ms"] = int(_time.time() * 1000)
     if name in INVALIDATES_SNAPSHOTS_TOOLS or kwargs.get("delivery_mode") == "foreground":
         # Raising or foregrounding cascades the window: every frame read before it
         # now points somewhere else.
@@ -907,8 +968,33 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
             and kwargs.get("include_screenshot", True)
             and not wants_inline_image
             and not kwargs.get("screenshot_out_file")
+            and not mission_screenshots_withheld.get()
         ):
             kwargs["screenshot_out_file"] = _artifact_screenshot_path(artifact_dir, name)
+        if mission_screenshots_withheld.get():
+            # Raw pixels must never become retained evidence or inline model
+            # input in mission mode (file 03 §10): withhold the capture.
+            kwargs.pop("screenshot_out_file", None)
+            kwargs["include_screenshot"] = False
+            wants_inline_image = False
+        # R02/F02: role enforcement at the REAL dispatch boundary. A
+        # Controller role (PLAN/RECOVER/REVIEW/INFO) may never dispatch a
+        # desktop tool through any wrapped reference.
+        role = controller_role_var.get()
+        if role in DESKTOP_FORBIDDEN_ROLES:
+            return (
+                f"Refused: the {role} role may not use the desktop tool "
+                f"{name}. Reasoning roles submit structured results; only "
+                "the bounded executor dispatches desktop actions."
+            )
+        # R03/F03: the mission guard covers scope-sensitive READS as well
+        # as mutations; the authority layer classifies the action and
+        # decides what an observation may address.
+        guard = mission_dispatch_guard.get()
+        if guard is not None:
+            refusal = await guard(name, kwargs)
+            if refusal is not None:
+                return refusal
         if is_mutating:
             # Identical-mutation loop guard: the same tool with the same
             # arguments, three times in a row, is the "let me click" loop the
@@ -949,8 +1035,34 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
             )
         ledger = cua_action_ledger.get()
         ledger_id: int | None = None
-        if is_mutating and ledger is not None:
-            ledger_id = await _ledger_plan(ledger, name, kwargs)
+        if is_mutating:
+            if ledger is None and mission_audit_strict.get():
+                # R04/F04 (RP03): strict mission mode with NO ledger at all
+                # is a blocker, exactly like a failed ledger write. No
+                # durable intent, no mutation.
+                logger.warning(
+                    "mission_action_blocked_without_ledger",
+                    extra={"event": "mission_action_blocked_without_ledger", "tool": name},
+                )
+                return (
+                    "Refused: no action ledger is bound to this execution "
+                    f"({name} was not dispatched; storage unavailable)."
+                )
+            if ledger is not None:
+                ledger_id = await _ledger_plan(ledger, name, kwargs)
+                if ledger_id is None and mission_audit_strict.get():
+                    # A04 fail-closed fix for the mission path: no durable intent
+                    # row means no mutation. The legacy path keeps its documented
+                    # fail-open behavior.
+                    logger.warning(
+                        "mission_action_blocked_without_audit",
+                        extra={"event": "mission_action_blocked_without_audit", "tool": name},
+                    )
+                    return (
+                        "Refused: the action ledger could not record the intent for "
+                        f"{name} (storage unavailable). Nothing was dispatched; the "
+                        "mission will reconcile instead of acting unrecorded."
+                    )
         try:
             result = await original(**kwargs)
         except CuaBudgetExceeded:

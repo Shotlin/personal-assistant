@@ -1,0 +1,5 @@
+{
+  "copy": "/private/tmp/jarvis-native-review-lxk6brnx",
+  "deps": "APFS clone; source deps read only",
+  "env": "env_clear allowlist isolated HOME/XDG_DATA_HOME/XDG_CONFIG_HOME/XDG_CACHE_HOME/TMPDIR; TTS/missions disabled"
+}

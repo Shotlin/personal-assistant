@@ -30,6 +30,10 @@ pub struct StoredMessage {
     /// rendered as a neutral Sani, never guessed at.
     pub agent_id: Option<String>,
     pub agent_name: Option<String>,
+    /// C08/N10: the durable mission this turn belongs to, when the run was
+    /// mission-backed. Persisted so history/reopen retains correlation and
+    /// the renderer can show truthful mission status without guessing.
+    pub mission_id: Option<String>,
 }
 
 /// Non-secret operational metadata for one agent run. Transcript text, audio,
@@ -60,6 +64,7 @@ pub struct Attribution<'a> {
     pub run_id: Option<&'a str>,
     pub agent_id: Option<&'a str>,
     pub agent_name: Option<&'a str>,
+    pub mission_id: Option<&'a str>,
 }
 
 pub struct History {
@@ -137,6 +142,9 @@ impl History {
         // message simply has no agent and renders under the neutral Sani mark.
         ensure_column(&conn, "agent_id", "TEXT")?;
         ensure_column(&conn, "agent_name", "TEXT")?;
+        // C08/N10: mission correlation on the message row itself, so history
+        // and reopen keep showing the same mission truth the live run had.
+        ensure_column(&conn, "mission_id", "TEXT")?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -232,8 +240,8 @@ impl History {
     ) -> Result<(), String> {
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT INTO messages (id, conversation_id, role, text, created_at, run_id, agent_id, agent_name)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO messages (id, conversation_id, role, text, created_at, run_id, agent_id, agent_name, mission_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 id,
                 conversation_id,
@@ -242,7 +250,8 @@ impl History {
                 now,
                 attribution.run_id,
                 attribution.agent_id,
-                attribution.agent_name
+                attribution.agent_name,
+                attribution.mission_id
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -253,7 +262,7 @@ impl History {
         let conn = self.conn.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT id, conversation_id, role, text, created_at, run_id, agent_id, agent_name
+                "SELECT id, conversation_id, role, text, created_at, run_id, agent_id, agent_name, mission_id
                  FROM messages
                  WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC",
             )
@@ -269,6 +278,7 @@ impl History {
                     run_id: row.get(5)?,
                     agent_id: row.get(6)?,
                     agent_name: row.get(7)?,
+                    mission_id: row.get(8)?,
                 })
             })
             .map_err(|e| e.to_string())?;

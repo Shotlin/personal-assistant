@@ -112,6 +112,13 @@ class SaniRuntime:
                 open_cua_connection(settings) if settings.cua_enabled else _null_cua_connection()
             )
             extra_tools = assemble_tool_inventory(list(getattr(connection, "tools", [])))
+            if getattr(settings, "jarvis_missions_enabled", False):
+                # R02: the trusted structured submission tools (plan/
+                # recovery/review) are bound into the graph when missions
+                # are enabled; role gating happens at invocation time.
+                from assistant.missions.submission import build_submission_tools
+
+                extra_tools = [*extra_tools, *build_submission_tools()]
             keepalive = asyncio.create_task(
                 _driver_keepalive(connection), name="sani-core-cua-keepalive"
             )
@@ -158,15 +165,56 @@ class SaniRuntime:
 
     @contextlib.asynccontextmanager
     async def run_scope(
-        self, session_name: str, conversation: str = ""
+        self,
+        session_name: str,
+        conversation: str = "",
+        *,
+        ledger: Any | None = None,
+        mission_guard: Any | None = None,
+        mission_strict_audit: bool = False,
+        mission_withhold_screenshots: bool = False,
+        max_actions: int | None = None,
     ) -> AsyncIterator[RunBudget]:
         """Bind one turn's desktop handle and mutating-action budget.
 
         Yields the budget so the caller can report how much of it was used;
         the context tokens are reset on exit and can never leak into the
         next run. ``conversation`` is what desktop continuity is keyed on.
+
+        R05: mission dispatch passes the per-action ``ledger``, the
+        authority ``mission_guard`` and the strict-audit/withhold flags
+        through, so the REAL desktop session and the mission guards share
+        one scope (never ``run=None`` for real dispatch).
+
+        C02/N03: with missions enabled, a scope that carries NO explicit
+        mission guard still cannot mutate the desktop. The default guard
+        refuses every mutating call at the wrapped-tool boundary — the
+        selectable Deep entry (chat, planning, questions) has no mission
+        permit to spend, so an action-shaped prompt through that entry can
+        produce zero effects. Reads stay available for answers.
         """
-        budget = RunBudget()
+        if mission_guard is None and getattr(
+            self.settings, "jarvis_missions_enabled", False
+        ):
+            from assistant.tools.policy import MUTATING_TOOL_NAMES
+
+            async def _no_mission_mutation(
+                tool: str, kwargs: dict[str, Any]
+            ) -> str | None:
+                if tool in MUTATING_TOOL_NAMES:
+                    return (
+                        f"Refused: APPROVAL_REQUIRED: {tool} would mutate the "
+                        "desktop outside any mission. Explicit Deep selection "
+                        "obeys mission authority for actions; submit the action "
+                        "as a mission (the Velo entry) so it is claimed, scoped, "
+                        "budgeted and verified."
+                    )
+                return None
+
+            mission_guard = _no_mission_mutation
+        # R04/R05: a mission unit clamps its own mutating-action ceiling
+        # (file 03 §8: at most 12 per unit, zero stays zero).
+        budget = RunBudget(max_actions=max_actions) if max_actions is not None else RunBudget()
         stack = contextlib.AsyncExitStack()
         try:
             run: Any = None
@@ -182,7 +230,11 @@ class SaniRuntime:
                     budget=budget,
                     run=run,
                     artifact_dir=self.artifact_dir,
+                    ledger=ledger,
                     conversation=conversation,
+                    mission_guard=mission_guard,
+                    mission_strict_audit=mission_strict_audit,
+                    mission_withhold_screenshots=mission_withhold_screenshots,
                 )
             )
             yield budget

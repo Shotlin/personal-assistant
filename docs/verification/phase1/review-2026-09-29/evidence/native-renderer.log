@@ -1,0 +1,27 @@
+
+> sani@0.1.0 build
+> tsc && vite build
+
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 81 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mapp.html                                   [39m[1m[2m  0.71 kB[22m[1m[22m[2m │ gzip:  0.37 kB[22m
+[2mdist/[22m[32mindex.html                                 [39m[1m[2m  1.47 kB[22m[1m[22m[2m │ gzip:  0.77 kB[22m
+[2mdist/[22m[32monboarding.html                            [39m[1m[2m  1.55 kB[22m[1m[22m[2m │ gzip:  0.76 kB[22m
+[2mdist/[22m[32mpanel.html                                 [39m[1m[2m  1.57 kB[22m[1m[22m[2m │ gzip:  0.81 kB[22m
+[2mdist/[22m[2massets/[22m[35mboot-DIm2IaTp.css                   [39m[1m[2m  2.65 kB[22m[1m[22m[2m │ gzip:  0.98 kB[22m
+[2mdist/[22m[2massets/[22m[35mpill-C9y-GBC0.css                   [39m[1m[2m  4.08 kB[22m[1m[22m[2m │ gzip:  1.18 kB[22m
+[2mdist/[22m[2massets/[22m[35mpanel-6mW_SqAo.css                  [39m[1m[2m  9.16 kB[22m[1m[22m[2m │ gzip:  2.26 kB[22m
+[2mdist/[22m[2massets/[22m[35monboarding-0Az_rxqp.css             [39m[1m[2m 10.76 kB[22m[1m[22m[2m │ gzip:  2.90 kB[22m
+[2mdist/[22m[2massets/[22m[35mmain-CsGmR8xI.css                   [39m[1m[2m 16.02 kB[22m[1m[22m[2m │ gzip:  3.40 kB[22m
+[2mdist/[22m[2massets/[22m[36mComputerControlGallery-BDxaaBRL.js  [39m[1m[2m  2.44 kB[22m[1m[22m[2m │ gzip:  1.11 kB[22m
+[2mdist/[22m[2massets/[22m[36mActivityTimeline-IBhTGi44.js        [39m[1m[2m  2.59 kB[22m[1m[22m[2m │ gzip:  1.24 kB[22m
+[2mdist/[22m[2massets/[22m[36mtauri-C4A7gZel.js                   [39m[1m[2m  3.21 kB[22m[1m[22m[2m │ gzip:  1.23 kB[22m
+[2mdist/[22m[2massets/[22m[36mpill-Dhc8jbUg.js                    [39m[1m[2m  5.80 kB[22m[1m[22m[2m │ gzip:  2.30 kB[22m
+[2mdist/[22m[2massets/[22m[36mpanel-DeSCTLzy.js                   [39m[1m[2m 11.18 kB[22m[1m[22m[2m │ gzip:  3.74 kB[22m
+[2mdist/[22m[2massets/[22m[36monboarding-ChoE8Ose.js              [39m[1m[2m 20.66 kB[22m[1m[22m[2m │ gzip:  6.35 kB[22m
+[2mdist/[22m[2massets/[22m[36mmain-JtVKsQUi.js                    [39m[1m[2m 32.26 kB[22m[1m[22m[2m │ gzip: 10.73 kB[22m
+[2mdist/[22m[2massets/[22m[36mboot-g1gBZE_8.js                    [39m[1m[2m144.42 kB[22m[1m[22m[2m │ gzip: 46.54 kB[22m
+[32m✓ built in 393ms[39m

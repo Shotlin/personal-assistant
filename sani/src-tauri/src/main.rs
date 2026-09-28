@@ -11,9 +11,11 @@
 
 mod app_state;
 mod audio;
+mod desktop_control;
 mod history;
 mod hotkey;
 mod macos_work_area;
+mod missions;
 mod onboarding;
 mod overlay_geometry;
 mod permissions;
@@ -24,6 +26,9 @@ mod setup;
 mod snapshot;
 mod speech;
 mod system_permissions;
+mod tts;
+mod tts_protocol;
+mod tts_queue;
 mod window_geometry;
 mod windows;
 
@@ -44,6 +49,8 @@ fn main() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(hotkey::HotkeyState::default())
         .manage(sani_core::SaniCoreState::default())
+        .manage(desktop_control::EmergencyStop::default())
+        .manage(tts::TtsState::default())
         .manage(onboarding::SettingsApplicationState::default())
         .manage(windows::OverlayPreviewState::default())
         .setup(|app| {
@@ -70,6 +77,11 @@ fn main() {
                 std::sync::Arc::new(RwLock::new(app_settings)),
                 std::sync::Arc::new(history),
             ));
+
+            // C09/N11: behind SANI_TTS_ENABLED the real output sink opens
+            // and the synthesis worker starts; failure here is voice output
+            // unavailable, never text unavailable.
+            tts::init(&handle);
 
             // Load the persisted setup state before deciding what to show.
             let setup_shared = setup::init(&handle);
@@ -183,6 +195,14 @@ fn main() {
             sani_core::core_run,
             sani_core::core_cancel,
             sani_core::core_ping,
+            sani_core::mission_control_cmd,
+            sani_core::mission_get_cmd,
+            sani_core::mission_events_cmd,
+            tts::speech_stop_cmd,
+            tts::speech_say_cmd,
+            desktop_control::emergency_stop_cmd,
+            desktop_control::emergency_stop_reset_cmd,
+            desktop_control::desktop_stop_state,
             onboarding::setup_state,
             onboarding::run_setup,
             onboarding::retry_setup_component,

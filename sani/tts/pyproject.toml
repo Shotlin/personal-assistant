@@ -1,0 +1,9 @@
+[project]
+name = "sani-tts-worker"
+version = "0.1.0"
+description = "The Sani local speech-output worker: framed stdio, no credentials, no network after asset install."
+requires-python = ">=3.12,<3.13"
+# The pinned synthesis engine lands here ONLY after the audition gate
+# (file 04 T09 acceptance): runtime licence, model weights licence, and the
+# specific voice asset's provenance must all be recorded first.
+dependencies = []

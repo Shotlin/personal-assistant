@@ -1,0 +1,96 @@
+{
+  "env": {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "HOME": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr/fixture-home",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONPATH": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr/src:/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr",
+    "CUA_ENABLED": "false",
+    "OPENROUTER_API_KEY": "fixture-not-a-secret",
+    "SANI_DATA_DIR": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr/var/fixture-data",
+    "CUA_CAPABILITY_MANIFEST_PATH": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr/config/cua-capabilities.yaml"
+  },
+  "results": [
+    {
+      "name": "gates-unit",
+      "command": [
+        "/Users/sayan/Documents/personal-assistant/.venv/bin/python",
+        "scripts/verify_phase1.py",
+        "--suite",
+        "unit",
+        "--evidence-dir",
+        "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-2026-09-29/evidence/gates-unit"
+      ],
+      "cwd": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr",
+      "exit_code": 1,
+      "seconds": 65.19910175000405
+    },
+    {
+      "name": "gates-integration",
+      "command": [
+        "/Users/sayan/Documents/personal-assistant/.venv/bin/python",
+        "scripts/verify_phase1.py",
+        "--suite",
+        "integration",
+        "--evidence-dir",
+        "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-2026-09-29/evidence/gates-integration"
+      ],
+      "cwd": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr",
+      "exit_code": 0,
+      "seconds": 5.7661371669964865
+    },
+    {
+      "name": "gates-performance",
+      "command": [
+        "/Users/sayan/Documents/personal-assistant/.venv/bin/python",
+        "scripts/verify_phase1.py",
+        "--suite",
+        "performance",
+        "--evidence-dir",
+        "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-2026-09-29/evidence/gates-performance"
+      ],
+      "cwd": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr",
+      "exit_code": 0,
+      "seconds": 2.4139423329979763
+    },
+    {
+      "name": "gates-mypy",
+      "command": [
+        "/Users/sayan/Documents/personal-assistant/.venv/bin/mypy",
+        "--no-incremental",
+        "src",
+        "tests"
+      ],
+      "cwd": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr",
+      "exit_code": 1,
+      "seconds": 14.224502582997957
+    },
+    {
+      "name": "gates-ruff",
+      "command": [
+        "/Users/sayan/Documents/personal-assistant/.venv/bin/ruff",
+        "check",
+        "src",
+        "tests",
+        "--no-cache"
+      ],
+      "cwd": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr",
+      "exit_code": 1,
+      "seconds": 0.0969573339971248
+    },
+    {
+      "name": "gates-ruff-json",
+      "command": [
+        "/Users/sayan/Documents/personal-assistant/.venv/bin/ruff",
+        "check",
+        "src",
+        "tests",
+        "--no-cache",
+        "--output-format",
+        "json"
+      ],
+      "cwd": "/var/folders/1y/24t8q8b51vq9pkczl2ms11vm0000gn/T/phase1-review-gates-1oc82_lr",
+      "exit_code": 1,
+      "seconds": 0.018482542000128888
+    }
+  ]
+}

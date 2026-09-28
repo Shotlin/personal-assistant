@@ -1,0 +1,14 @@
+{
+  "fixture_id": "account-surface-unknown",
+  "description": "Synthetic scene asserting identity limits: a window whose title mentions an account name is NOT proof of the account. Used by scope tests to show that identity evidence can be UNKNOWN and must then block account-bound actions.",
+  "apps": [
+    {"pid": 8802, "name": "FixtureMail", "bundle_id": "com.fixture.mail", "running": true, "active": true, "window_ids": [900]}
+  ],
+  "windows": [
+    {"pid": 8802, "window_id": 900, "title": "Inbox — Acme Billing (fixture text, not an account)", "bounds": {"x": 0, "y": 0, "width": 900, "height": 600}, "is_on_screen": true}
+  ],
+  "account_evidence": {
+    "authenticated_account_ref": null,
+    "note": "Window titles and page text are not authentication. No element here proves which account is signed in."
+  }
+}

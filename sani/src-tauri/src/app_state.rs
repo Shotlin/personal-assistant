@@ -185,6 +185,23 @@ pub fn start_listening(app: &AppHandle) {
         return; // one turn at a time
     }
 
+    // R10/F10: PTT/barge-in interlock. If speech output is playing, stop it
+    // FIRST (clears queued and current audio, bumps the generation) so the
+    // microphone cannot self-hear stale playback. The mission itself is not
+    // paused by this stop -- speech and missions are separate controls.
+    {
+        let tts = app.state::<crate::tts::TtsState>();
+        let before = tts.queue.state();
+        if matches!(
+            before,
+            crate::tts_queue::QueueState::Playing
+                | crate::tts_queue::QueueState::Synthesizing
+        ) {
+            tts.queue.stop();
+            log::info!("[turn] speech stopped before capture (barge-in)");
+        }
+    }
+
     // Microphone authorization gate (RC-04). Never infer permission from
     // silence: ask the OS, and refuse to look like we are listening when the
     // user has not granted access.
@@ -627,7 +644,7 @@ pub fn submit_text(app: &AppHandle, text: String) -> Result<(), String> {
                 .to_string(),
         );
     }
-    begin_turn(app, text, true);
+    begin_turn(app, text, true, "typed_final");
     Ok(())
 }
 
@@ -647,7 +664,7 @@ fn begin_turn_if_current(app: &AppHandle, gen: u64, final_text: String) {
         );
         return;
     }
-    begin_turn(app, final_text, false);
+    begin_turn(app, final_text, false, "voice_final");
 }
 
 fn ensure_active_conversation(app: &AppHandle) -> String {
@@ -683,7 +700,7 @@ fn ensure_active_conversation(app: &AppHandle) -> String {
 /// input) or validated the voice-finalization state.  `already_claimed` must
 /// remain true only for `claim_text_turn`; keeping the voice path unchanged
 /// preserves its cancellation-generation guard.
-fn begin_turn(app: &AppHandle, final_text: String, already_claimed: bool) {
+fn begin_turn(app: &AppHandle, final_text: String, already_claimed: bool, input_origin: &'static str) {
     let state = app.state::<SaniState>();
     if !already_claimed && matches!(current_state(app), UiState::Working) {
         return;
@@ -739,6 +756,7 @@ fn begin_turn(app: &AppHandle, final_text: String, already_claimed: bool) {
                     error,
                     "",
                     "",
+                    "",
                 );
                 return;
             }
@@ -751,6 +769,7 @@ fn begin_turn(app: &AppHandle, final_text: String, already_claimed: bool) {
             agent_name,
             final_text,
             conversation_id,
+            input_origin.to_string(),
         )
         .await;
     });
@@ -793,6 +812,7 @@ pub fn agent_finished(
     error: String,
     agent_id: &str,
     agent_name: &str,
+    mission_id: &str,
 ) {
     let state = app.state::<SaniState>();
 
@@ -832,10 +852,16 @@ pub fn agent_finished(
         assistant_id = Uuid::new_v4().to_string();
         let conversation_id = state.settings.read().active_conversation_id.clone();
         assistant_created_at = now_ms();
+        let mission_opt = if mission_id.is_empty() {
+            None
+        } else {
+            Some(mission_id)
+        };
         let attribution = history::Attribution {
             run_id: run_opt,
             agent_id: agent_opt,
             agent_name: name_opt,
+            mission_id: mission_opt,
         };
         let _ = state.history.append_message(
             &assistant_id,
@@ -860,6 +886,9 @@ pub fn agent_finished(
             "error": error,
             "agent_id": agent_id,
             "agent_name": agent_name,
+            // C08/N10: the mission correlation rides the terminal event so
+            // the UI subscribes to live status instead of fetching blindly.
+            "mission_id": mission_id,
             // A terminal event carries the authoritative, persisted assistant
             // row. Renderers must replace their temporary stream with this
             // row before accepting another turn; otherwise the next stream
@@ -869,6 +898,17 @@ pub fn agent_finished(
             "created_at": assistant_created_at,
         }),
     );
+    // C09/N11: a completed turn speaks a bounded acknowledgment through the
+    // real speech path (worker + queue). Voice output disabled or unavailable
+    // changes nothing here — text truth is independent of playback.
+    if ok && status == "completed" {
+        let tts = app.try_state::<crate::tts::TtsState>();
+        if let Some(state) = tts {
+            if state.supervisor.is_enabled() {
+                let _ack = crate::tts::enqueue_speech(&app, text, &run_id, None);
+            }
+        }
+    }
     // Length, never content: the transcript stays in the local history store.
     log::info!(
         "turn finished: message={message_id} run={run_id} agent={agent_id} status={status} chars={}",
