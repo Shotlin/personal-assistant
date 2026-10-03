@@ -273,7 +273,7 @@ export function install(scenario: string): void {
    * "Build me a premium SaaS website": Sani writes the request, Claude Code
    * works, the first build fails, Sani sends a narrower follow-up, then answers.
    */
-  const simulateWebsite = (text: string) => {
+  const simulateWebsiteFix = (text: string) => {
     const userId = `u${Date.now()}`;
     const runId = `run${Date.now()}`;
     emit("sani://message", { id: userId, role: "user", text, created_at: Date.now() });
@@ -369,6 +369,158 @@ export function install(scenario: string): void {
     });
   };
 
+  /** Which question, if any, Sani is waiting on the user to answer. */
+  let websiteStage: "none" | "brand" = "none";
+
+  /**
+   * Turn 1 of "build a website": Sani plans, creates the folder and sends the
+   * first request. Claude Code replies with two questions. Sani answers the one
+   * it can settle itself and asks the user the one that is theirs to decide.
+   */
+  const simulateWebsiteScope = (text: string) => {
+    const userId = `u${Date.now()}`;
+    const runId = `run${Date.now()}`;
+    emit("sani://message", { id: userId, role: "user", text, created_at: Date.now() });
+    setState("working");
+    let t = 150;
+    const at = (ms: number, fn: () => void) => window.setTimeout(fn, (t += ms));
+    const plain = (id: string, label: string, status: string, extra: Json = {}) =>
+      emit("sani://activity", {
+        sequence: 0, run_id: runId, agent_id: "deep", event_type: "agent.step",
+        timestamp: Date.now(), label, status, step_id: id, ...extra,
+      });
+    const send = (id: string, label: string, status: string, extra: Json = {}) =>
+      plain(id, label, status, { group: "s1", ...extra });
+    at(0, () => emit("sani://agent-start", { message_id: userId, run_id: runId, agent_id: "deep", agent_name: "Deep Agent" }));
+
+    at(500, () => plain("p1", "Planned the project: a marketing site for Acme Analytics", "complete", { tool: "plan",
+      detail: "Goal: premium B2B SaaS marketing site.\nNeeds: hero, features, pricing, testimonials, FAQ.\nUnknowns to settle before building: framework, brand look." }));
+    at(600, () => plain("p2", "Created the folder acme-site", "complete", { tool: "folder", detail: "/Users/you/Projects/acme-site" }));
+
+    const prompt = [
+      'You are starting a new project in an empty folder: a premium marketing website for "Acme Analytics", a B2B SaaS that turns product usage into plain-English insights.',
+      "",
+      "Do NOT write the site yet. First:",
+      "1. Look at the folder and confirm it is empty.",
+      "2. Propose the file structure and the sections (hero, logo strip, features, how it works, pricing, testimonials, FAQ, footer).",
+      "3. List every decision that is genuinely open and would change the build, each with 2 to 3 options and your recommendation. Do not guess on those.",
+      "",
+      "Keep it short. Do not install anything yet.",
+    ].join("\n");
+    at(500, () => send("s1:round", "Scope the project", "running", { kind: "round", tool: "claude_code" }));
+    at(300, () => send("s1:prompt", "Sani asked Claude Code", "complete", { kind: "prompt", detail: prompt }));
+    at(500, () => send("s1a", "Ran `ls -la`", "running", { tool: "Bash" }));
+    at(500, () => send("s1a", "Ran `ls -la`", "complete", { tool: "Bash", duration_ms: 310 }));
+    at(400, () => send("s1b", "Updated its plan", "running", { tool: "TodoWrite" }));
+    at(500, () => send("s1b", "Updated its plan", "complete", { tool: "TodoWrite", duration_ms: 420 }));
+    at(600, () =>
+      send("s1:reply", "Claude Code replied", "complete", {
+        kind: "reply",
+        detail: [
+          "The folder is empty. The structure and sections are clear. Two decisions change the whole build, so I stopped here:",
+          "",
+          "**1. Framework**",
+          "- A) Next.js: room for app features later, heavier for a brochure site",
+          "- B) Astro: fastest static output, built for marketing sites",
+          "- C) Vite + React: flexible, more setup",
+          "Recommendation: B.",
+          "",
+          "**2. Brand look**",
+          "- A) Indigo, calm and trustworthy",
+          "- B) Emerald, fresh and friendly",
+          "- C) Charcoal and amber, bold and premium",
+          "I do not know your brand, so I will not guess this one.",
+        ].join("\n"),
+      }),
+    );
+    at(200, () => send("s1:round", "Scope the project", "complete", { kind: "round", tool: "claude_code", duration_ms: 19000 }));
+    at(900, () => plain("d1", "Decided for you: Astro for the framework", "complete", { tool: "decision",
+      detail: "Why: this is a marketing site with no app logic, so speed matters most. It also matches Claude Code's own recommendation. Cheap to change later, so not worth interrupting you." }));
+    at(500, () => plain("d2", "Needs your choice: the brand look", "info", { tool: "question" }));
+
+    const answer =
+      "Claude Code needs two decisions before it builds.\n\n" +
+      "**Framework: I chose Astro.** It is the fastest for a marketing site and you do not need app features yet, so it was not worth interrupting you.\n\n" +
+      "**The brand look is yours to pick**, because I do not know your brand. Which feels right?\n\n" +
+      "[Options]\n- Indigo, calm and trustworthy\n- Emerald, fresh and friendly\n- Charcoal and amber, bold and premium";
+    at(900, () => {
+      emit("sani://agent-done", {
+        message_id: userId, run_id: runId, ok: true, status: "completed", error: "",
+        agent_id: "deep", agent_name: "Deep Agent", assistant_message_id: `a${Date.now()}`,
+        text: answer, created_at: Date.now(),
+      });
+      websiteStage = "brand";
+      setState("idle");
+    });
+  };
+
+  /** Turn 2: the user chose a look; Sani sends the full request and builds. */
+  const simulateWebsiteBuild = (choice: string) => {
+    const userId = `u${Date.now()}`;
+    const runId = `run${Date.now()}`;
+    emit("sani://message", { id: userId, role: "user", text: choice, created_at: Date.now() });
+    setState("working");
+    let t = 150;
+    const at = (ms: number, fn: () => void) => window.setTimeout(fn, (t += ms));
+    const plain = (id: string, label: string, status: string, extra: Json = {}) =>
+      emit("sani://activity", {
+        sequence: 0, run_id: runId, agent_id: "deep", event_type: "agent.step",
+        timestamp: Date.now(), label, status, step_id: id, ...extra,
+      });
+    const send = (id: string, label: string, status: string, extra: Json = {}) =>
+      plain(id, label, status, { group: "b1", ...extra });
+    at(0, () => emit("sani://agent-start", { message_id: userId, run_id: runId, agent_id: "deep", agent_name: "Deep Agent" }));
+    const look = choice.split(",")[0];
+    at(500, () => plain("c1", `Recorded your choice: ${look}`, "complete", { tool: "decision" }));
+
+    const prompt = [
+      'Build the "Acme Analytics" marketing site in this folder, continuing the session.',
+      "",
+      "Decisions made: Astro + TypeScript + Tailwind CSS. Brand look: " + choice + ".",
+      "Sections: hero (headline, subhead, 'Start free trial', product mock), logo strip, three feature blocks, how it works (3 steps), pricing (Starter / Growth / Scale, monthly/annual toggle), testimonials, FAQ, footer.",
+      "Design: restrained and premium. Generous whitespace, 8px grid, Inter plus one display face, responsive at 390 / 768 / 1280px, respect prefers-reduced-motion.",
+      "Quality: semantic HTML, visible focus states, AA contrast, specific copy, no lorem ipsum.",
+      "Finish by running `npm run build` and tell me exactly what happened.",
+    ].join("\n");
+    at(500, () => send("b1:round", `Build the site: Astro, ${look.toLowerCase()}`, "running", { kind: "round", tool: "claude_code", detail: "continuing the same Claude Code session" }));
+    at(300, () => send("b1:prompt", "Sani asked Claude Code", "complete", { kind: "prompt", detail: prompt }));
+    const work = (id: string, label: string, tool: string, ms: number) => {
+      at(350, () => send(id, label, "running", { tool }));
+      at(500, () => send(id, label, "complete", { tool, duration_ms: ms }));
+    };
+    work("w1", "Ran `npm create astro@latest . -- --template minimal --yes`", "Bash", 11800);
+    work("w2", "Ran `npx astro add tailwind --yes`", "Bash", 9400);
+    work("w3", "Wrote src/styles/tokens.css", "Write", 640);
+    work("w4", "Wrote src/components/Hero.astro", "Write", 2100);
+    work("w5", "Wrote src/components/Features.astro", "Write", 1900);
+    work("w6", "Wrote src/components/Pricing.astro", "Write", 2600);
+    work("w7", "Wrote src/components/Testimonials.astro", "Write", 1700);
+    work("w8", "Wrote src/pages/index.astro", "Write", 980);
+    work("w9", "Ran `npm run build`", "Bash", 6900);
+    at(300, () => { contextPercent = 58; });
+    at(200, () =>
+      send("b1:reply", "Claude Code replied", "complete", {
+        kind: "reply",
+        detail: "Built the full site with the " + look.toLowerCase() + " look.\n\n- `npm run build` passes\n- All sections on one page, 61 kB of JavaScript",
+      }),
+    );
+    at(100, () => send("b1:round", `Build the site: Astro, ${look.toLowerCase()}`, "complete", { kind: "round", tool: "claude_code", duration_ms: 52000 }));
+
+    const answer =
+      "Your site is ready in **~/Projects/acme-site**, built with Astro and the *" + look.toLowerCase() + "* look.\n\n" +
+      "- Hero, logo strip, three features, how it works, pricing with a monthly/annual toggle, testimonials, FAQ and footer\n- Responsive at phone, tablet and desktop, with visible focus states\n\n" +
+      "The build passes. Run `npm run dev` in that folder to look at it.\n\nWant me to deploy it, or change the copy?";
+    at(900, () => {
+      emit("sani://agent-done", {
+        message_id: userId, run_id: runId, ok: true, status: "completed", error: "",
+        agent_id: "deep", agent_name: "Deep Agent", assistant_message_id: `a${Date.now()}`,
+        text: answer, created_at: Date.now(),
+      });
+      websiteStage = "none";
+      setState("idle");
+    });
+  };
+
   const handlers: Record<string, (args: Json) => unknown> = {
     get_state: () => ({
       state: uiState,
@@ -410,7 +562,8 @@ export function install(scenario: string): void {
     main_ready: () => undefined,
     submit_text_cmd: (args) => {
       const text = String(args.text);
-      if (/\b(website|saas|landing)\b/i.test(text)) simulateWebsite(text);
+      if (websiteStage === "brand") simulateWebsiteBuild(text);
+      else if (/\b(website|saas|landing)\b/i.test(text)) simulateWebsiteScope(text);
       else if (/\b(code|fix|bug|build|test|app)\b/i.test(text)) simulateCoding(text);
       else simulateTurn(text);
       return undefined;
@@ -497,9 +650,15 @@ export function install(scenario: string): void {
   // `?autorun=code` plays a Claude Code turn by itself, so a screenshot or a
   // shared preview link shows the live steps without anyone typing.
   const autorun = new URLSearchParams(window.location.search).get("autorun");
+  if (autorun === "website-fix") {
+    window.setTimeout(
+      () => simulateWebsiteFix("Build me a premium SaaS website for my product, Acme Analytics"),
+      1800,
+    );
+  }
   if (autorun === "website") {
     window.setTimeout(
-      () => simulateWebsite("Build me a premium SaaS website for my product, Acme Analytics"),
+      () => simulateWebsiteScope("Build me a premium SaaS website for my product, Acme Analytics"),
       1800,
     );
   }

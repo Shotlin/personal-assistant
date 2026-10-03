@@ -4,6 +4,8 @@ import { DotMatrixLoader } from "@/components/ui/dot-matrix-loader";
 import { itemSteps, itemText, type ChatItem } from "@/chat/types";
 import { formatClock } from "@/lib/format";
 import { isImage, splitAttachments } from "@/chat/attachments";
+import { hideOptionsWhileStreaming, splitOptions } from "@/chat/options";
+import { useQuickReply } from "@/chat/quick-reply";
 import { Markdown } from "./markdown";
 import { StepRail } from "./step-rail";
 
@@ -51,8 +53,19 @@ function ThinkingLine({ text }: { text: string }) {
   );
 }
 
-export const AssistantMessage = memo(function AssistantMessage({ item }: { item: ChatItem }) {
-  const text = itemText(item);
+export const AssistantMessage = memo(function AssistantMessage({
+  item,
+  isLast = false,
+}: {
+  item: ChatItem;
+  isLast?: boolean;
+}) {
+  const quick = useQuickReply();
+  const raw = itemText(item);
+  const streaming = item.status === "streaming";
+  const split = splitOptions(raw);
+  const text = streaming ? hideOptionsWhileStreaming(raw) : split.text;
+  const options = streaming ? [] : split.options;
   const hasSteps = itemSteps(item).length > 0;
   const live = item.status === "streaming";
   const stopped = item.status === "cancelled";
@@ -65,6 +78,21 @@ export const AssistantMessage = memo(function AssistantMessage({ item }: { item:
       <StepRail item={item} />
       {live && !text && !hasSteps ? <ThinkingLine text={item.statusLine || "Working…"} /> : null}
       {text ? <Markdown text={text} /> : null}
+      {options.length > 0 ? (
+        <div className="flex flex-wrap gap-2 pt-1" role="group" aria-label="Choose an answer">
+          {options.map((option) => (
+            <button
+              key={option}
+              type="button"
+              disabled={!isLast || !quick.enabled}
+              onClick={() => quick.send(option)}
+              className="rounded-full border border-border bg-card px-3 py-1.5 text-sm text-foreground shadow-(--sani-card-shadow) transition-colors hover:border-slate-7 hover:bg-slate-2 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none disabled:opacity-50 disabled:shadow-none disabled:hover:bg-card"
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {stopped ? (
         <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <CircleSlash className="size-3.5" aria-hidden="true" />
@@ -80,6 +108,6 @@ export const AssistantMessage = memo(function AssistantMessage({ item }: { item:
   );
 });
 
-export function MessageItem({ item }: { item: ChatItem }) {
-  return item.role === "user" ? <UserMessage item={item} /> : <AssistantMessage item={item} />;
+export function MessageItem({ item, isLast = false }: { item: ChatItem; isLast?: boolean }) {
+  return item.role === "user" ? <UserMessage item={item} /> : <AssistantMessage item={item} isLast={isLast} />;
 }

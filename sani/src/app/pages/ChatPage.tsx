@@ -6,6 +6,7 @@ import { VoiceDraft } from "@/components/chat/voice-draft";
 import { useChatStore } from "@/chat/store";
 import { useMission } from "@/chat/use-mission";
 import { useClaudeCode } from "@/chat/use-claude-code";
+import { QuickReplyContext } from "@/chat/quick-reply";
 import { useSettings } from "@/app/settings/SettingsContext";
 import { pressEscape, startListening, stopListening, submitText } from "@/lib/tauri";
 
@@ -87,6 +88,11 @@ export default function ChatPage() {
     </>
   );
 
+  const quickReply = {
+    enabled: !capturing && !working,
+    send: (text: string) => void submitText(text).catch(() => undefined),
+  };
+
   if (items.length === 0 && !capturing && !working) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6 pb-16">
@@ -102,6 +108,7 @@ export default function ChatPage() {
   }
 
   return (
+    <QuickReplyContext.Provider value={quickReply}>
     <div className="flex h-full min-h-0 flex-col">
       <Conversation
         items={items}
@@ -121,5 +128,6 @@ export default function ChatPage() {
         {composer}
       </div>
     </div>
+    </QuickReplyContext.Provider>
   );
 }

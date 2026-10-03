@@ -240,3 +240,25 @@ async def test_a_stopped_round_says_why_and_fails_the_header(
     notes = [s for s in steps if s.get("kind") == "note"]
     assert notes and notes[0]["label"].startswith("Stopped: it repeated the same step")
     assert steps[-1]["kind"] == "round" and steps[-1]["status"] == "failed"
+
+
+async def test_a_new_project_folder_can_be_created_only_inside_an_allowed_folder(
+    fake_claude: Path,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    toolkit, _ = make(tmp_path, fake_claude)
+    sink = Sink()
+    token = context.event_sink.set(sink)
+    try:
+        inside = tmp_path / "work" / "acme-site"
+        reply = await toolkit.run("SCENARIO:ok scaffold", str(inside), create_folder=True)
+        assert inside.is_dir() and reply.startswith("Claude Code finished.")
+        assert any(s["label"] == "Created the folder acme-site" for s in sink.steps())
+        # Not allowed without the flag, and not allowed outside the allowed folders.
+        missing = tmp_path / "work" / "other"
+        assert (await toolkit.run("x", str(missing))).startswith("Not started.")
+        outside = tmp_path / "elsewhere" / "site"
+        reply = await toolkit.run("x", str(outside), create_folder=True)
+        assert reply.startswith("Not started.") and not outside.exists()
+    finally:
+        context.event_sink.reset(token)

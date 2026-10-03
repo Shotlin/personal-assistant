@@ -4,7 +4,11 @@ import {
   ChevronRight,
   Code2,
   FileText,
+  FolderPlus,
   Globe,
+  ListChecks,
+  MessageCircleQuestion,
+  Scale,
   MousePointerClick,
   Search,
   SquareTerminal,
@@ -23,6 +27,11 @@ function StepGlyph({ step }: { step: StepPart }) {
   if (step.status === "failed") return <AlertCircle className="size-4 text-destructive" aria-label="Failed" />;
   const key = `${step.tool ?? ""} ${step.label}`.toLowerCase();
   const className = "size-4";
+  // Steps Sani takes itself, as opposed to Claude Code's tool calls.
+  if (step.tool === "folder") return <FolderPlus className={className} />;
+  if (step.tool === "plan") return <ListChecks className={className} />;
+  if (step.tool === "decision") return <Scale className={className} />;
+  if (step.tool === "question") return <MessageCircleQuestion className={className} />;
   if (/claude code/.test(key)) return <SquareTerminal className={className} />;
   if (/(chrome|safari|browser|web|navigate|url|tab)/.test(key)) return <Globe className={className} />;
   if (/(terminal|shell|bash|command|ran )/.test(key)) return <SquareTerminal className={className} />;

@@ -74,6 +74,16 @@ Coding with Claude Code: you have a `claude_code` tool that drives the user's ow
 - Never paste long output back. Say what changed, whether it worked, and what to do next.
 - If the user attached an image, pass its path in `attachments`.
 - Give every call a short `purpose` (under 8 words); the user sees it as the round's title.
+- New project: pass `create_folder=true` and a project_dir inside an allowed folder.
+- Claude Code cannot wait for an answer mid-run. If its reply asks you something with options,
+  decide who answers. Answer it yourself (send a follow-up call) when the user's request, the chat
+  so far, or sound engineering defaults settle it, and say in one line what you chose and why.
+  Ask the user only for things that are theirs to decide (brand, taste, money, anything hard to
+  undo). Ask by ending your message with a block like:
+  [Options]
+  - First choice
+  - Second choice
+  (2 to 4 short choices; the user can tap one or type their own).
 """
 
 
@@ -91,6 +101,13 @@ class ClaudeCodeArgs(BaseModel):
     attachments: list[str] = Field(
         default_factory=list,
         description="Paths of images or files the user attached that Claude Code should look at.",
+    )
+    create_folder: bool = Field(
+        default=False,
+        description=(
+            "Create project_dir first if it does not exist yet (only inside a folder the user "
+            "allowed). Use it when starting a new project."
+        ),
     )
     purpose: str = Field(
         default="",
@@ -160,7 +177,9 @@ class ClaudeCodeToolkit:
             return None
         return _real(self._settings.sani_data_dir) / "attachments"
 
-    def resolve_project(self, raw: str) -> Path:
+    def resolve_project(self, raw: str, *, create: bool = False) -> Path:
+        """The folder to work in. With ``create``, a missing one is made, but only
+        inside a folder the user allowed (never by following a link out of one)."""
         if not raw.strip():
             raise ProjectNotAllowed("Tell me which project folder to work in.")
         roots = self.allowed_dirs()
@@ -170,6 +189,18 @@ class ClaudeCodeToolkit:
                 "Settings → Claude Code."
             )
         project = _real(raw)
+        if create and not project.exists():
+            existing = project
+            while not existing.exists() and existing != existing.parent:
+                existing = existing.parent
+            if any(_inside(existing, root) for root in roots) and existing.is_dir():
+                project.mkdir(parents=True, exist_ok=True)
+                project = _real(project)
+            else:
+                names = ", ".join(str(root) for root in roots)
+                raise ProjectNotAllowed(
+                    f"I can only create folders inside the ones Sani may work in ({names})."
+                )
         if not project.is_dir():
             raise ProjectNotAllowed(f"{raw} isn't a folder on this Mac.")
         if not any(_inside(project, root) for root in roots):
@@ -250,14 +281,17 @@ class ClaudeCodeToolkit:
         new_session: bool = False,
         attachments: list[str] | None = None,
         purpose: str = "",
+        create_folder: bool = False,
     ) -> str:
         if not task.strip():
             return "Nothing to do: the request was empty."
+        existed = _real(project_dir).exists() if project_dir.strip() else False
         try:
-            project = self.resolve_project(project_dir)
+            project = self.resolve_project(project_dir, create=create_folder)
             files = self._clean_attachments(attachments or [], project)
         except ProjectNotAllowed as problem:
             return f"Not started. {problem}"
+        created = create_folder and not existed
         status = await self.claude_status()
         if not status.installed:
             return f"Not started. {status.detail}"
@@ -300,6 +334,8 @@ class ClaudeCodeToolkit:
         cancel = asyncio.Event()
         reporter = _Reporter(project, self._remember_rate)
         async with lock:
+            if created:
+                await reporter.plain(f"Created the folder {project.name}", detail=str(project))
             await reporter.start(
                 purpose.strip() or f"Working in {project.name}",
                 request=task.strip(),
@@ -430,6 +466,21 @@ class _Reporter:
         step = {**step, "group": self._group}
         with contextlib.suppress(Exception):
             await sink(AGENT_PROGRESS, {"message": step["label"], "step": step})
+
+    async def plain(self, label: str, *, detail: str = "") -> None:
+        """A step by Sani itself (not part of a Claude Code round)."""
+        sink = context.event_sink.get()
+        if sink is None:
+            return
+        step = {
+            "id": f"sani:{time.time_ns()}",
+            "label": label,
+            "status": "complete",
+            "tool": "folder",
+            "detail": detail,
+        }
+        with contextlib.suppress(Exception):
+            await sink(AGENT_PROGRESS, {"message": label, "step": step})
 
     async def start(self, title: str, *, request: str, continuing: bool) -> None:
         self._title = screen(title, limit=80)
