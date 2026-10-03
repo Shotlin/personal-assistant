@@ -70,7 +70,7 @@ export function UsageMeter({ status }: { status: ClaudeCodeStatus | null }) {
             render={
               <span
                 className={cn(
-                  "inline-flex h-6 items-center gap-1 rounded-full px-2 text-xs tabular-nums",
+                  "inline-flex h-6 items-center gap-1 rounded-full px-2 text-xs whitespace-nowrap tabular-nums",
                   chip.percent >= 90
                     ? "bg-secondary font-medium text-foreground"
                     : "text-muted-foreground",

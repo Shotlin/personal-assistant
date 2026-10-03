@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { getPreferences, listMics, savePreferences } from "./api";
-import { Button, Segmented, Switch } from "./components/ui";
-
-type Theme = "system" | "dark" | "light";
+import { Button, Switch } from "./components/ui";
 
 const SHORTCUTS: { value: string; label: string }[] = [
   { value: "Alt+Space", label: "⌥ Space" },
@@ -11,15 +9,7 @@ const SHORTCUTS: { value: string; label: string }[] = [
   { value: "Ctrl+Alt+Space", label: "⌃⌥ Space" },
 ];
 
-export default function PreferencesStep({
-  theme,
-  onThemeChange,
-  onContinue,
-}: {
-  theme: Theme;
-  onThemeChange: (t: Theme) => void;
-  onContinue: () => void;
-}) {
+export default function PreferencesStep({ onContinue }: { onContinue: () => void }) {
   const [launch, setLaunch] = useState(false);
   const [hotkey, setHotkey] = useState("Alt+Space");
   const [mic, setMic] = useState("");
@@ -34,11 +24,6 @@ export default function PreferencesStep({
       setMics(await listMics());
     })();
   }, []);
-
-  const setTheme = (t: Theme) => {
-    onThemeChange(t);
-    void savePreferences({ theme: t });
-  };
 
   return (
     <div>
@@ -104,23 +89,6 @@ export default function PreferencesStep({
               </option>
             ))}
           </select>
-        </div>
-
-        <div className="pref-row">
-          <div className="pref-text">
-            <div className="pref-title">Theme</div>
-            <div className="pref-sub">Match the system or pick your own.</div>
-          </div>
-          <Segmented<Theme>
-            label="Theme"
-            value={theme}
-            onChange={setTheme}
-            options={[
-              { value: "system", label: "System" },
-              { value: "dark", label: "Dark" },
-              { value: "light", label: "Light" },
-            ]}
-          />
         </div>
       </div>
 

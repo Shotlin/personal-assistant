@@ -1,93 +1,52 @@
+/*
+ * Overlay (pill and panel) tokens. Light only, solid surfaces: no glass, blur
+ * or gloss (DESIGN V7). Values are Radix slate/blue/green/amber/red steps so
+ * these windows match the main window's palette in src/styles/app.css.
+ */
 :root {
-  /* Base palette — measured from SANI_UI_REFERENCE.png.
-     The reference glass is a *neutral* dark tint (sampled saturation spread is
-     only ~5/255) at roughly 76% opacity, letting about a quarter of a heavily
-     blurred backdrop bleed through as soft light/dark shapes. Its transparency
-     reads from the blur and the crisp lit hairline — not from a white film, so
-     there is deliberately no gloss/sheen wash here. */
-  --bg: rgba(24, 26, 30, 0.76);
-  --bg-elevated: rgba(30, 33, 38, 0.62);
-  --bg-solid: #121214;
-  --surface: rgba(255, 255, 255, 0.055);
-  --surface-strong: rgba(255, 255, 255, 0.09);
-  --surface-glass: linear-gradient(
-    168deg,
-    rgba(255, 255, 255, 0.085),
-    rgba(255, 255, 255, 0.035) 52%,
-    rgba(255, 255, 255, 0.06)
-  );
-  /* The signature: a single ~1px light edge, measured at lum 112 against an
-     interior of lum 30 — i.e. roughly 30% white. */
-  --border: rgba(255, 255, 255, 0.3);
-  --border-strong: rgba(255, 255, 255, 0.42);
-  /* Inner controls sit *on* the glass, so their edge is far softer than the
-     card's lit hairline. */
-  --border-soft: rgba(255, 255, 255, 0.13);
-  --hairline: rgba(255, 255, 255, 0.09);
-  /* Only a faint top highlight; the reference interior is flat, not washed. */
-  --gloss: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.05),
-    rgba(255, 255, 255, 0.008) 18%,
-    rgba(255, 255, 255, 0) 34%
-  );
-  --edge-lit: inset 0 0 0 0.5px rgba(255, 255, 255, 0.06),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.28);
-  --text: #f4f4f7;
-  --text-secondary: #b6b7bd;
-  --text-dim: #85868d;
+  --bg: #fcfcfd; /* slate-1 */
+  --bg-elevated: #f9f9fb; /* slate-2 */
+  --bg-solid: #fcfcfd;
+  --surface: #f0f0f3; /* slate-3 */
+  --surface-strong: #e8e8ec; /* slate-4 */
+  --surface-glass: #f9f9fb; /* historical name; a plain solid surface now */
+  --border: #e0e1e6; /* slate-5 */
+  --border-strong: #cdced6; /* slate-7 */
+  --border-soft: #e8e8ec;
+  --hairline: #e8e8ec;
+  --gloss: none;
+  --edge-lit: none;
+  --text: #1c2024; /* slate-12 */
+  --text-secondary: #60646c; /* slate-11 */
+  --text-dim: #8b8d98; /* slate-10 */
 
   /* Status only */
-  --running: #5b9bff;
-  --success: #37d487;
-  --warning: #f0ad4e;
-  --error: #ff6a63;
+  --running: #0090ff; /* blue-9 */
+  --success: #30a46c; /* green-9 */
+  --warning: #ffb224; /* amber-9 */
+  --error: #e5484d; /* red-9 */
+  --error-text: #ce2c31; /* red-11 */
+  --warning-text: #ab6400; /* amber-11 */
+  --error-bg: rgba(229, 72, 77, 0.08);
+  --error-border: rgba(229, 72, 77, 0.28);
+  --warning-border: rgba(171, 100, 0, 0.3);
+  --success-bg: rgba(48, 164, 108, 0.12);
+  --success-border: rgba(48, 164, 108, 0.35);
+  --accent: #011627;
+  --accent-fg: #ffffff;
 
   --radius-pill: 999px;
-  --radius-card: 24px;
-  --radius-small: 12px;
+  --radius-card: 20px;
+  --radius-small: 10px;
 
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --shadow: 0 34px 90px rgba(0, 0, 0, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
-  /* Blur has to be wide enough that the backdrop becomes smooth gradients;
-     a tight blur leaves recognisable content and reads as cheap transparency. */
-  --blur: 56px;
-  --blur-soft: 20px;
-  /* Neutral — boosting saturation or brightness is what makes glass look milky. */
-  --filter: saturate(1.05);
-}
-
-:root[data-theme="light"] {
-  --bg: rgba(246, 246, 250, 0.78);
-  --bg-elevated: rgba(255, 255, 255, 0.66);
-  --bg-solid: #f8f8fa;
-  --surface: rgba(0, 0, 0, 0.05);
-  --surface-strong: rgba(0, 0, 0, 0.09);
-  --surface-glass: linear-gradient(
-    168deg,
-    rgba(255, 255, 255, 0.9),
-    rgba(255, 255, 255, 0.55) 52%,
-    rgba(255, 255, 255, 0.75)
-  );
-  --border: rgba(0, 0, 0, 0.14);
-  --border-strong: rgba(0, 0, 0, 0.22);
-  --border-soft: rgba(0, 0, 0, 0.09);
-  --hairline: rgba(0, 0, 0, 0.09);
-  --gloss: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.7),
-    rgba(255, 255, 255, 0.1) 18%,
-    rgba(255, 255, 255, 0) 34%
-  );
-  --edge-lit: inset 0 0 0 0.5px rgba(255, 255, 255, 0.6),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.06);
-  --text: #14141a;
-  --text-secondary: #4d4d57;
-  --text-dim: #7d7d87;
-  --shadow: 0 34px 90px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
-  --filter: saturate(1.1);
+  /* One depth strategy: a soft layered shadow on the lifted surface. */
+  --shadow: 0 12px 32px rgba(15, 23, 42, 0.14), 0 2px 8px rgba(15, 23, 42, 0.08);
+  --blur: 0px;
+  --blur-soft: 0px;
+  --filter: saturate(1);
 }
 
 * {
@@ -114,7 +73,7 @@ button {
   cursor: pointer;
 }
 
-/* Status dot — shared by the pill and the panel. Colour comes from
+/* Status dot, shared by the pill and the panel. Colour comes from
    `currentColor`, so callers set `color` (or override `background`). */
 .dot {
   width: 7px;
@@ -129,15 +88,11 @@ button {
   width: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.18);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
-}
-
-:root[data-theme="light"] ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.18);
 }
 
 @keyframes spin {

@@ -10,6 +10,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app_state;
+mod attachments;
 mod audio;
 mod desktop_control;
 mod history;
@@ -195,6 +196,7 @@ fn main() {
             sani_core::core_run,
             sani_core::core_cancel,
             sani_core::core_ping,
+            attachments::save_attachment_cmd,
             sani_core::claude_code_status_cmd,
             onboarding::apply_claude_code_settings,
             onboarding::pick_folder_cmd,

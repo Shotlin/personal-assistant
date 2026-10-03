@@ -1,5 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { ArrowUp, ChevronDown, Mic, Square } from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
+import { ArrowUp, ChevronDown, FileText, Mic, Paperclip, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,7 +20,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { AgentDescriptor, ClaudeCodeStatus, UiState } from "@/lib/tauri";
+import { saveAttachment, type AgentDescriptor, type ClaudeCodeStatus, type UiState } from "@/lib/tauri";
+import {
+  ACCEPT,
+  MAX_ATTACHMENT_BYTES,
+  fileToBase64,
+  isImage,
+  withAttachments,
+} from "@/chat/attachments";
 import { UsageMeter } from "./usage-meter";
 
 const MAX_HEIGHT_PX = 220;
@@ -30,15 +47,6 @@ export interface ComposerProps {
   claudeCode?: ClaudeCodeStatus | null;
 }
 
-/** One quiet key hint, shown as a chord only (DESIGN T5). */
-function Chord({ children }: { children: string }) {
-  return (
-    <kbd className="rounded border border-border bg-slate-2 px-1 font-sans text-[11px] text-muted-foreground">
-      {children}
-    </kbd>
-  );
-}
-
 export function Composer({
   state,
   agents,
@@ -53,11 +61,22 @@ export function Composer({
 }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [sending, setSending] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  // Attachments go to Claude Code, so the control only exists when it can use them.
+  const canAttach = Boolean(claudeCode?.enabled && claudeCode.claude.signed_in);
+  const previews = useMemo(
+    () => files.map((file) => (isImage(file.name) ? URL.createObjectURL(file) : "")),
+    [files],
+  );
+  useEffect(() => () => previews.forEach((url) => url && URL.revokeObjectURL(url)), [previews]);
   const capturing = state === "listening" || state === "preparing" || state === "finalizing";
   const working = state === "working";
   const locked = working || capturing;
-  const canSend = draft.trim().length > 0 && !locked;
+  const canSend = (draft.trim().length > 0 || files.length > 0) && !locked && !sending;
 
   useLayoutEffect(() => {
     const el = textarea.current;
@@ -70,16 +89,51 @@ export function Composer({
     if (autoFocus) textarea.current?.focus();
   }, [autoFocus]);
 
+  const addFiles = (incoming: File[]) => {
+    if (!canAttach || incoming.length === 0) return;
+    const accepted: File[] = [];
+    for (const file of incoming) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        setError(`${file.name} is larger than ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB.`);
+        continue;
+      }
+      accepted.push(file);
+    }
+    if (accepted.length) {
+      setError("");
+      setFiles((current) => [...current, ...accepted].slice(0, 6));
+    }
+  };
+
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     if (!canSend) return;
     setError("");
+    setSending(true);
     try {
-      await onSend(draft);
+      const paths: string[] = [];
+      for (const file of files) paths.push(await saveAttachment(file.name, await fileToBase64(file)));
+      await onSend(withAttachments(draft.trim() || "See the attached file.", paths));
       setDraft("");
+      setFiles([]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSending(false);
     }
+  };
+
+  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = Array.from(event.clipboardData.files);
+    if (pasted.length && canAttach) {
+      event.preventDefault();
+      addFiles(pasted);
+    }
+  };
+  const onDrop = (event: DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setDragging(false);
+    addFiles(Array.from(event.dataTransfer.files));
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -98,11 +152,45 @@ export function Composer({
     <form
       onSubmit={submit}
       aria-label="Message composer"
+      onDragOver={(event) => {
+        if (canAttach) {
+          event.preventDefault();
+          setDragging(true);
+        }
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
       className={cn(
         "rounded-(--sani-radius) border border-border bg-card shadow-(--sani-card-shadow) transition-shadow",
         "focus-within:border-slate-7 focus-within:shadow-(--sani-shell-shadow)",
+        dragging && "border-dashed border-slate-8",
       )}
     >
+      {files.length > 0 ? (
+        <ul className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Attached files">
+          {files.map((file, index) => (
+            <li
+              key={`${file.name}-${index}`}
+              className="flex h-9 max-w-52 items-center gap-2 rounded-lg border border-border bg-slate-2 pr-1 pl-1.5 text-xs"
+            >
+              {previews[index] ? (
+                <img src={previews[index]} alt="" className="size-6 rounded object-cover" />
+              ) : (
+                <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+              )}
+              <span className="min-w-0 flex-1 truncate">{file.name}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${file.name}`}
+                onClick={() => setFiles((current) => current.filter((_, i) => i !== index))}
+                className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-slate-4 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+              >
+                <X className="size-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <textarea
         ref={textarea}
         rows={1}
@@ -112,6 +200,7 @@ export function Composer({
         placeholder={capturing ? "Finish or cancel voice capture first" : "Ask Sani to do something…"}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
         className="block max-h-[220px] min-h-[52px] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
       />
       <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
@@ -142,15 +231,43 @@ export function Composer({
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+          {canAttach ? (
+            <>
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                hidden
+                accept={ACCEPT}
+                onChange={(event) => {
+                  addFiles(Array.from(event.target.files ?? []));
+                  event.target.value = "";
+                }}
+              />
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={locked || sending}
+                      onClick={() => picker.current?.click()}
+                      aria-label="Attach a file"
+                      className="rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    />
+                  }
+                >
+                  <Paperclip className="size-4" />
+                </TooltipTrigger>
+                <TooltipContent>Attach an image or file for Claude Code</TooltipContent>
+              </Tooltip>
+            </>
+          ) : null}
           <UsageMeter status={claudeCode} />
         </div>
 
         <div className="flex items-center gap-1.5">
-          {!locked && draft.trim() ? (
-            <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex">
-              <Chord>⏎</Chord> send <Chord>⇧⏎</Chord> new line
-            </span>
-          ) : null}
           <Tooltip>
             <TooltipTrigger
               render={

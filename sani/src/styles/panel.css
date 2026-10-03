@@ -122,8 +122,8 @@
 .offline-chip {
   font-size: 10.5px;
   color: var(--error);
-  background: rgba(255, 106, 99, 0.12);
-  border: 1px solid rgba(255, 106, 99, 0.32);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
   border-radius: var(--radius-pill);
   padding: 2px 8px;
   margin-right: 4px;
@@ -163,10 +163,10 @@
 .panel-notice {
   padding: 10px 13px;
   border-radius: var(--radius-small);
-  background: linear-gradient(158deg, rgba(255, 106, 99, 0.18), rgba(255, 106, 99, 0.06));
-  border: 1px solid rgba(255, 106, 99, 0.32);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
   box-shadow: var(--edge-lit);
-  color: #ffb5b0;
+  color: var(--error-text);
   font-size: 12.5px;
   line-height: 1.5;
 }
@@ -184,13 +184,13 @@
 }
 
 .run-outcome.cancelled {
-  border-color: rgba(240, 173, 78, 0.34);
-  color: #ffd191;
+  border-color: var(--warning-border);
+  color: var(--warning-text);
 }
 
 .run-outcome.failed {
-  border-color: rgba(255, 106, 99, 0.34);
-  color: #ffb5b0;
+  border-color: var(--error-border);
+  color: var(--error-text);
 }
 
 /* Messages */
@@ -227,13 +227,8 @@
 
 .msg-agent .msg-avatar {
   color: var(--success);
-  border-color: rgba(55, 212, 135, 0.3);
-  background: linear-gradient(
-    158deg,
-    rgba(55, 212, 135, 0.2),
-    rgba(55, 212, 135, 0.05) 48%,
-    rgba(55, 212, 135, 0.12)
-  );
+  border-color: var(--success-border);
+  background: var(--success-bg);
 }
 
 .msg-author {
@@ -287,13 +282,9 @@
   height: 24px;
   margin-left: 4px;
   border-radius: 50%;
-  border: 2px dotted rgba(255, 255, 255, 0.4);
+  border: 2px dotted rgba(0, 0, 0, 0.35);
   animation: spin 3.6s linear infinite;
   flex: none;
-}
-
-:root[data-theme="light"] .activity-spinner {
-  border-color: rgba(0, 0, 0, 0.35);
 }
 
 .activity-rows {
@@ -346,9 +337,7 @@
   gap: 18px;
   padding: 15px 18px 17px;
   border-top: 1px solid var(--hairline);
-  /* Measured: the reference footer band is *darker* than the body (#151618 vs
-     #1c1e22), so it reads as a scrim, not a lit shelf. */
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.26));
+  background: var(--bg-elevated);
 }
 
 .footer-col {
@@ -392,7 +381,7 @@
 
 .agent-chip:hover,
 .agent-chip-mini:hover {
-  background: linear-gradient(168deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05));
+  background: var(--surface-strong);
   border-color: var(--border-strong);
 }
 
@@ -457,19 +446,13 @@
   right: 0;
   bottom: 0;
   width: 320px;
-  background: rgba(24, 26, 33, 0.6);
-  -webkit-backdrop-filter: blur(38px) saturate(1.9) brightness(1.05);
-  backdrop-filter: blur(38px) saturate(1.9) brightness(1.05);
+  background: var(--bg);
   border-left: 1px solid var(--border);
-  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.35), var(--edge-lit);
+  box-shadow: -12px 0 32px rgba(15, 23, 42, 0.1);
   display: flex;
   flex-direction: column;
   z-index: 10;
   animation: slide-in 0.18s ease;
-}
-
-:root[data-theme="light"] .drawer {
-  background: rgba(252, 252, 254, 0.72);
 }
 
 @keyframes slide-in {
@@ -606,7 +589,7 @@
 }
 
 .mini-btn:hover {
-  background: linear-gradient(168deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05));
+  background: var(--surface-strong);
   border-color: var(--border-strong);
 }
 
@@ -644,8 +627,8 @@
   top: 10px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(55, 212, 135, 0.18);
-  border: 1px solid rgba(55, 212, 135, 0.42);
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
   box-shadow: var(--edge-lit);
   color: var(--success);
   font-size: 11.5px;

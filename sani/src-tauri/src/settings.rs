@@ -188,7 +188,7 @@ fn default_hotkey() -> String {
     "Alt+Space".into()
 }
 fn default_theme() -> String {
-    "dark".into()
+    "light".into()
 }
 fn default_stt_model() -> String {
     "small-streaming-en".into()

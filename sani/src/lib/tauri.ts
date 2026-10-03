@@ -255,6 +255,9 @@ export const applyClaudeCodeSettings = (patch: {
   dirs?: string[];
   permission?: ClaudeCodePermission;
 }) => invoke<FullSettingsSnapshot>("apply_claude_code_settings", { patch });
+/** Save a file the user attached; returns its absolute path under Sani's data folder. */
+export const saveAttachment = (name: string, dataBase64: string) =>
+  invoke<string>("save_attachment_cmd", { name, dataBase64 });
 /** Native folder chooser; null when the user cancels. */
 export const pickFolder = () => invoke<string | null>("pick_folder_cmd");
 

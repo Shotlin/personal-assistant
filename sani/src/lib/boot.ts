@@ -42,8 +42,24 @@ export function installErrorBridge(which: string): void {
   };
 }
 
+/**
+ * Dev server only: `?preview` runs any window against fixture data in a plain
+ * browser. Compiled out of production builds by the DEV guard.
+ */
+async function installPreviewIfRequested(): Promise<void> {
+  if (!import.meta.env.DEV) return;
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("preview") || "__TAURI_INTERNALS__" in window) return;
+  const { install } = await import("../dev/preview-backend");
+  install(params.get("scenario") ?? "history");
+}
+
 /** Mount one Sani window and prove it came up, or leave the visible fallback. */
 export function mountApp(node: ReactNode, which: string): void {
+  void installPreviewIfRequested().then(() => mountNow(node, which));
+}
+
+function mountNow(node: ReactNode, which: string): void {
   installErrorBridge(which);
   const container = document.getElementById("root");
   if (!container) {

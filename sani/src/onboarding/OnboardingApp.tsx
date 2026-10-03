@@ -3,7 +3,6 @@ import "../styles/tokens.css";
 import "../styles/onboarding.css";
 import {
   completeOnboarding,
-  getPreferences,
   onSetupProgress,
   onSetupStage,
   runSetup,
@@ -40,11 +39,8 @@ const STEP_INDEX: Partial<Record<OnboardingStage, number>> = {
   verify: 5,
 };
 
-type Theme = "system" | "dark" | "light";
-
 export default function OnboardingApp() {
   const [stage, setStage] = useState<OnboardingStage>("welcome");
-  const [theme, setTheme] = useState<Theme>("dark");
   const [components, setComponents] = useState<Record<string, ComponentView>>({});
   const [percent, setPercent] = useState(0);
   const [localComplete, setLocalComplete] = useState(false);
@@ -65,10 +61,6 @@ export default function OnboardingApp() {
       setLocalComplete(snap.local_setup_complete);
       if (VALID_STAGES.includes(snap.current_stage as OnboardingStage)) {
         setStage(snap.current_stage as OnboardingStage);
-      }
-      const prefs = await getPreferences();
-      if (prefs.theme === "light" || prefs.theme === "dark" || prefs.theme === "system") {
-        setTheme(prefs.theme);
       }
     })();
     void (async () => {
@@ -109,14 +101,14 @@ export default function OnboardingApp() {
   // Full-bleed hero screens.
   if (stage === "welcome") {
     return (
-      <Root theme={theme}>
+      <Root>
         <WelcomeStep onContinue={() => go("preparing")} onAdvanced={() => go("config")} />
       </Root>
     );
   }
   if (stage === "ready") {
     return (
-      <Root theme={theme}>
+      <Root>
         <ReadyStep onStart={start} onSettings={() => go("config")} />
       </Root>
     );
@@ -124,7 +116,7 @@ export default function OnboardingApp() {
 
   // Framed steps share the topbar + footer.
   return (
-    <Root theme={theme}>
+    <Root>
       <div className="onb-shell">
         <header className="onb-topbar">
           <span className="onb-brand">
@@ -149,7 +141,7 @@ export default function OnboardingApp() {
           )}
           {stage === "permissions" && <PermissionsStep onContinue={() => go("preferences")} />}
           {stage === "preferences" && (
-            <PreferencesStep theme={theme} onThemeChange={setTheme} onContinue={() => go("verify")} />
+            <PreferencesStep onContinue={() => go("verify")} />
           )}
           {stage === "verify" && <FinalCheckStep onContinue={() => go("ready")} />}
         </div>
@@ -166,13 +158,10 @@ export default function OnboardingApp() {
   );
 }
 
-function Root({ theme, children }: { theme: Theme; children: React.ReactNode }) {
-  const resolved =
-    theme === "light" || (theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches)
-      ? "light"
-      : "dark";
+/** Sani is light only. */
+function Root({ children }: { children: React.ReactNode }) {
   return (
-    <div className="onb-root fade-in" data-theme={resolved}>
+    <div className="onb-root fade-in" data-theme="light">
       {children}
     </div>
   );

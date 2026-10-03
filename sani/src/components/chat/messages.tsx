@@ -1,20 +1,42 @@
 import { memo } from "react";
-import { CircleSlash } from "lucide-react";
+import { CircleSlash, FileText, ImageIcon } from "lucide-react";
 import { DotMatrixLoader } from "@/components/ui/dot-matrix-loader";
 import { itemSteps, itemText, type ChatItem } from "@/chat/types";
 import { formatClock } from "@/lib/format";
+import { isImage, splitAttachments } from "@/chat/attachments";
 import { Markdown } from "./markdown";
 import { StepRail } from "./step-rail";
 
 export const UserMessage = memo(function UserMessage({ item }: { item: ChatItem }) {
+  const { text, files } = splitAttachments(itemText(item));
   return (
-    <div className="flex justify-end">
-      <div
-        className="max-w-[80%] rounded-2xl bg-secondary px-3.5 py-2 leading-relaxed break-words whitespace-pre-wrap text-foreground select-text"
-        title={formatClock(item.createdAt)}
-      >
-        {itemText(item)}
-      </div>
+    <div className="flex flex-col items-end gap-1.5">
+      {files.length > 0 ? (
+        <ul className="flex max-w-[80%] flex-wrap justify-end gap-1.5" aria-label="Attached files">
+          {files.map((file) => (
+            <li
+              key={file.path}
+              title={file.path}
+              className="flex h-7 max-w-52 items-center gap-1.5 rounded-lg border border-border bg-slate-2 px-2 text-xs text-muted-foreground"
+            >
+              {isImage(file.name) ? (
+                <ImageIcon className="size-3.5 shrink-0" aria-hidden="true" />
+              ) : (
+                <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+              )}
+              <span className="truncate">{file.name}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {text ? (
+        <div
+          className="max-w-[80%] rounded-2xl bg-secondary px-3.5 py-2 leading-relaxed break-words whitespace-pre-wrap text-foreground select-text"
+          title={formatClock(item.createdAt)}
+        >
+          {text}
+        </div>
+      ) : null}
     </div>
   );
 });

@@ -32,6 +32,7 @@ uv run python scripts/run_velo.py "Open Chrome and search WhatsApp Web"
 uv run ruff check src tests && uv run mypy src tests
 cd sani && npm run build            # renderer (tsc + vite)
 cd sani/src-tauri && cargo test     # Rust host + sani-core client tests
+                                    # (if tauri-build fails with EPERM on CuaDriver.app, use a fresh CARGO_TARGET_DIR)
 ```
 
 ## Repo layout
@@ -133,6 +134,50 @@ file 03 is the architecture; `docs/verification/phase1/` holds evidence):
 - `scene.safe_text` keeps secrets out of spoken descriptions and model views.
 - Python-only changes ship with `sani/scripts/update-core.sh` (local core override),
   which does NOT reset macOS permissions; a full `install-app.sh` does.
+
+## Claude Code companion (added 2026-10-03) — default off
+
+`src/assistant/claude_code/` lets the Deep Agent hand software work to the
+user's OWN Claude Code, the way a person would. Product rules:
+
+- No API key, no Agent SDK, no embedding. Sani runs the installed `claude`
+  (PATH, standard installs, or the copy bundled in the Claude desktop app) with
+  `claude -p --output-format stream-json` under the user's own sign-in. The user
+  signs in once with `claude auth login`; Sani never does it for them. The child
+  gets a scrubbed environment (no `ANTHROPIC_*`, no OpenRouter key).
+- This is a deliberate exception to "only OpenRouter leaves the machine": Claude
+  Code itself talks to Anthropic with the user's own account. Sani adds no new
+  credential and sends nothing to Anthropic itself.
+- Safety: off by default (`CLAUDE_CODE_ENABLED`). Work happens only inside
+  folders the user adds (`CLAUDE_CODE_DIRS`, symlink-resolved, never `/` or home).
+  The user picks a ceiling (`read` / `edit` / `run`); the agent can ask for less,
+  never more. No `--dangerously-skip-permissions`, no `--bare`; `-p` mode cannot
+  answer prompts, so permissions are fixed up front.
+- Supervision is rule-based and token-free (`watchdog.py`): repeated step, error
+  streak, permission wall, rate limit, silence, time ceiling, then SIGINT, TERM,
+  KILL. The Deep Agent judges the result afterwards and may make one corrected
+  follow-up. Everything shown or stored passes `redact.screen`.
+- Steps reach the UI as `agent.progress` frames carrying an optional `step`
+  (id, label, status, tool, duration_ms, detail); the host bounds them and stores
+  finished ones in `run_activity` (in-place migration).
+- Sessions: one Claude Code session per (chat, folder) in `sani.db`
+  (`claude_code_sessions`). Sessions started with `-p` do not appear in
+  Claude Code's own picker; resume them by id.
+- Attachments are saved under `<data dir>/attachments` (type- and size-checked)
+  and passed to Claude Code by path.
+- Verified only against a fake `claude` (tests/unit/test_claude_code*.py) until a
+  real signed-in run. Unconfirmed against the real CLI: whether `rate_limit_event`
+  and `modelUsage.contextWindow` arrive under `-p`, and whether `/context` and
+  `/compact` work there. The usage chips show only what Claude Code reports.
+
+## UI (Sani main window)
+
+Light only. Rules in `sani/DESIGN.md`; tokens in `sani/src/styles/app.css`
+(main window) and `tokens.css` (pill/panel/onboarding). The renderer is React 19,
+Tailwind 4 and Base UI primitives adapted from OpenWork (MIT, see
+`THIRD_PARTY_NOTICES.md`). `npm run dev` then `app.html?preview` (also
+`index.html`, `panel.html`, `onboarding.html`) runs the real windows against
+fixtures from `src/dev/preview-backend.ts`; it is compiled out of builds.
 
 ## Conventions
 

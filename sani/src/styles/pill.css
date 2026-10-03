@@ -58,7 +58,7 @@
 }
 
 .pill-chip:hover {
-  background: linear-gradient(168deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05));
+  background: var(--surface-strong);
   border-color: var(--border-strong);
 }
 
@@ -128,16 +128,15 @@
   min-width: 60px;
   height: 44px;
   border-radius: var(--radius-pill);
-  background: linear-gradient(158deg, rgba(240, 173, 78, 0.24), rgba(240, 173, 78, 0.08));
-  border: 1px solid rgba(240, 173, 78, 0.42);
-  box-shadow: var(--edge-lit);
-  color: #ffd191;
+  background: rgba(255, 178, 36, 0.14);
+  border: 1px solid var(--warning-border);
+  color: var(--warning-text);
   font-size: 12.5px;
   font-weight: 560;
 }
 
 .pill-grant:hover {
-  background: linear-gradient(158deg, rgba(240, 173, 78, 0.34), rgba(240, 173, 78, 0.14));
+  background: rgba(255, 178, 36, 0.24);
 }
 
 /* Mic control */
@@ -148,7 +147,7 @@
   border-radius: 50%;
   background: var(--surface-glass);
   border: 1px solid var(--border);
-  box-shadow: var(--edge-lit), 0 6px 18px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
   color: var(--text);
   display: flex;
   align-items: center;
@@ -159,35 +158,20 @@
 
 .pill-mic.listening,
 .pill-mic.finalizing {
-  background: linear-gradient(
-    158deg,
-    rgba(55, 212, 135, 0.26),
-    rgba(55, 212, 135, 0.07) 48%,
-    rgba(55, 212, 135, 0.16)
-  );
-  border-color: rgba(55, 212, 135, 0.45);
-  color: #92f0c0;
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: #218358;
 }
 
 .pill-mic.preparing {
-  background: linear-gradient(
-    158deg,
-    rgba(240, 173, 78, 0.24),
-    rgba(240, 173, 78, 0.06) 48%,
-    rgba(240, 173, 78, 0.15)
-  );
-  border-color: rgba(240, 173, 78, 0.4);
-  color: #ffd191;
+  background: rgba(255, 178, 36, 0.14);
+  border-color: var(--warning-border);
+  color: var(--warning-text);
 }
 
 .pill-mic.working {
-  background: linear-gradient(
-    158deg,
-    rgba(91, 155, 255, 0.26),
-    rgba(91, 155, 255, 0.07) 48%,
-    rgba(91, 155, 255, 0.16)
-  );
-  border-color: rgba(91, 155, 255, 0.45);
+  background: rgba(0, 144, 255, 0.1);
+  border-color: rgba(0, 144, 255, 0.4);
 }
 
 .mic-ring {
@@ -200,12 +184,12 @@
 
 .pill-mic.listening .mic-ring,
 .pill-mic.finalizing .mic-ring {
-  border-color: rgba(55, 212, 135, 0.4);
+  border-color: var(--success-border);
   animation: breathe 2.4s ease-in-out infinite;
 }
 
 .pill-mic.working .mic-ring {
-  border-color: rgba(91, 155, 255, 0.35);
+  border-color: rgba(0, 144, 255, 0.35);
   animation: breathe 2.4s ease-in-out infinite;
 }
 
@@ -225,8 +209,8 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid rgba(91, 155, 255, 0.28);
-  border-top-color: #9cc2ff;
+  border: 2px solid rgba(0, 144, 255, 0.25);
+  border-top-color: #0d74ce;
   animation: spin 0.9s linear infinite;
 }
 
@@ -263,7 +247,7 @@
 }
 
 .pill-icon:hover {
-  background: linear-gradient(168deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05));
+  background: var(--surface-strong);
   border-color: var(--border-strong);
   color: var(--text);
 }

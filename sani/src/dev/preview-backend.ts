@@ -322,6 +322,8 @@ export function install(scenario: string): void {
       return settings;
     },
     pick_folder_cmd: () => "/Users/you/Projects/blog",
+    save_attachment_cmd: (args) =>
+      `/Users/you/Library/Application Support/Sani/attachments/${"ab".repeat(16)}-${String(args.name)}`,
     escape_cmd: () => {
       setState("idle");
       return undefined;

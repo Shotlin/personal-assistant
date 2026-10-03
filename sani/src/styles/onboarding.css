@@ -1,37 +1,10 @@
 /* Sani first-run setup. Desktop-native, calm, restrained depth — deliberately
-   opaque (no glass, no marketing gradients). One accent (#5b9bff), used only
+   opaque (no glass, no marketing gradients). One accent (#011627), used only
    for the primary action, active progress, focus and small highlights.
-   Light/dark follow the OS; the user can override it in Preferences. */
+   Light only. */
 
 .onb-root {
-  --accent: #5b9bff;
-  --accent-ink: #ffffff;
-  --bg: #0c0c0d;
-  --elevated: #151517;
-  --secondary: #1b1b1e;
-  --text: #f5f5f5;
-  --text-secondary: rgba(255, 255, 255, 0.62);
-  --text-faint: rgba(255, 255, 255, 0.4);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --success: #37d487;
-  --warning: #e0a94e;
-  --error: #ff6a63;
-  --focus: rgba(91, 155, 255, 0.55);
-  --field-bg: #17171a;
-  --shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
-  --radius: 9px;
-
-  height: 100vh;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-  -webkit-font-smoothing: antialiased;
-  overflow: hidden;
-}
-
-.onb-root[data-theme="light"] {
-  --accent: #2f6fd0;
+  --accent: #011627;
   --accent-ink: #ffffff;
   --bg: #fbfbfd;
   --elevated: #ffffff;
@@ -44,9 +17,17 @@
   --success: #1a9e5c;
   --warning: #b5761b;
   --error: #cf3f38;
-  --focus: rgba(47, 111, 208, 0.45);
+  --focus: rgba(1, 22, 39, 0.35);
   --field-bg: #ffffff;
   --shadow: 0 1px 0 rgba(0, 0, 0, 0.02) inset, 0 8px 24px rgba(20, 20, 30, 0.08);
+  --radius: 9px;
+
+  height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 /* ------------------------------------------------------------------- shell */
