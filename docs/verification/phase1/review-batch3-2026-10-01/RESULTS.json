@@ -1,0 +1,82 @@
+{
+  "review_date": "2026-10-01",
+  "scope": "Phase 1 corrective batch 3, independent review only",
+  "phase1_accepted": false,
+  "phase2_authorized": false,
+  "approximate_overall_completion": {
+    "percent": 80,
+    "range": [
+      75,
+      85
+    ],
+    "method": "Rounded subjective engineering estimate; partial credit across original implementation areas. Not acceptance-gate or test-pass percentage."
+  },
+  "gates": {
+    "unit-final": {
+      "tests": 634,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "integration": {
+      "tests": 132,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "performance": {
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "source_changes_during_review": []
+  },
+  "rust": {
+    "passed": 124,
+    "ignored": 2
+  },
+  "renderer": "PASS",
+  "static": {
+    "mypy": 91,
+    "ruff": 42,
+    "normalized_drift": 0
+  },
+  "mutation_replay": {
+    "python_meaningful": 10,
+    "native_original_inversion_proved": false
+  },
+  "remaining_findings": {
+    "P1": [
+      "D11",
+      "D14",
+      "D15",
+      "D16",
+      "D17",
+      "D18",
+      "D19",
+      "D20",
+      "D21"
+    ],
+    "P2": [
+      "D22"
+    ]
+  },
+  "original_reproductions_fixed": [
+    "D12 cross-mission deletion",
+    "D13 multi-step approval and pause recovery",
+    "D17 original lock inversion"
+  ],
+  "live_acceptance": "BLOCKED; not executed",
+  "source": {
+    "heads": {
+      "/Users/sayan/Documents/personal-assistant": "df04060f189a10bb81baf522a58347cddc6cc915",
+      "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant": "df04060f189a10bb81baf522a58347cddc6cc915"
+    },
+    "reviewed_source_files": 810,
+    "source_mismatches": [],
+    "patch_sha256": "fd58106c62c11caa05223a1e7b6537d783eeee9beeb5eee7b8497b340af6b81d",
+    "main_tracked_changes": [],
+    "copied_patch_file_entries": 48
+  }
+}

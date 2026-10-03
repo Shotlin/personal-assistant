@@ -211,6 +211,9 @@ class BudgetLimits(StrictModel):
     max_retries: int = Field(default=3, ge=0)
     max_replans: int = Field(default=2, ge=0)
     max_no_progress: int = Field(default=4, ge=0)
+    # D05: hard ceiling on actual provider transport requests (including
+    # graph-internal sub-calls and retries) for ONE Controller invocation.
+    max_provider_requests: int = Field(default=16, ge=0)
     max_paid_units: int = Field(default=0, ge=0)
     max_cost_microunits: int | None = None
     currency: str | None = None
@@ -389,6 +392,9 @@ class MissionRecord(StrictModel):
     budget_usage: BudgetUsage = Field(default_factory=BudgetUsage)
     approval_ids: list[str] = Field(default_factory=list)
     artifact_ids: list[str] = Field(default_factory=list)
+    # D02/D10: the exact per-step approvals the host UI owes right now,
+    # projected from durable step state (never a model's claim).
+    pending_approvals: list[PendingApprovalDigest] = Field(default_factory=list)
     priority: int = Field(default=4, ge=0, le=9)
     created_at_ms: int
     updated_at_ms: int
@@ -526,6 +532,13 @@ class StepResult(StrictModel):
     elapsed_ms: int = Field(default=0, ge=0)
     usage: BudgetUsage = Field(default_factory=BudgetUsage)
     suggested_next_action: str | None = Field(default=None, max_length=512)
+    # D02: the exact approval a refused dispatch owes, persisted with the
+    # BLOCKED step so release/consumption can match it exactly.
+    pending_approval: PendingApprovalDigest | None = None
+    # D02: an external retry hint (e.g. a rate limiter's Retry-After). When
+    # present on an escalation the service records a durable external wait
+    # with this deadline instead of pausing for an owner decision.
+    retry_after_ms: int | None = Field(default=None, ge=0, le=3_600_000)
 
     @model_validator(mode="after")
     def _consistency(self) -> StepResult:
@@ -568,6 +581,25 @@ class ExceptionPacket(StrictModel):
 
 
 # -- approvals and controls ------------------------------------------------------
+
+
+class PendingApprovalDigest(StrictModel):
+    """The exact action a blocked step owes an owner approval for.
+
+    Persisted when a dispatch is refused with APPROVAL_REQUIRED so the host
+    UI can mint an approval bound to THIS digest, plan version and control
+    epoch — and so a release that does not match the digest is impossible.
+    """
+
+    step_id: str
+    tool: str
+    action_digest: str = Field(min_length=16, max_length=128)
+    plan_version: int = Field(ge=1)
+    control_epoch: int = Field(ge=1)
+    target_ref: str | None = None
+    account_ref: str | None = None
+    workspace_ref: str | None = None
+    effect_class: EffectClass = "EXTERNAL_WRITE"
 
 
 class ApprovalRecord(StrictModel):

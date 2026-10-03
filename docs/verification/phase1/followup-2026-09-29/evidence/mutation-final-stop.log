@@ -1,0 +1,56 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_stop_during_ledger_await_prevents_actual_effect _____________
+
+store = <assistant.missions.store.MissionStore object at 0x1106d9d60>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1106f8770>
+
+    async def test_stop_during_ledger_await_prevents_actual_effect(store: MissionStore,
+                                                                 monkeypatch: Any) -> None:
+        from contextlib import asynccontextmanager
+        from types import SimpleNamespace
+    
+        import assistant.missions.store as storage
+    
+        mission, item = await claimed(store)
+        cancel = CancellationToken()
+        effects: list[str] = []
+        async def click(pid: int, window_id: int) -> str:
+            """Synthetic device effect."""
+            effects.append("effect")
+            return "clicked"
+        wrapped, _ = apply_tool_policy([StructuredTool.from_function(coroutine=click, name="click")])
+        @asynccontextmanager
+        async def run_scope(*args: Any, **kwargs: Any) -> Any:
+            # Only the device/session boundary is synthetic; policy scope,
+            # authority, ledger, executor and the final effect wrapper are real.
+            async with cua_run_scope(budget=None, run=None, ledger=kwargs["ledger"],
+                                     mission_guard=kwargs["mission_guard"],
+                                     mission_strict_audit=True):
+                yield None
+        runtime = SimpleNamespace(run_scope=run_scope)
+        async def get_runtime() -> Any:
+            return runtime
+        executor = VeloExecutor(SimpleNamespace(), get_runtime=get_runtime,
+                                authority=MissionAuthority(store), store=store)
+        original = storage.MissionActionLedger.plan
+        async def interleaved(ledger: Any, **kwargs: Any) -> int:
+            result = await original(ledger, **kwargs)
+            cancel.cancel()
+            return result
+        monkeypatch.setattr(storage.MissionActionLedger, "plan", interleaved)
+        async with executor.work_scope(item, cancel=cancel):
+            state = cua_target_state.get()
+            assert state is not None
+            state["apps"] = {9: "com.fixture.safe"}
+            state["observed_at_ms"] = int(time.time() * 1000)
+            result = await wrapped[0].ainvoke({"pid": 9, "window_id": 2})
+>       assert effects == []
+E       AssertionError: assert ['effect'] == []
+E         
+E         Left contains one more item: 'effect'
+E         Use -v to get more diff
+
+tests/integration/test_phase1_corrective_boundaries.py:298: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integration/test_phase1_corrective_boundaries.py::test_stop_during_ledger_await_prevents_actual_effect

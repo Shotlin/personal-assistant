@@ -1,0 +1,1437 @@
+diff --git a/sani/src-tauri/python/sani_tts.py b/sani/src-tauri/python/sani_tts.py
+index e6c55df..62c4503 100644
+--- a/sani/src-tauri/python/sani_tts.py
++++ b/sani/src-tauri/python/sani_tts.py
+@@ -252,8 +252,10 @@ class Worker:
+             raise TtsProtocolError(f"unknown event kind {event!r}")
+         self._write({"type": "event", "event": {"event": event, **fields}})
+ 
+-    def _refuse(self, request_id: Any, message: str) -> None:
+-        self._event("error", request_id=request_id, message=message[:300])
++    def _refuse(self, request_id: Any, message: str, *,
++                utterance_id: str | None = None, generation: int | None = None) -> None:
++        self._event("error", request_id=request_id, utterance_id=utterance_id,
++                    generation=generation, message=message[:300])
+ 
+     def serve(self) -> None:
+         self._event("ready", engine=ENGINE_NAME)
+@@ -295,7 +297,8 @@ class Worker:
+             self._event("finished", utterance_id=request.utterance_id, generation=request.generation)
+             return
+         if self._engine is None or isinstance(self._engine, UnspecifiedEngine):
+-            self._refuse(request.request_id, "no speech engine is configured (audition pending)")
++            self._refuse(request.request_id, "no speech engine is configured (audition pending)",
++                         utterance_id=request.utterance_id, generation=request.generation)
+             return
+         self._synthesize_request(request)
+ 
+@@ -329,11 +332,16 @@ class Worker:
+                         generation=request.generation,
+                     )
+                     return
+-                self._buffered_seconds += len(pcm) / 4 / sample_rate
+-                if self._buffered_seconds > MAX_BUFFERED_SECONDS:
+-                    self._refuse(request.request_id, "decoder buffer bound exceeded")
+-                    return
++                # A framed write is synchronous: pipe backpressure bounds
++                # pending output. Count this chunk, not lifetime synthesis.
++                if sample_rate <= 0 or len(pcm) / 4 / sample_rate > MAX_BUFFERED_SECONDS:
++                    raise RuntimeError("decoder buffer bound exceeded")
+                 encoded = base64.b64encode(pcm).decode("ascii")
++                PcmChunk.validate({
++                    "utterance_id": request.utterance_id, "generation": request.generation,
++                    "sequence": sequence, "sample_rate": sample_rate, "channels": 1,
++                    "format": "f32le", "pcm_base64": encoded, "final": False,
++                })
+                 self._event(
+                     "chunk",
+                     utterance_id=request.utterance_id,
+@@ -346,8 +354,9 @@ class Worker:
+                     final=False,
+                 )
+                 sequence += 1
+-        except RuntimeError as exc:
+-            self._refuse(request.request_id, str(exc))
++        except (RuntimeError, TtsProtocolError) as exc:
++            self._refuse(request.request_id, str(exc), utterance_id=request.utterance_id,
++                         generation=request.generation)
+             return
+         # The adapter records cancelled generations (cancel() is part of the
+         # interface), so an early generator end after a cancel is reported as
+diff --git a/sani/src-tauri/src/tts.rs b/sani/src-tauri/src/tts.rs
+index 8d942f4..d5a6933 100644
+--- a/sani/src-tauri/src/tts.rs
++++ b/sani/src-tauri/src/tts.rs
+@@ -66,8 +66,8 @@ impl TtsSupervisor {
+         let engine = std::env::var("SANI_TTS_ENGINE").unwrap_or_else(|_| "unspecified".to_string());
+         let mut command = Command::new(python);
+         command
+-            .arg(worker_script)
+-            .arg("-I") // isolated mode: no user site-packages, no PYTHONPATH
++            .arg("-I")
++            .arg(worker_script) // isolated mode: no user site-packages, no PYTHONPATH
+             .env_clear();
+         for key in WORKER_ENV_ALLOWLIST {
+             if let Ok(value) = std::env::var(key) {
+@@ -294,14 +294,21 @@ impl crate::tts_queue::AudioSink for CpalSink {
+         };
+         if let Ok(mut buf) = self.ring.lock() {
+             buf.extend(resampled.iter().copied());
+-            // Bounded ring: never let a long reply grow memory unboundedly.
+-            while buf.len() > 24_000 * 8 {
+-                buf.pop_front();
++            // The queue admits at most two seconds and waits for device
++            // consumption; never silently discard the beginning of speech.
++            if buf.len() > device_rate as usize * 2 {
++                self.healthy.store(false, Ordering::SeqCst);
++                return false;
+             }
+         }
+         true
+     }
+ 
++    fn queued_seconds(&self) -> f32 {
++        self.ring.lock().map(|buf| buf.len() as f32
++            / self.device_rate.load(Ordering::SeqCst).max(1) as f32).unwrap_or(f32::INFINITY)
++    }
++
+     fn drain(&mut self) {
+         if let Ok(mut buf) = self.ring.lock() {
+             buf.clear();
+@@ -332,6 +339,25 @@ pub async fn read_frame(reader: &mut (impl AsyncReadExt + Unpin)) -> Option<serd
+ /// still `unspecified` (owner audition pending) the worker answers `error`,
+ /// which surfaces here as honest unavailability — never as silence claimed
+ /// as spoken audio.
++fn synthesis_request(text: &str, conversation_id: &str, mission_id: Option<&str>,
++                     utterance_id: &str, generation: u64) -> serde_json::Value {
++    json!({
++        "type": "request",
++        "request": {
++            "request_id": uuid::Uuid::new_v4().simple().to_string(),
++            "utterance_id": utterance_id,
++            "conversation_id": conversation_id,
++            "mission_id": mission_id,
++            "message_id": utterance_id,
++            "generation": generation,
++            "text": text,
++            "voice_asset_id": "",
++            "rate": 1.0,
++            "kind": "FINAL",
++        }
++    })
++}
++
+ pub fn enqueue_speech(
+     app: &tauri::AppHandle,
+     text: &str,
+@@ -352,25 +378,16 @@ pub fn enqueue_speech(
+         Err(reason) => return json!({"spoken": false, "reason": reason}),
+     };
+     let supervisor = &state.supervisor;
+-    let request = json!({
+-        "type": "request",
+-        "request": {
+-            "request_id": uuid::Uuid::new_v4().simple().to_string(),
+-            "utterance_id": utterance_id,
+-            "conversation_id": conversation_id,
+-            "mission_id": mission_id,
+-            "message_id": "",
+-            "generation": generation,
+-            "text": trimmed,
+-            "voice_asset_id": "",
+-            "rate": 1.0,
+-            "kind": "FINAL",
+-        }
+-    });
++    let request = synthesis_request(&trimmed, conversation_id, mission_id,
++                                    &utterance_id, generation);
+     // The write is best-effort: a dead worker is reported and the queue
+     // entry is dropped by the next stop; text output is unaffected.
+     let sent = tauri::async_runtime::block_on(supervisor.send_frame(&request));
+-    json!({"spoken": sent, "utterance_id": utterance_id, "generation": generation})
++    if !sent {
++        state.queue.finish_utterance(&utterance_id);
++    }
++    json!({"spoken": false, "queued": sent, "utterance_id": utterance_id,
++           "generation": generation})
+ }
+ 
+ /// `speech.say` command: the renderer may ask for a bounded acknowledgment.
+@@ -398,6 +415,7 @@ pub fn spawn_worker_pump(app: tauri::AppHandle) {
+             }
+         };
+         let mut reader = reader;
++        let mut sequences: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+         loop {
+             let Some(frame) = read_frame(&mut reader).await else {
+                 log::info!("tts worker stream closed");
+@@ -410,26 +428,46 @@ pub fn spawn_worker_pump(app: tauri::AppHandle) {
+             let generation = event["generation"].as_u64().unwrap_or(0);
+             match kind {
+                 "chunk" => {
+-                    let Some(samples_b64) = event["pcm_base64"].as_str() else {
++                    let chunk = serde_json::from_value::<crate::tts_protocol::PcmChunk>(event.clone());
++                    let Ok(chunk) = chunk else { continue; };
++                    if generation != state.queue.generation()
++                        || !state.queue.contains_utterance(utterance_id, generation) {
+                         continue;
+-                    };
+-                    let rate = event["sample_rate"].as_u64().unwrap_or(24_000) as u32;
+-                    use base64::Engine as _;
+-                    let Ok(decoded) = base64::engine::general_purpose::STANDARD
+-                        .decode(samples_b64)
+-                    else {
++                    }
++                    let expected = sequences.get(utterance_id).map_or(0, |last| last + 1);
++                    if chunk.sequence != expected {
++                        state.queue.finish_utterance(utterance_id);
++                        continue;
++                    }
++                    let Ok(floats) = chunk.validate() else {
++                        state.queue.finish_utterance(utterance_id);
+                         continue;
+                     };
+-                    let floats: Vec<f32> = decoded
+-                        .chunks_exact(4)
+-                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+-                        .collect();
+-                    let _ = state.queue.play_chunk(generation, rate, &floats);
++                    sequences.insert(utterance_id.to_string(), chunk.sequence);
++                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
++                    loop {
++                        if std::time::Instant::now() >= deadline {
++                            state.queue.stop();
++                            break;
++                        }
++                        match state.queue.play_chunk(generation, chunk.sample_rate, &floats) {
++                            Ok(()) => break,
++                            Err(reason) if reason == "audio backpressure" => {
++                                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
++                            }
++                            Err(_) => {
++                                state.queue.finish_utterance(utterance_id);
++                                break;
++                            }
++                        }
++                    }
+                 }
+                 "finished" => {
++                    sequences.remove(utterance_id);
+                     let _ = state.queue.finish_utterance(utterance_id);
+                 }
+                 "cancelled" | "error" => {
++                    sequences.remove(utterance_id);
+                     let _ = state.queue.finish_utterance(utterance_id);
+                 }
+                 _ => {}
+@@ -459,7 +497,10 @@ pub fn init(app: &tauri::AppHandle) -> serde_json::Value {
+         log::warn!("tts: no output device; speech stays silent, text unaffected");
+     }
+     // The worker: the packaged python + sani_tts.py beside the binary.
+-    let python = std::env::var("SANI_TTS_PYTHON").unwrap_or_else(|_| "/usr/bin/env".to_string());
++    let Ok(python) = std::env::var("SANI_TTS_PYTHON") else {
++        return json!({"enabled": true, "worker": false,
++            "reason": "Packaged speech interpreter is not configured"});
++    };
+     let script = std::env::var("SANI_TTS_WORKER").unwrap_or_else(|_| {
+         "sani_tts.py".to_string()
+     });
+@@ -481,6 +522,14 @@ pub fn init(app: &tauri::AppHandle) -> serde_json::Value {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn host_request_satisfies_worker_contract() {
++        let frame = synthesis_request("hello", "conversation", None, "utterance", 1);
++        let request: crate::tts_protocol::TtsRequest =
++            serde_json::from_value(frame["request"].clone()).unwrap();
++        assert!(request.validate().is_ok());
++    }
++
+     #[test]
+     fn supervisor_defaults_to_disabled() {
+         let supervisor = TtsSupervisor::default();
+diff --git a/sani/src-tauri/src/tts_protocol.rs b/sani/src-tauri/src/tts_protocol.rs
+index 53e5ba1..f1d8b53 100644
+--- a/sani/src-tauri/src/tts_protocol.rs
++++ b/sani/src-tauri/src/tts_protocol.rs
+@@ -61,7 +61,7 @@ impl TtsRequest {
+         if self.text.is_empty() {
+             return Err("text must be non-empty".to_string());
+         }
+-        if self.text.len() > TEXT_MAX_CHARS {
++        if self.text.chars().count() > TEXT_MAX_CHARS {
+             return Err(format!("text exceeds {TEXT_MAX_CHARS} chars"));
+         }
+         if !matches!(self.kind.as_str(), "ACK" | "STATUS" | "FINAL") {
+@@ -82,8 +82,9 @@ pub struct PcmChunk {
+     pub sample_rate: u32,
+     pub channels: u8,
+     pub format: String,
+-    #[serde(rename = "pcmBase64")]
++    #[serde(rename = "pcm_base64", alias = "pcmBase64")]
+     pub pcm_base64: String,
++    #[serde(rename = "final", alias = "final_chunk", default)]
+     pub final_chunk: bool,
+ }
+ 
+diff --git a/sani/src-tauri/src/tts_queue.rs b/sani/src-tauri/src/tts_queue.rs
+index a778948..854ea52 100644
+--- a/sani/src-tauri/src/tts_queue.rs
++++ b/sani/src-tauri/src/tts_queue.rs
+@@ -23,6 +23,8 @@ pub trait AudioSink: Send {
+     fn play(&mut self, samples: &[f32], sample_rate: u32) -> bool;
+     /// Drain whatever is buffered; best-effort, bounded.
+     fn drain(&mut self);
++    /// Audio already admitted but not consumed by the device.
++    fn queued_seconds(&self) -> f32 { 0.0 }
+ }
+ 
+ /// A no-output sink for tests and for the pre-audition state.
+@@ -43,6 +45,7 @@ impl AudioSink for Box<dyn AudioSink + Send> {
+     fn drain(&mut self) {
+         (**self).drain()
+     }
++    fn queued_seconds(&self) -> f32 { (**self).queued_seconds() }
+ }
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+@@ -102,6 +105,11 @@ impl<S: AudioSink> SpeechQueue<S> {
+         self.queue.lock().map(|q| q.len()).unwrap_or(0)
+     }
+ 
++    pub fn contains_utterance(&self, id: &str, generation: u64) -> bool {
++        self.queue.lock().map(|q| q.iter().any(|u|
++            u.utterance_id == id && u.generation == generation)).unwrap_or(false)
++    }
++
+     /// Enqueue one utterance for synthesis + playback under the current
+     /// generation. A full queue applies backpressure by refusing.
+     pub fn enqueue(&self, utterance_id: &str, text: &str) -> Result<u64, String> {
+@@ -181,15 +189,26 @@ impl<S: AudioSink> SpeechQueue<S> {
+ 
+     /// Play one accepted chunk through the sink.
+     pub fn play_chunk(&self, generation: u64, sample_rate: u32, samples: &[f32]) -> Result<(), String> {
+-        self.accepts(generation, samples.len())?;
+-        *self
+-            .state
+-            .lock()
+-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = QueueState::Playing;
+         let Ok(mut sink) = self.sink.lock() else {
+             return Err("audio sink poisoned".to_string());
+         };
++        if sample_rate == 0 || samples.len() as f32 / sample_rate as f32 > MAX_BUFFERED_SECONDS {
++            return Err("decoder buffer bound exceeded".to_string());
++        }
++        if samples.iter().any(|v| !v.is_finite()) {
++            return Err("invalid PCM sample".to_string());
++        }
++        if sink.queued_seconds() + samples.len() as f32 / sample_rate as f32 > MAX_BUFFERED_SECONDS {
++            return Err("audio backpressure".to_string());
++        }
++        // Holding the sink lock makes stop/drain ordered with this final
++        // generation check and enqueue; no await separates them.
++        self.accepts(generation, samples.len())?;
++        *self.state.lock().unwrap_or_else(|p| p.into_inner()) = QueueState::Playing;
+         let healthy = sink.play(samples, sample_rate);
++        let mut buffered = self.buffered_samples.lock().unwrap_or_else(|p| p.into_inner());
++        *buffered = buffered.saturating_sub(samples.len());
++        drop(buffered);
+         if !healthy {
+             *self
+                 .state
+@@ -246,6 +265,16 @@ mod tests {
+         SpeechQueue::new(CountingSink::default())
+     }
+ 
++    #[test]
++    fn drained_stream_does_not_accumulate_lifetime_samples() {
++        let queue = make();
++        let generation = queue.enqueue("long", "long fixture").unwrap();
++        for _ in 0..200 {
++            queue.play_chunk(generation, 24000, &[0.0; 12000]).unwrap();
++        }
++        assert_eq!(queue.finish_utterance("long"), 0);
++    }
++
+     #[test]
+     fn enqueue_and_finish_cycle() {
+         let queue = make();
+@@ -293,9 +322,8 @@ mod tests {
+     fn buffer_bound_blocks_flood() {
+         let queue = make();
+         let generation = queue.generation();
+-        // 24k * 4 bytes * 2s = 192k samples max; push 3 x 100k.
+-        assert!(queue.play_chunk(generation, 24000, &[0.0; 100_000]).is_ok());
+-        assert!(queue.play_chunk(generation, 24000, &[0.0; 100_000]).is_err());
++        assert!(queue.play_chunk(generation, 24000, &[0.0; 48_000]).is_ok());
++        assert!(queue.play_chunk(generation, 24000, &[0.0; 48_001]).is_err());
+     }
+ 
+     #[test]
+diff --git a/scripts/verify_phase1.py b/scripts/verify_phase1.py
+index 415d21b..1ff19b0 100644
+--- a/scripts/verify_phase1.py
++++ b/scripts/verify_phase1.py
+@@ -101,6 +101,7 @@ SUITE_FILES: dict[str, tuple[str, list[str]]] = {
+             # the earlier list omitted them, which is exactly how a suite
+             # count drifts from the prose claim (639 vs 647).
+             "tests/integration/test_mission_composition.py",
++            "tests/integration/test_phase1_corrective_boundaries.py",
+         ],
+     ),
+     "performance": ("F", ["tests/performance"]),
+diff --git a/src/assistant/core/agents.py b/src/assistant/core/agents.py
+index 75a6e75..777d285 100644
+--- a/src/assistant/core/agents.py
++++ b/src/assistant/core/agents.py
+@@ -468,8 +468,7 @@ class MissionEntry:
+         # construction — no second service, provider, or graph is created.
+         executor._payload_resolver = service._resolve_payloads
+         service_probe_holder["probe"] = service._ownership_probe
+-        if uncertain_ids:
+-            await service.reconcile_startup(uncertain_ids)
++        await service.reconcile_startup(uncertain_ids)
+         return service
+ 
+     def _transport_for_mission(self, mission: Any) -> Any:
+diff --git a/src/assistant/missions/authority.py b/src/assistant/missions/authority.py
+index d144ea0..a34cb52 100644
+--- a/src/assistant/missions/authority.py
++++ b/src/assistant/missions/authority.py
+@@ -45,11 +45,7 @@ DEFAULT_PERMIT_TTL_MS = 30_000
+ #: absent observation is a STALE_TARGET, never implicit permission.
+ OBSERVATION_FRESH_MS = 10_000
+ 
+-#: C02/N04: the bounded discovery set. These reads are HOW the executor
+-#: obtains an observation in the first place, so they bootstrap without a
+-#: prior observation timestamp — but they are still bound to the step's
+-#: tool catalog and dispatch intent, and they still grant nothing beyond
+-#: reading the inventory/window state they name.
++#: Discovery tool catalog; only UNTARGETED_INVENTORY_TOOLS bypass target identity.
+ DISCOVERY_TOOLS = frozenset(
+     {
+         "list_apps",
+@@ -61,13 +57,9 @@ DISCOVERY_TOOLS = frozenset(
+     }
+ )
+ 
+-#: Whole-desktop reads: no single target surface, so there is no observed
+-#: app identity to scope-check. Targeted reads (get_window_state...) sit in
+-#: DISCOVERY_TOOLS but NOT here: once an observation names a surface, the
+-#: read is scope-checked like any other call (a READ of an out-of-scope
+-#: surface is denied, like a mutation).
++#: Minimal inventory reads contain no target content. Other reads are scope-checked.
+ UNTARGETED_INVENTORY_TOOLS = frozenset(
+-    {"list_apps", "list_windows", "get_desktop_state", "get_screen_size"}
++    {"list_apps", "get_screen_size"}
+ )
+ 
+ 
+@@ -168,18 +160,11 @@ class MissionAuthority:
+     def _check_surface(
+         self, item: BoundedWorkItem, scope: Any, action: ActionIntent, observed: ScopeObservation
+     ) -> None:
+-        # C02/N04: bounded discovery bootstraps. A whole-inventory read has
+-        # no single target surface and needs no prior observation. A
+-        # TARGETED read (get_window_state...) bootstraps only while nothing
+-        # has been observed yet; the moment the observation names a surface,
+-        # the read is scope-checked like any other call — a READ of an
+-        # out-of-scope surface is denied, like a mutation.
++        # Only minimal whole-app inventory can bootstrap without a target.
++        # Content-bearing reads require fresh identity from trusted inventory
++        # and pass the same app/account/workspace containment boundary.
+         if action.tool in UNTARGETED_INVENTORY_TOOLS:
+             return
+-        if action.tool in DISCOVERY_TOOLS and observed.captured_at_ms <= 0 and (
+-            not observed.app_bundle
+-        ):
+-            return
+         self._check_action_surface(item, scope, action, observed)
+ 
+     def _check_action_surface(
+@@ -302,6 +287,7 @@ class MissionAuthority:
+         charge: BudgetCharge,
+         *,
+         conservative_unit_cost_microunits: int | None = None,
++        item: BoundedWorkItem | None = None,
+     ) -> BudgetReservation:
+         """Reserve budget durably before acting.
+ 
+@@ -333,7 +319,7 @@ class MissionAuthority:
+                         f"{limits.max_cost_microunits}",
+                     )
+         try:
+-            return await self._store.reserve_budget(mission_id, charge)
++            return await self._store.reserve_budget(mission_id, charge, item=item)
+         except MissionStoreError as exc:
+             raise AuthorityDenied("BUDGET_EXHAUSTED", str(exc)) from exc
+ 
+diff --git a/src/assistant/missions/controller.py b/src/assistant/missions/controller.py
+index 3cb3a6a..02e7971 100644
+--- a/src/assistant/missions/controller.py
++++ b/src/assistant/missions/controller.py
+@@ -183,9 +183,9 @@ class DeepController:
+         try:
+             if invoke is None:
+                 raise RuntimeError("no Deep transport is wired into the controller")
+-            tool = (
+-                "submit_mission_plan" if role == "PLAN" else "submit_mission_response"
+-            )
++            from assistant.missions.submission import SUBMISSION_ROLES
++
++            tool = SUBMISSION_ROLES[role][0]
+             response = await invoke(role, tool, {"prompt": prompt})
+             return response
+         finally:
+diff --git a/src/assistant/missions/evidence.py b/src/assistant/missions/evidence.py
+index 89fc604..ca29047 100644
+--- a/src/assistant/missions/evidence.py
++++ b/src/assistant/missions/evidence.py
+@@ -313,7 +313,8 @@ class EvidenceStore:
+                 raise _VerifierFailure("page_state requires expected markers")
+             for ref in refs:
+                 payload = payload_by_id.get(ref.evidence_id) or {}
+-                haystack = _evidence_text(payload).lower()
++                observed_payload = {k: v for k, v in payload.items() if k != "resolved_payloads"}
++                haystack = _evidence_text(observed_payload).lower()
+                 if all(marker in haystack for marker in markers):
+                     return True, "all markers observed", [ref.evidence_id]
+             return False, "not all expected markers were observed in the evidence", []
+diff --git a/src/assistant/missions/executor.py b/src/assistant/missions/executor.py
+index bdd7b18..366376d 100644
+--- a/src/assistant/missions/executor.py
++++ b/src/assistant/missions/executor.py
+@@ -160,25 +160,37 @@ class VeloExecutor:
+             if self._store is not None
+             else None
+         )
++        from assistant.tools.policy import mission_final_dispatch_check
++
++        def final_check() -> str | None:
++            if cancel.is_cancelled:
++                return "Refused: CANCELLED: the mission was cancelled"
++            if time.time() * 1000 >= item.deadline_at_ms:
++                return "Refused: DEADLINE: the work item expired"
++            if self._ownership_probe is not None and item.lease_fence:
++                current = self._ownership_probe(item.mission_id)
++                if inspect.isawaitable(current):
++                    if inspect.iscoroutine(current):
++                        current.close()
++                    return "Refused: STALE_TARGET: final ownership check must be synchronous"
++                fence = current[0] if isinstance(current, tuple) else current
++                if fence != item.lease_fence:
++                    return "Refused: STALE_TARGET: desktop ownership changed"
++            return None
++
+         cancel_token = _current_cancel.set(cancel)
+-        # R05/F06: the executor goes through the runtime's OWN run_scope so
+-        # the real DesktopSessionManager (lazy session, action lock, single
+-        # owner lease) is in the path -- never a bare ``run=None`` scope for
+-        # real dispatch.
+-        async with runtime.run_scope(
+-            f"mission-{item.execution_id[:8]}",
+-            item.mission_id,
+-            ledger=ledger,
+-            mission_guard=guard,
+-            mission_strict_audit=True,
+-            mission_withhold_screenshots=True,
+-            max_actions=min(item.budget.max_actions, 12),
+-        ):
+-            try:
++        final_token = mission_final_dispatch_check.set(final_check)
++        try:
++            async with runtime.run_scope(
++                f"mission-{item.execution_id[:8]}", item.mission_id, ledger=ledger,
++                mission_guard=guard, mission_strict_audit=True,
++                mission_withhold_screenshots=True, max_actions=min(item.budget.max_actions, 12),
++            ):
+                 yield runtime
+-            finally:
+-                _current_cancel.reset(cancel_token)
+-                _current_item.reset(mission_token)
++        finally:
++            mission_final_dispatch_check.reset(final_token)
++            _current_cancel.reset(cancel_token)
++            _current_item.reset(mission_token)
+ 
+     # -- entry ---------------------------------------------------------------------
+ 
+@@ -566,6 +578,8 @@ class VeloExecutor:
+         from assistant.missions.authority import AuthorityDenied
+         from assistant.missions.contracts import BudgetCharge
+ 
++        if getattr(item.budget, f"max_{resource}", 0) <= 0:
++            raise AuthorityDenied("BUDGET_EXHAUSTED", f"packet {resource} allowance is zero")
+         if self._authority is not None:
+             charge = BudgetCharge(
+                 resource=resource,
+@@ -573,7 +587,7 @@ class VeloExecutor:
+                 call_key=f"{resource}:{item.mission_id}:{item.execution_id}:{new_id()[:8]}",
+             )
+             try:
+-                return await self._authority.reserve(item.mission_id, charge)
++                return await self._authority.reserve(item.mission_id, charge, item=item)
+             except AuthorityDenied:
+                 raise
+         if getattr(item.budget, f"max_{resource}", 0) <= 0:
+@@ -818,12 +832,17 @@ class VeloExecutor:
+                 )
+         effect = _effect_for_tool(tool, item)
+         resource = "observations" if effect == "READ_ONLY" else "actions"
+-        reservation = await self._reserve_for(item, resource)
++        try:
++            reservation = await self._reserve_for(item, resource)
++        except AuthorityDenied as exc:
++            return f"Refused: {exc.category}: {exc.reason}"
+         state = cua_target_state.get() or {}
+         apps = state.get("apps") or {}
+         pid = kwargs.get("pid")
+         app_bundle = apps.get(pid) if isinstance(pid, int) else None
+         observed_at = state.get("observed_at_ms")
++        if tool in {"list_windows", "get_window_state", "get_accessibility_tree"}:
++            observed_at = observed_at or state.get("inventory_observed_at_ms")
+         observed = ScopeObservation(
+             app_bundle=str(app_bundle) if app_bundle else "",
+             pid=pid if isinstance(pid, int) and pid > 0 else None,
+diff --git a/src/assistant/missions/service.py b/src/assistant/missions/service.py
+index 83873d3..caa2c7f 100644
+--- a/src/assistant/missions/service.py
++++ b/src/assistant/missions/service.py
+@@ -512,8 +512,8 @@ class MissionService:
+         """
+         call_key = f"{kind}-v{mission.plan_version}:{new_id()[:8]}"
+         reservation = await self._reserve_deep_call(mission, call_key)
+-        transport = self._transport_for(mission, on_event=on_event)
+         try:
++            transport = self._transport_for(mission, on_event=on_event)
+             if kind == "plan":
+                 assert request is not None
+                 result = await self._controller.plan(
+@@ -597,7 +597,7 @@ class MissionService:
+ 
+     async def _final_review(self, mission: MissionRecord, final_status: str) -> str:
+         """The advisory REVIEW pass, recorded but never decisive."""
+-        if not mission.steps:
++        if not mission.steps or mission.budget_usage.total("deep_calls") == 0:
+             return final_status
+         criteria_checks = await self._store.get_check_results(
+             mission.mission_id, mission.plan_version
+@@ -648,7 +648,10 @@ class MissionService:
+                 released = await self._store.release_approved_blocked_steps(
+                     command.mission_id, mission.plan_version
+                 )
+-                if released:
++                states = await self._store.get_step_states(
++                    command.mission_id, mission.plan_version
++                )
++                if released or "PENDING" in states.values():
+                     self._schedule_resume(command.mission_id)
+         return mission
+ 
+@@ -747,7 +750,9 @@ class MissionService:
+         and the new plan is validated before it can run (an invalid revision
+         leaves the previous state untouched and the refusal recorded).
+         """
+-        await self._reconcile_uncertain(mission.mission_id)
++        reconciled = await self._reconcile_uncertain(mission.mission_id)
++        if reconciled.status == "BLOCKED":
++            return reconciled
+         refreshed = await self._store.get_mission(mission.mission_id)
+         assert refreshed is not None
+         mission = refreshed
+@@ -882,7 +887,7 @@ def _fast_checks_for(recipe_id: str, recipe_args: dict[str, str]) -> list[CheckS
+             return [_check("page-shows-destination", "page_state", {"markers": markers[:4]})]
+     if recipe_id == "search_browser" and recipe_args.get("query"):
+         query = str(recipe_args["query"]).lower()
+-        markers = [w for w in query.split() if len(w) > 2][:4]
++        markers = [w for w in query.split() if w][:4]
+         if markers:
+             return [_check("page-shows-query", "page_state", {"markers": markers})]
+     if recipe_id == "type_text":
+diff --git a/src/assistant/missions/store.py b/src/assistant/missions/store.py
+index 8536223..efd186f 100644
+--- a/src/assistant/missions/store.py
++++ b/src/assistant/missions/store.py
+@@ -303,18 +303,35 @@ class MissionActionLedger:
+         return await self._store._run_tx(self._plan_sync, tool_name, args_digest)
+ 
+     def _plan_sync(self, tool_name: str, args_digest: str) -> int:
+-        now = _now_ms()
+-        row = self._store._conn.execute(
+-            """
+-            INSERT INTO mission_action_ledger (execution_id, mission_id, tool_name,
+-                args_digest, state, created_at, updated_at)
+-            VALUES (?, ?, ?, ?, 'planned', ?, ?)
+-            RETURNING ledger_id
+-            """,
+-            (self.execution_id, self.mission_id, tool_name, args_digest, now, now),
+-        ).fetchone()
+-        assert row is not None
+-        return int(row[0])
++        def tx() -> int:
++            now = _now_ms()
++            # The ledger is the last durable boundary before a mutating tool.
++            # Persist uncertainty in the SAME transaction as its action row.
++            row = self._store._conn.execute(
++                "SELECT a.dispatch_state, a.plan_version, a.control_epoch, "
++                "m.plan_version, m.control_epoch, m.status FROM mission_attempts a "
++                "JOIN missions m ON m.mission_id=a.mission_id "
++                "WHERE a.execution_id=? AND a.mission_id=?",
++                (self.execution_id, self.mission_id),
++            ).fetchone()
++            if row is None or str(row[0]) not in {"INTENT_COMMITTED", "DISPATCHED"}:
++                raise MissionStoreError("action intent is no longer dispatchable")
++            if row[1] != row[3] or row[2] != row[4] or row[5] != "RUNNING":
++                raise StaleControlError("action intent lost its current mission epoch")
++            self._store._conn.execute(
++                "UPDATE mission_attempts SET dispatch_state='DISPATCHED', updated_at_ms=? "
++                "WHERE execution_id=?", (now, self.execution_id),
++            )
++            ledger = self._store._conn.execute(
++                "INSERT INTO mission_action_ledger (execution_id, mission_id, tool_name, "
++                "args_digest, state, created_at, updated_at) "
++                "VALUES (?, ?, ?, ?, 'planned', ?, ?) RETURNING ledger_id",
++                (self.execution_id, self.mission_id, tool_name, args_digest, now, now),
++            ).fetchone()
++            assert ledger is not None
++            return int(ledger[0])
++
++        return self._store._tx(tx)
+ 
+     async def observe(self, ledger_id: int, outcome: str, evidence: str = "") -> None:
+         await self._store._run_tx(self._observe_sync, ledger_id, outcome, evidence)
+@@ -668,11 +685,23 @@ class MissionStore:
+                 )
+             if status in {"COMPLETED", "FAILED", "CANCELLED"}:
+                 raise MissionStoreError(f"cannot plan a terminal mission ({status})")
++            unresolved = self._conn.execute(
++                "SELECT 1 FROM mission_attempts WHERE mission_id=? AND "
++                "(dispatch_state IN ('DISPATCHED', 'RECONCILING') OR "
++                "(dispatch_state='RECONCILED' AND effect_outcome!='NO_EFFECT')) LIMIT 1",
++                (mission_id,),
++            ).fetchone()
++            if unresolved is not None:
++                raise MissionStoreError("cannot replace a plan with an unresolved effect")
+             new_version = expected_version + 1
+             plan_doc = {
+                 "steps": [s.model_dump() for s in steps],
+                 "criteria": [c.model_dump() for c in criteria],
+             }
++            from assistant.memory.policy import contains_secret
++
++            if contains_secret(canonical_json(plan_doc)) or contains_secret(reason + creator):
++                raise MissionStoreError("plan refused by privacy policy")
+             self._conn.execute(
+                 """
+                 INSERT INTO mission_plans (mission_id, plan_version, plan_json, digest,
+@@ -1671,10 +1700,14 @@ class MissionStore:
+ 
+     # -- budget reservations ----------------------------------------------------------
+ 
+-    async def reserve_budget(self, mission_id: str, charge: BudgetCharge) -> BudgetReservation:
+-        return await self._run_tx(self._reserve_budget_sync, mission_id, charge)
++    async def reserve_budget(
++        self, mission_id: str, charge: BudgetCharge, *, item: BoundedWorkItem | None = None
++    ) -> BudgetReservation:
++        return await self._run_tx(self._reserve_budget_sync, mission_id, charge, item)
+ 
+-    def _reserve_budget_sync(self, mission_id: str, charge: BudgetCharge) -> BudgetReservation:
++    def _reserve_budget_sync(
++        self, mission_id: str, charge: BudgetCharge, item: BoundedWorkItem | None = None
++    ) -> BudgetReservation:
+         now = _now_ms()
+ 
+         def tx() -> BudgetReservation:
+@@ -1702,6 +1735,29 @@ class MissionStore:
+                         created_at_ms=now,
+                         consumed=str(existing[2]) == "CONSUMED",
+                     )
++            if item is not None:
++                prefix = f"{charge.resource}:{mission_id}:{item.execution_id}:"
++                if item.mission_id != mission_id or not charge.call_key.startswith(prefix):
++                    raise MissionStoreError("packet budget charge identity mismatch")
++                step = self._conn.execute(
++                    "SELECT s.step_json FROM mission_steps s JOIN mission_attempts a "
++                    "ON a.mission_id=s.mission_id AND a.plan_version=s.plan_version "
++                    "AND a.step_id=s.step_id WHERE a.execution_id=? AND a.mission_id=?",
++                    (item.execution_id, mission_id),
++                ).fetchone()
++                if step is None:
++                    raise UnknownExecution("packet budget has no committed execution")
++                stored = StepSpec.model_validate(self._usage_dict(step[0]))
++                packet_ceiling = min(getattr(item.budget, f"max_{charge.resource}"),
++                                     getattr(stored.budget, f"max_{charge.resource}"))
++                spent = self._conn.execute(
++                    "SELECT COALESCE(SUM(amount),0) FROM mission_budget_reservations "
++                    "WHERE mission_id=? AND resource=? AND call_key LIKE ? "
++                    "AND status IN ('RESERVED','CONSUMED')",
++                    (mission_id, charge.resource, prefix + "%"),
++                ).fetchone()[0]
++                if int(spent) + charge.amount > packet_ceiling:
++                    raise MissionStoreError(f"packet budget exhausted for {charge.resource}")
+             ceiling = getattr(limits, f"max_{charge.resource}")
+             if ceiling is not None and usage.total(charge.resource) + charge.amount > ceiling:
+                 raise MissionStoreError(
+diff --git a/src/assistant/runtime/desktop_queue.py b/src/assistant/runtime/desktop_queue.py
+index 65a9733..1c3b6f6 100644
+--- a/src/assistant/runtime/desktop_queue.py
++++ b/src/assistant/runtime/desktop_queue.py
+@@ -35,7 +35,8 @@ DEFAULT_QUEUE_TIMEOUT_SECONDS = 30.0
+ @dataclass
+ class _QueueWaiter:
+     run_id: str
+-    future: asyncio.Future[None]
++    future: asyncio.Future[LeaseHandle]
++    granted: LeaseHandle | None = None
+     queued_at: float = field(default_factory=time.monotonic)
+ 
+ 
+@@ -100,69 +101,54 @@ class DesktopQueue:
+         logger.info("desktop_queue_%s", event, extra={"event": f"desktop_queue_{event}",
+                                                       "run_id": run_id, **extra})
+ 
+-    async def acquire(self, run_id: str, *, timeout: float | None = None) -> LeaseHandle:
+-        """Acquire the desktop lease, queuing if another run owns it.
++    def _grant_locked(self, run_id: str, *, queued: bool) -> LeaseHandle:
++        self._generation += 1
++        self._owner = run_id
++        self._owner_fence = uuid.uuid4().hex
++        handle = LeaseHandle(run_id, self._owner_fence, self._generation, time.monotonic())
++        self._log("granted", run_id, generation=handle.generation,
++                  fence=handle.fence, queued=queued)
++        return handle
+ 
+-        C06/N09: acquisition is strictly single-flight. A concurrent acquire
+-        by the SAME run id queues behind the active lease instead of being
+-        re-granted a second fence — two callers in one mission can never
+-        both believe they own the desktop with different fences.
+-        """
+-        wait_limit = self._timeout if timeout is None else timeout
+-        waiter: _QueueWaiter | None = None
++    def _grant_next_locked(self) -> None:
++        while self._waiters:
++            waiter = self._waiters.pop(0)
++            if waiter.future.done():
++                continue
++            # Reserve ownership BEFORE waking the task. An arriving caller
++            # cannot barge into the gap between notification and resumption.
++            waiter.granted = self._grant_locked(waiter.run_id, queued=True)
++            waiter.future.set_result(waiter.granted)
++            return
+ 
++    async def acquire(self, run_id: str, *, timeout: float | None = None) -> LeaseHandle:
++        """Acquire one unique lease; repeated run IDs are separate waiters."""
++        wait_limit = self._timeout if timeout is None else timeout
+         async with self._lock:
+             if self._owner is None:
+-                self._generation += 1
+-                self._owner = run_id
+-                self._owner_fence = uuid.uuid4().hex
+-                self._log("granted", run_id, generation=self._generation,
+-                          fence=self._owner_fence, queued=False)
+-                return LeaseHandle(run_id, self._owner_fence, self._generation,
+-                                   time.monotonic())
+-
+-            loop = asyncio.get_running_loop()
+-            waiter = _QueueWaiter(run_id=run_id, future=loop.create_future())
++                return self._grant_locked(run_id, queued=False)
++            waiter = _QueueWaiter(run_id, asyncio.get_running_loop().create_future())
+             self._waiters.append(waiter)
+             self._log("waiting", run_id, owner=self._owner, position=len(self._waiters))
+-
+         try:
+-            await asyncio.wait_for(waiter.future, timeout=wait_limit)
+-        except TimeoutError as exc:
++            handle = await asyncio.wait_for(waiter.future, timeout=wait_limit)
+             async with self._lock:
+-                if waiter in self._waiters:
+-                    self._waiters.remove(waiter)
+-                granted = self._owner == run_id
+-                if granted:
+-                    # The grant landed as the timeout fired. We hold the
+-                    # lease; release it instead of leaving a ghost owner.
+-                    self._release_locked(run_id, reason="timeout_released_grant")
+-            raise DesktopLeaseBusy(
+-                f"Timed out waiting for desktop lease after {wait_limit}s (held by {self._owner!r})"
+-            ) from exc
+-        except asyncio.CancelledError:
++                if not self.check_usable(handle):
++                    raise DesktopLeaseBusy("lease invalidated before acquisition completed")
++                return handle
++        except (TimeoutError, asyncio.CancelledError) as exc:
+             async with self._lock:
+                 if waiter in self._waiters:
+                     self._waiters.remove(waiter)
+-                granted = self._owner == run_id
+-                if granted:
+-                    # Cancelled exactly when the queue granted (the race the
+-                    # original code lost): release before propagating.
+-                    self._release_locked(run_id, reason="cancelled_released_grant")
++                # Run identity alone cannot prove THIS waiter owns a grant.
++                if waiter.granted is not None:
++                    self._release_locked(run_id, reason="abandoned_grant",
++                                         fence=waiter.granted.fence)
++            if isinstance(exc, TimeoutError):
++                raise DesktopLeaseBusy(
++                    f"Timed out waiting for desktop lease after {wait_limit}s"
++                ) from exc
+             raise
+-        async with self._lock:
+-            # The future resolved, but a cancellation may have been delivered
+-            # in the same tick; only keep the lease if this task is alive.
+-            if waiter.future.cancelled():
+-                self._release_locked(run_id, reason="grant_raced_cancellation")
+-                raise asyncio.CancelledError
+-            self._generation += 1
+-            self._owner = run_id
+-            self._owner_fence = uuid.uuid4().hex
+-            handle = LeaseHandle(run_id, self._owner_fence, self._generation, time.monotonic())
+-            self._log("granted", run_id, generation=self._generation,
+-                      fence=self._owner_fence, queued=True)
+-            return handle
+ 
+     def _release_locked(self, run_id: str, *, reason: str, fence: str = "") -> bool:
+         """Release only the exact lease the caller still holds.
+@@ -172,7 +158,6 @@ class DesktopQueue:
+         newer grant) cannot release the newer lease out from under it.
+         """
+         if self._owner != run_id:
+-            self._waiters = [w for w in self._waiters if w.run_id != run_id]
+             return False
+         if fence and fence != self._owner_fence:
+             self._log("stale_release_refused", run_id,
+@@ -181,13 +166,7 @@ class DesktopQueue:
+         self._owner = None
+         self._owner_fence = ""
+         self._log("released", run_id, reason=reason)
+-        while self._waiters:
+-            next_waiter = self._waiters.pop(0)
+-            if not next_waiter.future.cancelled():
+-                self._log("granted", next_waiter.run_id, generation=self._generation,
+-                          fence="", note="handoff_pending")
+-                next_waiter.future.set_result(None)
+-                break
++        self._grant_next_locked()
+         return True
+ 
+     async def release(self, run_id: str, *, fence: str = "") -> None:
+@@ -218,13 +197,7 @@ class DesktopQueue:
+             self._owner = None
+             self._owner_fence = ""
+             self._log("stopped", target, generation=self._generation)
+-            # Wake the next waiter: it will observe the generation change and
+-            # re-check before acting.
+-            while self._waiters:
+-                next_waiter = self._waiters.pop(0)
+-                if not next_waiter.future.cancelled():
+-                    next_waiter.future.set_result(None)
+-                    break
++            self._grant_next_locked()
+             return {"stopped": True, "owner": target, "certain": True}
+ 
+     def check_usable(self, handle: LeaseHandle) -> bool:
+@@ -244,12 +217,12 @@ class QueuedDesktopSessionManager:
+         self.queue = queue or DesktopQueue()
+ 
+     async def open_run(self, run_id: str, timeout: float | None = None) -> AsyncIterator[Any]:
+-        await self.queue.acquire(run_id, timeout=timeout)
++        handle = await self.queue.acquire(run_id, timeout=timeout)
+         try:
+             async with self.inner.open(run_id) as run:
+                 yield run
+         finally:
+-            await self.queue.release(run_id)
++            await self.queue.release(run_id, fence=handle.fence)
+ 
+     @asynccontextmanager
+     async def lease(
+diff --git a/src/assistant/tools/policy.py b/src/assistant/tools/policy.py
+index 38588cb..fbb2a2a 100644
+--- a/src/assistant/tools/policy.py
++++ b/src/assistant/tools/policy.py
+@@ -11,6 +11,7 @@ from __future__ import annotations
+ import asyncio
+ import contextvars
+ import logging
++import time
+ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+ from contextlib import asynccontextmanager, nullcontext
+ from dataclasses import dataclass
+@@ -490,6 +491,11 @@ mission_dispatch_guard: contextvars.ContextVar[MissionDispatchGuard | None] = (
+     contextvars.ContextVar("mission_dispatch_guard", default=None)
+ )
+ 
++# Synchronous final admission, after all awaited authorization/audit work.
++mission_final_dispatch_check: contextvars.ContextVar[Callable[[], str | None] | None] = (
++    contextvars.ContextVar("mission_final_dispatch_check", default=None)
++)
++
+ #: Mission mode makes the action ledger authoritative: a failed intent write
+ #: BLOCKS the mutation (fail closed, STORAGE_UNAVAILABLE) instead of the
+ #: legacy fail-open behavior, which remains for non-mission runs.
+@@ -838,6 +844,8 @@ def _remember_app_identities(name: str, structured: dict[str, Any], state: dict[
+     """
+     apps: dict[int, str] = state.setdefault("apps", {})
+     if name == "list_apps":
++        state["inventory_observed_at_ms"] = int(time.time() * 1000)
++        apps.clear()
+         for entry in structured.get("apps") or structured.get("applications") or []:
+             if not isinstance(entry, dict):
+                 continue
+@@ -1063,6 +1071,15 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
+                         f"{name} (storage unavailable). Nothing was dispatched; the "
+                         "mission will reconcile instead of acting unrecorded."
+                     )
++        if run is not None:
++            run.require_active()
++        final_check = mission_final_dispatch_check.get()
++        if final_check is not None:
++            refusal = final_check()
++            if refusal is not None:
++                if ledger_id is not None:
++                    await _ledger_observe(ledger, ledger_id, "refused", "final_admission")
++                return refusal
+         try:
+             result = await original(**kwargs)
+         except CuaBudgetExceeded:
+diff --git a/tests/unit/test_mission_budgets.py b/tests/unit/test_mission_budgets.py
+index 3a87118..7a7de1c 100644
+--- a/tests/unit/test_mission_budgets.py
++++ b/tests/unit/test_mission_budgets.py
+@@ -228,14 +228,16 @@ async def test_per_action_ledger_records_intent_and_outcome(tmp_path: Any) -> No
+     store = await MissionStore.connect(db)
+     await store.setup()
+     mission_id = await _mission(store)
+-    execution_id = new_id()
+-    store._conn.execute(
+-        "INSERT INTO mission_attempts (execution_id, mission_id, plan_version, "
+-        "step_id, attempt, control_epoch, packet_digest, dispatch_state, "
+-        "effect_class, created_at_ms, updated_at_ms) "
+-        "VALUES (?, ?, 1, 's', 1, 1, 'd', 'DISPATCHED', 'REPEATABLE_LOCAL', ?, ?)",
+-        (execution_id, mission_id, _now(), _now()),
+-    )
++    from assistant.missions.contracts import StepSpec
++
++    scope = Scope(owner_id="owner")
++    await store.commit_plan(mission_id, 0, [StepSpec(
++        step_id="s", ordinal=1, objective="fixture", recipe_id="semantic_ui",
++        scope=scope, budget=BudgetLimits(), effect_class="REPEATABLE_LOCAL",
++    )], [])
++    item = await store.claim_step(mission_id, 1, 1, tool_ids=["click"])
++    assert item is not None
++    execution_id = item.execution_id
+     ledger = MissionActionLedger(store, execution_id=execution_id, mission_id=mission_id)
+     ledger_id = await ledger.plan(tool_name="click", args_digest="abc" * 10)
+     planned = await ledger.actions_in_state("planned")
+diff --git a/tests/unit/test_mission_desktop_queue.py b/tests/unit/test_mission_desktop_queue.py
+index 12af39c..8331c57 100644
+--- a/tests/unit/test_mission_desktop_queue.py
++++ b/tests/unit/test_mission_desktop_queue.py
+@@ -206,3 +206,35 @@ async def test_release_with_wrong_fence_is_refused() -> None:
+     )
+     await queue.release("mission-a", fence=handle.fence)
+     assert queue.current_owner is None
++
++
++@pytest.mark.parametrize("cancel", [False, True])
++async def test_duplicate_waiter_never_releases_original_owner(cancel: bool) -> None:
++    q = DesktopQueue()
++    original = await q.acquire("same")
++    waiter = asyncio.create_task(q.acquire("same", timeout=0.01))
++    await asyncio.sleep(0)
++    if cancel:
++        waiter.cancel()
++    with pytest.raises(asyncio.CancelledError if cancel else DesktopLeaseBusy):
++        await waiter
++    assert q.check_usable(original)
++    await q.release("same", fence=original.fence)
++
++
++async def test_handoff_reserves_owner_before_waiter_wakes() -> None:
++    q = DesktopQueue()
++    a = await q.acquire("a")
++    b = asyncio.create_task(q.acquire("b"))
++    await asyncio.sleep(0)
++    await q.release("a", fence=a.fence)
++    assert q.current_owner == "b"
++    c = asyncio.create_task(q.acquire("c"))
++    bh = await b
++    await asyncio.sleep(0)
++    assert not c.done()
++    assert q.check_usable(bh)
++    await q.release("b", fence=bh.fence)
++    ch = await c
++    assert q.check_usable(ch)
++    await q.release("c", fence=ch.fence)
+diff --git a/tests/unit/test_mission_service.py b/tests/unit/test_mission_service.py
+index ff30540..76227a0 100644
+--- a/tests/unit/test_mission_service.py
++++ b/tests/unit/test_mission_service.py
+@@ -603,7 +603,7 @@ async def test_np04_recovery_uses_reserved_transport(store: MissionStore) -> Non
+         failure_category="STALE_TARGET",
+     )
+     await service._escalate(mission.mission_id, item, result)
+-    assert ("RECOVER", "submit_mission_response") in scripted.calls, (
++    assert ("RECOVER", "submit_recovery_decision") in scripted.calls, (
+         "recovery must invoke the real transport, not record a no-transport pause"
+     )
+     settled = await store.get_mission(mission.mission_id)
+diff --git a/tests/unit/test_sani_tts_worker.py b/tests/unit/test_sani_tts_worker.py
+index e234714..23fff4d 100644
+--- a/tests/unit/test_sani_tts_worker.py
++++ b/tests/unit/test_sani_tts_worker.py
+@@ -159,8 +159,8 @@ def test_cancel_during_synthesis_stops_chunks(tts: Any) -> None:
+ def test_buffer_bound_enforced(tts: Any) -> None:
+     class _FloodEngine(tts.SilenceEngine):
+         def synthesize(self, text: str, utterance_id: str, generation: int):  # type: ignore[no-untyped-def]
+-            for _ in range(64):  # 64 x 0.5s >> 2s bound
+-                yield (24000, b"\x00\x00\x00\x00" * 12000)
++            # A single oversized chunk exceeds the bounded pipe write.
++            yield (24000, b"\x00\x00\x00\x00" * 72000)
+ 
+     events = _serve(tts, [{"type": "request", "request": _request_payload()}],
+                     engine=_FloodEngine())
+@@ -187,3 +187,23 @@ def test_ack_requests_finish_without_audio(tts: Any) -> None:
+     events = _serve(tts, [{"type": "request", "request": _request_payload(kind="ACK")}])
+     assert events[-1]["event"] == "finished"
+     assert not any(e["event"] == "chunk" for e in events)
++
++
++def test_engine_error_identifies_queue_entry(tts: Any) -> None:
++    events = _serve(tts, [{"type": "request", "request": _request_payload()}],
++                    engine=tts.UnspecifiedEngine())
++    error = next(e for e in events if e["event"] == "error")
++    assert error["utterance_id"] == "utt-1"
++    assert error["generation"] == 1
++
++
++def test_streaming_long_speech_is_not_lifetime_buffered(tts: Any) -> None:
++    class LongEngine(tts.SilenceEngine):
++        def synthesize(self, text: str, utterance_id: str, generation: int):
++            for _ in range(200):
++                yield (24000, b"\x00" * (12000 * 4))
++    events = _serve(tts, [{"type": "request", "request": _request_payload()}],
++                    engine=LongEngine())
++    assert not any(e["event"] == "error" for e in events)
++    assert len([e for e in events if e["event"] == "chunk"]) == 200
++    assert events[-1]["event"] == "finished"
+diff --git a/tests/unit/test_verify_phase1_launcher.py b/tests/unit/test_verify_phase1_launcher.py
+index 87f670e..2aafa76 100644
+--- a/tests/unit/test_verify_phase1_launcher.py
++++ b/tests/unit/test_verify_phase1_launcher.py
+@@ -336,3 +336,9 @@ def test_live_suites_declare_expected_case_inventory() -> None:
+ 
+     for suite in LIVE_SUITES:
+         assert EXPECTED_LIVE_CASES.get(suite), f"{suite} declares no expected cases"
++
++
++def test_corrective_boundaries_are_in_normal_integration_gate():
++    from scripts.verify_phase1 import SUITE_FILES
++
++    assert "tests/integration/test_phase1_corrective_boundaries.py" in SUITE_FILES["integration"][1]
+diff --git a/tests/integration/test_phase1_corrective_boundaries.py b/tests/integration/test_phase1_corrective_boundaries.py
+new file mode 100644
+index 0000000..6094250
+--- /dev/null
++++ b/tests/integration/test_phase1_corrective_boundaries.py
+@@ -0,0 +1,299 @@
++"""Held-out Phase 1 regressions using real persistence and policy boundaries."""
++from __future__ import annotations
++
++import asyncio
++import time
++from typing import Any
++
++import pytest
++from langchain_core.tools import StructuredTool
++
++from assistant.missions.authority import MissionAuthority
++from assistant.missions.contracts import (
++    BudgetLimits,
++    CancellationToken,
++    MissionControl,
++    RequestEnvelope,
++    Scope,
++    StepSpec,
++    new_id,
++)
++from assistant.missions.controller import ControllerRole
++from assistant.missions.executor import VeloExecutor
++from assistant.missions.store import MissionActionLedger, MissionStore
++from assistant.tools.policy import apply_tool_policy, cua_run_scope, cua_target_state
++
++
++@pytest.fixture
++async def store(tmp_path: Any) -> Any:
++    value = await MissionStore.connect(tmp_path / "corrective.db")
++    await value.setup()
++    yield value
++    await value.close()
++
++
++async def claimed(store: MissionStore) -> Any:
++    scope = Scope(owner_id="owner", allowed_apps=["com.fixture.safe"],
++                  permitted_effects={"READ_ONLY", "REPEATABLE_LOCAL"})
++    request = RequestEnvelope(request_id=new_id(), conversation_id="corrective",
++                              owner_id="owner", input_origin="typed_final",
++                              input_revision=1, text="fixture",
++                              submitted_at_ms=int(time.time() * 1000))
++    mission = await store.claim_request(request, "d" * 64, goal="fixture", scope=scope,
++                                        limits=BudgetLimits())
++    mission = await store.commit_plan(mission.mission_id, 0, [StepSpec(
++        step_id="s", ordinal=1, objective="click fixture", recipe_id="semantic_ui",
++        scope=scope, budget=BudgetLimits(), effect_class="REPEATABLE_LOCAL")], [])
++    item = await store.claim_step(mission.mission_id, 1, 1, tool_ids=["click"])
++    return mission, item
++
++
++async def test_real_wrapped_effect_remains_uncertain_after_pause(store: MissionStore) -> None:
++    """A delayed tool reply must not let pause turn a real effect into a safe retry."""
++    from types import SimpleNamespace
++
++    mission, item = await claimed(store)
++    entered, release = asyncio.Event(), asyncio.Event()
++    effects: list[str] = []
++
++    async def click(pid: int, window_id: int) -> str:
++        """Perform an in-memory effect then delay acknowledgment."""
++        effects.append("clicked")
++        entered.set()
++        await release.wait()
++        return "clicked"
++
++    async def no_runtime() -> None:
++        return None
++
++    executor = VeloExecutor(SimpleNamespace(), get_runtime=no_runtime,
++                            authority=MissionAuthority(store), store=store)
++    cancel = CancellationToken()
++
++    async def guard(name: str, args: dict[str, Any]) -> str | None:
++        return await executor._guard_dispatch(item, name, args, cancel)
++
++    tools, _ = apply_tool_policy([StructuredTool.from_function(coroutine=click, name="click")])
++    ledger = MissionActionLedger(store, execution_id=item.execution_id,
++                                mission_id=mission.mission_id)
++    async with cua_run_scope(budget=None, run=None, ledger=ledger,
++                             mission_guard=guard, mission_strict_audit=True):
++        state = cua_target_state.get()
++        assert state is not None
++        state["apps"] = {9: "com.fixture.safe"}
++        state["observed_at_ms"] = int(time.time() * 1000)
++        task = asyncio.create_task(tools[0].ainvoke({"pid": 9, "window_id": 2}))
++        await asyncio.wait_for(entered.wait(), 2)
++        try:
++            await store.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
++                expected_plan_version=1, expected_control_epoch=1, kind="PAUSE"))
++            attempt = await store.get_attempt(item.execution_id)
++            assert attempt is not None
++            assert attempt["dispatch_state"] == "RECONCILING"
++            resumed = await store.control(MissionControl(control_id=new_id(),
++                mission_id=mission.mission_id, expected_plan_version=1,
++                expected_control_epoch=2, kind="RESUME"))
++            assert await store.claim_step(mission.mission_id, 1, resumed.control_epoch,
++                                          tool_ids=["click"]) is None
++            assert effects == ["clicked"]
++        finally:
++            release.set()
++            await task
++
++
++async def test_invalidated_intent_cannot_append_dispatch_ledger(store: MissionStore) -> None:
++    mission, item = await claimed(store)
++    await store.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
++        expected_plan_version=1, expected_control_epoch=1, kind="PAUSE"))
++    ledger = MissionActionLedger(store, execution_id=item.execution_id,
++                                mission_id=mission.mission_id)
++    from assistant.missions.store import MissionStoreError
++    with pytest.raises(MissionStoreError):
++        await ledger.plan(tool_name="click", args_digest="fixture")
++
++
++@pytest.mark.parametrize("outcome", ["UNKNOWN", "CONFIRMED"])
++async def test_revision_cannot_erase_reconciled_effect(store: MissionStore, outcome: str) -> None:
++    from assistant.missions.store import MissionStoreError
++    mission, item = await claimed(store)
++    await store.mark_dispatched(item.execution_id)
++    await store.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
++        expected_plan_version=1, expected_control_epoch=1, kind="REVISE", revision_request="again"))
++    await store.mark_attempt_reconciled(item.execution_id, outcome)
++    with pytest.raises(MissionStoreError):
++        await store.commit_plan(mission.mission_id, 1, mission.steps, [])
++
++
++async def test_normal_resume_schedules_pending_work(store: MissionStore, monkeypatch: Any) -> None:
++    from tests.unit.test_mission_service import _service
++
++    mission, _ = await claimed(store)
++    svc, _ = _service(store)
++    scheduled: list[str] = []
++    monkeypatch.setattr(svc, "_schedule_resume", scheduled.append)
++    await svc.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
++        expected_plan_version=1, expected_control_epoch=1, kind="PAUSE"))
++    await svc.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
++        expected_plan_version=1, expected_control_epoch=2, kind="RESUME"))
++    assert scheduled == [mission.mission_id]
++
++
++@pytest.mark.parametrize("role,registered", [
++    ("RECOVER", "submit_recovery_decision"), ("REVIEW", "submit_final_review")])
++async def test_controller_selects_registered_submission(
++    role: ControllerRole, registered: str,
++) -> None:
++    from assistant.missions.controller import DeepController
++    async def transport(actual_role: str, tool: str, payload: Any) -> Any:
++        assert actual_role == role
++        assert tool == registered
++        return {}
++    await DeepController(None)._call(role, "{}", transport)
++
++
++async def test_plan_secret_is_rejected_before_any_row(store: MissionStore) -> None:
++    from assistant.missions.store import MissionStoreError
++    mission, _ = await claimed(store)
++    secret = "sk-corrective-synthetic-secret-12345678901234567890"
++    step = mission.steps[0].model_copy(update={"objective": secret})
++    with pytest.raises(MissionStoreError):
++        await store.commit_plan(mission.mission_id, 1, [step], [])
++    rows = store._conn.execute("SELECT plan_json FROM mission_plans").fetchall()
++    assert all(secret not in row[0] for row in rows)
++
++
++async def test_zero_packet_jev_does_not_call_provider_with_authority(store: MissionStore) -> None:
++    from assistant.velo.contracts import DecisionStatus, JevDecision
++    from tests.unit.test_mission_executor import _executor, _RecordingJev
++    from tests.unit.velo_fakes import standard_tools
++    _, item = await claimed(store)
++    item = item.model_copy(update={"budget": BudgetLimits(max_jev_calls=0)})
++    jev = _RecordingJev(JevDecision(status=DecisionStatus.ACT, selected_id="candidate"))
++    executor, _ = _executor(standard_tools(), jev=jev, authority=MissionAuthority(store))
++    await executor._choose_candidate(item, [{"element_token": "candidate", "role": "AXButton",
++                                            "label": "fixture", "purpose": "primary"}])
++    assert jev.requests == []
++
++
++async def test_targeted_discovery_requires_named_fresh_scope(store: MissionStore) -> None:
++    from assistant.missions.authority import AuthorityDenied
++    from assistant.missions.contracts import ActionIntent, ScopeObservation
++    mission, item = await claimed(store)
++    item = item.model_copy(update={"allowed_action_scope": item.allowed_action_scope.model_copy(
++        update={"tool_ids": ["get_window_state"]})})
++    # _check_surface is the production containment check; intent integrity is
++    # orthogonal to whether an unknown PID may be read.
++    authority = MissionAuthority(store)
++    action = ActionIntent(tool="get_window_state", args={"pid": 99, "window_id": 1},
++                          effect_class="READ_ONLY")
++    with pytest.raises(AuthorityDenied):
++        authority._check_surface(item, item.expected_scope, action, ScopeObservation(
++            app_bundle="", pid=99, window_id=1, captured_at_ms=0))
++    authority._check_surface(item, item.expected_scope, action, ScopeObservation(
++        app_bundle="com.fixture.safe", pid=99, window_id=1,
++        captured_at_ms=int(time.time() * 1000)))
++
++
++async def test_packet_budget_counts_more_than_zero(store: MissionStore) -> None:
++    from types import SimpleNamespace
++
++    from assistant.missions.authority import AuthorityDenied
++    _, item = await claimed(store)
++    item = item.model_copy(update={"budget": BudgetLimits(max_jev_calls=1)})
++    async def no_runtime() -> None:
++        return None
++    authority = MissionAuthority(store)
++    executor = VeloExecutor(SimpleNamespace(), get_runtime=no_runtime,
++                            authority=authority, store=store)
++    first = await executor._reserve_for(item, "jev_calls")
++    assert first is not None
++    await authority.settle(first, consumed=True)
++    # Fresh executor rules out an in-memory-only ceiling.
++    resumed = VeloExecutor(SimpleNamespace(), get_runtime=no_runtime,
++                           authority=authority, store=store)
++    with pytest.raises(AuthorityDenied):
++        await resumed._reserve_for(item, "jev_calls")
++
++
++async def test_expected_payload_cannot_satisfy_page_observation(store: MissionStore,
++                                                               tmp_path: Any) -> None:
++    from assistant.missions.contracts import CheckSpec, EvidenceCandidate
++    from assistant.missions.evidence import EvidenceStore
++    mission, item = await claimed(store)
++    evidence = EvidenceStore(tmp_path / "e", store)
++    ref = await evidence.put(EvidenceCandidate(kind="ui_state", payload={
++        "elements": [{"role": "AXStaticText", "label": "unrelated screen"}],
++        "resolved_payloads": {"user_text_1": "expected-marker"}},
++        captured_at_ms=int(time.time() * 1000)), mission_id=mission.mission_id)
++    result = await evidence.verify(CheckSpec(check_id="page", verifier_id="page_state",
++        verifier_version="1.0.0", expected={"markers": ["expected-marker"]}), item, refs=[ref])
++    assert not result.passed
++
++
++def test_short_search_has_required_outcome() -> None:
++    from assistant.missions.service import _fast_checks_for
++    assert any(c.required for c in _fast_checks_for("search_browser", {"query": "AI"}))
++
++
++async def test_fast_path_does_not_invoke_review_provider(store: MissionStore) -> None:
++    from tests.unit.test_mission_service import _request, _safari_world, _service
++    from tests.unit.velo_fakes import reset_world
++    reset_world()
++    _safari_world()
++    service, _ = _service(store)
++    calls: list[str] = []
++    async def transport(role: str, tool: str, payload: Any) -> Any:
++        calls.append(role)
++        return {"review": {"supported_summary": "fixture"}}
++    service._transport_factory = lambda mission: transport
++    try:
++        result = await service.submit(_request("open safari"), cancel=CancellationToken())
++        assert result.status == "COMPLETED"
++        assert calls == []
++        assert result.budget_usage.total("deep_calls") == 0
++    finally:
++        reset_world()
++
++
++async def test_stop_during_ledger_await_prevents_actual_effect(store: MissionStore,
++                                                             monkeypatch: Any) -> None:
++    from contextlib import asynccontextmanager
++    from types import SimpleNamespace
++
++    import assistant.missions.store as storage
++
++    mission, item = await claimed(store)
++    cancel = CancellationToken()
++    effects: list[str] = []
++    async def click(pid: int, window_id: int) -> str:
++        """Synthetic device effect."""
++        effects.append("effect")
++        return "clicked"
++    wrapped, _ = apply_tool_policy([StructuredTool.from_function(coroutine=click, name="click")])
++    @asynccontextmanager
++    async def run_scope(*args: Any, **kwargs: Any) -> Any:
++        # Only the device/session boundary is synthetic; policy scope,
++        # authority, ledger, executor and the final effect wrapper are real.
++        async with cua_run_scope(budget=None, run=None, ledger=kwargs["ledger"],
++                                 mission_guard=kwargs["mission_guard"],
++                                 mission_strict_audit=True):
++            yield None
++    runtime = SimpleNamespace(run_scope=run_scope)
++    async def get_runtime() -> Any:
++        return runtime
++    executor = VeloExecutor(SimpleNamespace(), get_runtime=get_runtime,
++                            authority=MissionAuthority(store), store=store)
++    original = storage.MissionActionLedger.plan
++    async def interleaved(ledger: Any, **kwargs: Any) -> int:
++        result = await original(ledger, **kwargs)
++        cancel.cancel()
++        return result
++    monkeypatch.setattr(storage.MissionActionLedger, "plan", interleaved)
++    async with executor.work_scope(item, cancel=cancel):
++        state = cua_target_state.get()
++        assert state is not None
++        state["apps"] = {9: "com.fixture.safe"}
++        state["observed_at_ms"] = int(time.time() * 1000)
++        result = await wrapped[0].ainvoke({"pid": 9, "window_id": 2})
++    assert effects == []
++    assert "cancel" in result.lower()

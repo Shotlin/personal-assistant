@@ -1,0 +1,20 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_invalidated_intent_cannot_append_dispatch_ledger _____________
+
+store = <assistant.missions.store.MissionStore object at 0x1102706b0>
+
+    async def test_invalidated_intent_cannot_append_dispatch_ledger(store: MissionStore) -> None:
+        mission, item = await claimed(store)
+        await store.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
+            expected_plan_version=1, expected_control_epoch=1, kind="PAUSE"))
+        ledger = MissionActionLedger(store, execution_id=item.execution_id,
+                                    mission_id=mission.mission_id)
+        from assistant.missions.store import MissionStoreError
+>       with pytest.raises(MissionStoreError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE MissionStoreError
+
+tests/integration/test_phase1_corrective_boundaries.py:111: Failed
+=========================== short test summary info ============================
+FAILED tests/integration/test_phase1_corrective_boundaries.py::test_invalidated_intent_cannot_append_dispatch_ledger

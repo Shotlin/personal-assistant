@@ -26,6 +26,7 @@ not:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -73,10 +74,13 @@ class CuaAdapter:
         *,
         on_event: OnEvent,
         cancel_check: IsCancelled | None = None,
+        sight: Any = None,
     ) -> None:
         self._tools = tools
         self._on_event = on_event
         self._cancel_check = cancel_check
+        #: Eyes + remembered spots (``velo.sight.SightKit``); None = tree only.
+        self.sight = sight
 
     # -- dispatch -------------------------------------------------------------
 
@@ -107,7 +111,12 @@ class CuaAdapter:
                     f"{entry.tool!r}; refusing to use it as evidence"
                 )
             structured = entry.payload
-        return ToolReply(tool=tool_name, text=text, structured=structured, ok=True)
+        # D06: the wrapper answers refusals (guard, targeting, sensitive
+        # target) as ordinary text, so ok must reflect that — a refused
+        # dispatch is never a successful one.
+        lowered = text.strip().lower()
+        ok = not (lowered.startswith("error") or lowered.startswith("refused"))
+        return ToolReply(tool=tool_name, text=text, structured=structured, ok=ok)
 
     async def acting_call(self, task: TaskState, tool_name: str, **kwargs: Any) -> ToolReply:
         """A desktop-changing call: cancellation and budget first, then dispatch."""
@@ -252,6 +261,8 @@ class CuaAdapter:
         window_id: int,
         *,
         for_verification: bool = False,
+        max_elements: int = 120,
+        settle: bool = False,
     ) -> dict[str, Any]:
         """The window's element tree; the source of element tokens and evidence.
 
@@ -265,10 +276,28 @@ class CuaAdapter:
             pid=pid,
             window_id=window_id,
             include_screenshot=False,
-            max_elements=120,
+            max_elements=max_elements,
         )
         payload = reply.structured or _json_payload(reply.text)
-        return payload if isinstance(payload, dict) else {}
+        state: dict[str, Any] = payload if isinstance(payload, dict) else {}
+        if settle:
+            # An Electron/Chromium app answers its FIRST accessibility request
+            # with only the menu bar and builds the real tree afterwards. Look
+            # again (as verification reads, so they are not counted as stalled
+            # churn) before concluding there is nothing there.
+            from assistant.velo.scene import looks_unhydrated
+
+            for _ in range(4):
+                if not looks_unhydrated(state):
+                    break
+                await asyncio.sleep(0.6)
+                again = await self.verification_call(
+                    task, "get_window_state", pid=pid, window_id=window_id,
+                    include_screenshot=False, max_elements=max_elements,
+                )
+                payload = again.structured or _json_payload(again.text)
+                state = payload if isinstance(payload, dict) else state
+        return state
 
     @staticmethod
     def scene_digest(state: dict[str, Any]) -> str:

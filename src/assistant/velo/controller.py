@@ -21,10 +21,14 @@ acknowledgement is never presented as completion.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -35,6 +39,7 @@ from assistant.core.registry import AgentDescriptor
 from assistant.memory.namespaces import thread_id_for_sani
 from assistant.observability.timing import RunTimeline
 from assistant.tools.policy import cua_target_state
+from assistant.velo import scene
 from assistant.velo.adapter import CuaAdapter
 from assistant.velo.contracts import (
     Candidate,
@@ -48,10 +53,19 @@ from assistant.velo.contracts import (
     TaskCancelled,
     TaskState,
 )
-from assistant.velo.parse import ParsedCommand, parse
+from assistant.velo.parse import ParsedCommand, parse, parse_chain
+from assistant.velo.planner import Plan, looks_like_a_task, make_plan
 from assistant.velo.recipes import RecipeResult, execute
+from assistant.velo.scene import PENDING, SCENES
+from assistant.velo.sight import SightKit
+from assistant.velo.uimemory import UiMemory
+from assistant.velo.vision import VisionLocator
 
 logger = logging.getLogger("assistant.velo.controller")
+
+#: Bounds on a planned run: re-plans after a failed step, and total wall-clock.
+MAX_REPLANS = 2
+MAX_PLAN_SECONDS = 150
 
 OnEvent = Callable[[str, dict[str, Any]], Awaitable[None]]
 IsCancelled = Callable[[], bool]
@@ -74,6 +88,20 @@ class VeloEntry:
         self._jev_factory = jev_factory
         # A07 fix: per-run cancellation instead of one shared boolean.
         self._run_tokens: dict[str, CancellationToken] = {}
+        self._sight = self._build_sight(settings)
+        self._plan_model: Any = None
+
+    @staticmethod
+    def _build_sight(settings: Any) -> SightKit:
+        """Eyes plus remembered spots; memory is skipped when there is no data dir."""
+        memory = None
+        data_dir = str(getattr(settings, "sani_data_dir", "") or "")
+        if data_dir:
+            try:
+                memory = UiMemory(Path(data_dir).expanduser() / "ui-memory.db")
+            except Exception:  # noqa: BLE001 -- memory is a bonus; never block startup
+                logger.warning("ui_memory_unavailable", exc_info=True)
+        return SightKit(VisionLocator(settings), memory)
 
     @property
     def descriptor(self) -> AgentDescriptor:
@@ -145,9 +173,27 @@ class VeloEntry:
                 timeline_events["first_action"] = timeline.elapsed_ms
             await on_event(kind, data)
 
-        command = parse(text)
+        command = self._answer_to_pending(text, conversation) or parse(text)
+        command = command or self._title_command(text, conversation)
 
-        if command is not None:
+        chain = parse_chain(text) if command is None else None
+        plan = None
+        if command is None and chain is None and self._planner_on() and looks_like_a_task(text):
+            plan = await self._plan(text)
+        if plan is not None and plan.kind == "plan":
+            timeline.mark("route_decided", metadata={"route": Route.PLAN.value})
+            result = await self._run_plan(
+                plan.steps, text, conversation, event_with_timing, cancel_check, run_key
+            )
+        elif plan is not None and plan.kind == "ask":
+            timeline.mark("route_decided", metadata={"route": Route.PLAN.value})
+            result = self._question_result(plan.question, conversation)
+        elif chain is not None:
+            timeline.mark("route_decided", metadata={"route": Route.LOCAL.value})
+            result = await self._run_chain(
+                chain, conversation, event_with_timing, cancel_check, run_key
+            )
+        elif command is not None:
             # Route A: explicit input decided this; no model call belongs here.
             timeline.mark("route_decided", metadata={"route": Route.LOCAL.value})
             result = await self._run_local(
@@ -188,6 +234,201 @@ class VeloEntry:
         timeline.mark_terminal("run_finished")
         return result
 
+    def _planner_on(self) -> bool:
+        return bool(getattr(self._settings, "velo_planner_enabled", False))
+
+    async def _plan(self, text: str, *, replan: dict[str, str] | None = None) -> Plan | None:
+        """One short model call: the request as typed steps (or a question). Fails to ``None``."""
+        try:
+            from assistant.models import build_chat_model
+
+            if self._plan_model is None:
+                self._plan_model = build_chat_model(self._settings)
+            return await make_plan(self._plan_model, text, replan=replan)
+        except Exception as exc:  # noqa: BLE001 -- the old route is the fallback
+            logger.warning("velo_planner_unavailable: %s", exc)
+            return None
+
+    @staticmethod
+    def _question_result(question: str, conversation: str) -> dict[str, Any]:
+        return {
+            "status": "ASK_USER",
+            "thread_id": thread_id_for_sani(conversation) if conversation else "",
+            "response": question,
+            "route": Route.PLAN.value,
+            "outcome": OutcomeState.UNKNOWN.value,
+            "verified": False,
+        }
+
+    async def _screen_facts(
+        self, conversation: str, on_event: OnEvent, cancel_check: IsCancelled
+    ) -> str:
+        """The visible controls right now, compactly: evidence for a judge or a re-plan."""
+        from assistant.velo import recipes
+
+        try:
+            runtime = await self._get_runtime()
+            async with runtime.run_scope(
+                f"core-{uuid.uuid4().hex[:8]}", conversation=conversation
+            ):
+                task = TaskState(instruction="facts", conversation=conversation)
+                self._seed_carried_target(task)
+                adapter = CuaAdapter(
+                    runtime.cua_tools, on_event=on_event, cancel_check=cancel_check,
+                    sight=self._sight,
+                )
+                surface = await recipes._scene_surface(task, adapter)
+                if isinstance(surface, str):
+                    return surface
+                _target, pid, window_id = surface
+                state = await adapter.observe_window(
+                    task, pid, window_id, max_elements=1500, settle=True
+                )
+                return (scene.compact_observation(state) or "")[:1800]
+        except Exception as exc:  # noqa: BLE001 -- facts are best effort
+            logger.info("velo_screen_facts_failed: %s", exc)
+            return ""
+
+    async def _judge(
+        self, command: ParsedCommand, response: str, facts: str
+    ) -> bool | None:
+        """JEV answers one closed question: did this step work? ``None`` = no answer."""
+        jev = self._jev()
+        if jev is None:
+            return None
+        request = JevDecisionRequest(
+            objective=(
+                f"Did this step succeed: {command.recipe} {command.kwargs}? "
+                f"The tool said: {response[:200]}"
+            ),
+            requested_app=command.requested_app,
+            target_summary="",
+            scene_facts=tuple(facts.splitlines()[:25]),
+            candidates=(
+                Candidate("step_ok", CandidateKind.RECIPE, "The step worked; continue.",
+                          recipe="noop"),
+                Candidate("step_failed", CandidateKind.RECIPE,
+                          "The step did not work; re-plan.", recipe="noop"),
+            ),
+            reason="verify a step whose own check could not confirm it",
+        )
+        try:
+            decision = await jev.decide(request)
+        except JevServiceError:
+            return None
+        if decision.status is not DecisionStatus.ACT:
+            return None
+        return decision.selected_id == "step_ok"
+
+    async def _run_plan(
+        self,
+        steps: list[ParsedCommand],
+        text: str,
+        conversation: str,
+        on_event: OnEvent,
+        cancel_check: IsCancelled,
+        run_key: str,
+    ) -> dict[str, Any]:
+        """Run typed steps one by one; verify; re-plan only the remainder, at most twice.
+
+        A step runs on the deterministic recipes. When its own check cannot confirm
+        it, JEV (if enabled) answers a closed yes/no with the screen as evidence.
+        A failed step triggers a re-plan from the REAL current screen, never a retry
+        of the same blind action, and the whole run is bounded.
+        """
+        queue = list(steps)
+        done: list[str] = []
+        said: list[str] = []
+        replans = 0
+        started = time.monotonic()
+        result: dict[str, Any] = {}
+        while queue:
+            if self._is_cancelled(run_key, cancel_check):
+                return self._stopped_result(conversation, route=Route.PLAN.value)
+            if time.monotonic() - started > MAX_PLAN_SECONDS:
+                said.append("I ran out of time on this one.")
+                break
+            command = queue.pop(0)
+            result = await self._run_local(command, conversation, on_event, cancel_check, run_key)
+            response = str(result.get("response") or "")
+            outcome = result.get("outcome")
+            ok = outcome in (OutcomeState.CONFIRMED.value, OutcomeState.ACCEPTED.value)
+            if not ok and outcome == OutcomeState.UNKNOWN.value:
+                facts = await self._screen_facts(conversation, on_event, cancel_check)
+                ok = (await self._judge(command, response, facts)) is True
+            if ok:
+                shown = json.dumps(command.kwargs, ensure_ascii=False)[:80]
+                done.append(f"{command.recipe} {shown}")
+                said.append(response)
+                if queue:
+                    await asyncio.sleep(0.3)
+                continue
+            # The step did not work. One re-plan from what is really on screen.
+            if replans >= MAX_REPLANS:
+                said.append(response)
+                break
+            facts = await self._screen_facts(conversation, on_event, cancel_check)
+            new = await self._plan(text, replan={
+                "done": "; ".join(done) or "none",
+                "failed": f"{command.recipe} {json.dumps(command.kwargs, ensure_ascii=False)[:80]}",
+                "answer": response[:200],
+                "screen": facts or "(unreadable)",
+            })
+            replans += 1
+            if new is not None and new.kind == "ask":
+                return self._question_result(new.question, conversation)
+            if new is None or new.kind != "plan":
+                said.append(response)
+                break
+            queue = list(new.steps)
+        else:
+            result["status"] = result.get("status") or "done"
+            result["response"] = " ".join(p for p in said if p)
+            result["recipe"] = "plan"
+            result["route"] = Route.PLAN.value
+            result["planned_steps"] = len(done)
+            return result
+        if result.get("status") == "done":
+            result["status"] = "blocked"
+        result["response"] = " ".join(p for p in said if p)
+        result["recipe"] = "plan"
+        result["route"] = Route.PLAN.value
+        result["planned_steps"] = len(done)
+        return result
+
+    @staticmethod
+    def _answer_to_pending(text: str, conversation: str) -> ParsedCommand | None:
+        """A short reply to "which one?" ("the second one", "create") resolves the question."""
+        if len(text) > 80:
+            PENDING.clear(conversation)
+            return None
+        picked = PENDING.take(conversation, text)
+        if picked is None:
+            PENDING.clear(conversation)  # an unrelated message retires a stale question
+            return None
+        recipe, option = picked
+        return ParsedCommand(recipe=recipe, kwargs={"label": option}, utterance=text.strip())
+
+    @staticmethod
+    def _title_command(text: str, conversation: str) -> ParsedCommand | None:
+        """"Play <title>" resolves locally only when it names an item just described.
+
+        Anything else ("play some jazz") still goes to the reasoning route.
+        """
+        match = re.match(
+            r"^(?:play|open|watch|click|select)\s+(?:the\s+)?(?P<t>.{4,120}?)\s*[.!]?$",
+            " ".join(text.split()),
+            re.I,
+        )
+        if not match or not SCENES.recall(conversation):
+            return None
+        title = match.group("t")
+        if scene.match_title(SCENES.recall(conversation), title) is None:
+            return None
+        return ParsedCommand(
+            recipe="press_item", kwargs={"title": title}, utterance=text.strip()
+        )
+
     @staticmethod
     def _stopped_result(conversation: str, *, route: str) -> dict[str, Any]:
         return {
@@ -200,6 +441,40 @@ class VeloEntry:
 
     # -- Route A ---------------------------------------------------------------
 
+    async def _compose(self, brief: str) -> str:
+        """One short model call that writes the text to type. No tools, bounded.
+
+        The user said what they want ("a prompt for a simple SaaS website");
+        the words themselves are model work, everything after is deterministic.
+        """
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from assistant.models import build_chat_model
+
+        model = build_chat_model(self._settings)
+        reply = await asyncio.wait_for(
+            model.ainvoke(
+                [
+                    SystemMessage(
+                        "You write the exact text the user wants typed into an input box. "
+                        "Reply with ONLY that text: no quotes, no preamble, no explanation. "
+                        "When they want a prompt for building something, write one clear, "
+                        "specific, self-contained prompt (goal, pages and features, visual "
+                        "style, constraints) in under 180 words. Ignore speech-recognition "
+                        "noise in their request and infer what they meant."
+                    ),
+                    HumanMessage(brief),
+                ]
+            ),
+            timeout=45,
+        )
+        content = getattr(reply, "content", "")
+        if isinstance(content, list):
+            content = "".join(
+                str(b.get("text", "")) for b in content if isinstance(b, dict)
+            )
+        return str(content).strip().strip('"').strip()
+
     async def _run_local(
         self,
         command: ParsedCommand,
@@ -208,6 +483,35 @@ class VeloEntry:
         cancel_check: IsCancelled,
         run_key: str = "",
     ) -> dict[str, Any]:
+        written = ""
+        if command.recipe == "compose_fill":
+            try:
+                written = await self._compose(str(command.kwargs.get("brief", "")))
+            except Exception as exc:  # noqa: BLE001 -- say what failed and what to do next
+                logger.warning("velo_compose_failed: %s", exc)
+                written = ""
+            if not written:
+                return {
+                    "status": "blocked",
+                    "thread_id": thread_id_for_sani(conversation) if conversation else "",
+                    "response": (
+                        "I couldn't get the text written just now (the language model did not "
+                        "answer). Say it again in a moment, or dictate the exact text and "
+                        "I'll type it."
+                    ),
+                    "route": Route.LOCAL.value,
+                    "outcome": OutcomeState.UNKNOWN.value,
+                    "verified": False,
+                }
+            command = ParsedCommand(
+                recipe="fill_field",
+                kwargs={
+                    "text": written,
+                    "target": "",
+                    "submit": bool(command.kwargs.get("submit")),
+                },
+                utterance=command.utterance,
+            )
         runtime = await self._get_runtime()
         async with runtime.run_scope(
             f"core-{uuid.uuid4().hex[:8]}", conversation=conversation
@@ -215,8 +519,14 @@ class VeloEntry:
             task = self._task_from(command, conversation, cancel_check)
             self._seed_carried_target(task)
             adapter = CuaAdapter(
-                runtime.cua_tools, on_event=on_event, cancel_check=cancel_check
+                runtime.cua_tools, on_event=on_event, cancel_check=cancel_check,
+                sight=self._sight,
             )
+            problem = await self._permission_problem(adapter)
+            if problem is not None:
+                return self._local_result(
+                    task, RecipeResult(command.recipe, OutcomeState.UNKNOWN, problem), 0
+                )
             try:
                 outcome = await execute(command.recipe, task, adapter, **command.kwargs)
             except TaskCancelled as exc:
@@ -224,7 +534,88 @@ class VeloEntry:
                     task, RecipeResult(command.recipe, OutcomeState.CANCELLED, f"Stopped: {exc}"),
                     budget.used,
                 )
+            if outcome.choices:
+                # Ask, then remember the options: the next short answer picks one.
+                PENDING.ask(conversation, outcome.recipe, outcome.choices)
+            if written and outcome.state in (OutcomeState.CONFIRMED, OutcomeState.UNKNOWN):
+                lead = "I wrote the prompt and entered it" + (
+                    "" if outcome.state is OutcomeState.CONFIRMED
+                    else ", but I could not read the box back to confirm"
+                )
+                outcome = RecipeResult(
+                    outcome.recipe, outcome.state,
+                    f"{lead}. It starts: {written[:140]}",
+                    outcome.verification,
+                )
             return self._local_result(task, outcome, budget.used)
+
+    async def _run_chain(
+        self,
+        commands: list[ParsedCommand],
+        conversation: str,
+        on_event: OnEvent,
+        cancel_check: IsCancelled,
+        run_key: str,
+    ) -> dict[str, Any]:
+        """Run fully-parsed local steps in order; stop at the first that is not confirmed.
+
+        Fail closed: a step that did not demonstrably work ends the chain and
+        says which step it was, so later steps never act on a screen the
+        earlier ones did not produce.
+        """
+        said: list[str] = []
+        result: dict[str, Any] = {}
+        for number, command in enumerate(commands, 1):
+            if self._is_cancelled(run_key, cancel_check):
+                return self._stopped_result(conversation, route=Route.LOCAL.value)
+            result = await self._run_local(command, conversation, on_event, cancel_check, run_key)
+            said.append(str(result.get("response") or ""))
+            ok = result.get("outcome") in (
+                OutcomeState.CONFIRMED.value,
+                OutcomeState.ACCEPTED.value,
+            )
+            if not ok:
+                left = len(commands) - number
+                said.append(
+                    f"I stopped at step {number} of {len(commands)}"
+                    + (f" and did not do the other {left}." if left else ".")
+                )
+                if result.get("status") == "done":
+                    result["status"] = "blocked"
+                break
+            if number < len(commands):
+                await asyncio.sleep(0.4)
+        result["response"] = " ".join(p for p in said if p)
+        result["recipe"] = "chain"
+        return result
+
+    @staticmethod
+    async def _permission_problem(adapter: CuaAdapter) -> str | None:
+        """A plain sentence when macOS has not granted Sani screen access, else ``None``.
+
+        Without Accessibility and Screen Recording the window tree is unreadable,
+        and every recipe ends in a vague "could not confirm". Asking first turns
+        that into one clear instruction. A driver that cannot answer (or has no
+        such tool) is never treated as a denial.
+        """
+        try:
+            reply = await adapter.call("check_permissions")
+        except Exception:  # noqa: BLE001 -- an unanswerable preflight must not block work
+            return None
+        granted = reply.structured or {}
+        missing = [
+            label
+            for key, label in (("accessibility", "Accessibility"),
+                               ("screen_recording", "Screen Recording"))
+            if granted.get(key) is False
+        ]
+        if not missing:
+            return None
+        return (
+            "I can't see or control your screen yet because macOS has not allowed Sani: "
+            f"{' and '.join(missing)} {'is' if len(missing) == 1 else 'are'} off. Open System "
+            "Settings, Privacy and Security, turn Sani on there, then quit and reopen Sani."
+        )
 
     def _task_from(
         self, command: ParsedCommand, conversation: str, cancel_check: IsCancelled
@@ -309,7 +700,8 @@ class VeloEntry:
         candidates: list[Candidate] = []
         runtime = await self._get_runtime()
         adapter = CuaAdapter(
-            runtime.cua_tools, on_event=on_event, cancel_check=cancel_check
+            runtime.cua_tools, on_event=on_event, cancel_check=cancel_check,
+            sight=self._sight,
         )
         try:
             async with runtime.run_scope(
@@ -475,7 +867,8 @@ class VeloEntry:
             )
             self._seed_carried_target(task)
             adapter = CuaAdapter(
-                runtime.cua_tools, on_event=on_event, cancel_check=cancel_check
+                runtime.cua_tools, on_event=on_event, cancel_check=cancel_check,
+                sight=self._sight,
             )
             try:
                 outcome = await execute(selected.recipe, task, adapter, **selected.args)

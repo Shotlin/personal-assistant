@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="10" skipped="0" tests="22" time="1.243" timestamp="2026-09-29T11:30:50.762875+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_real_wrapped_effect_remains_uncertain_after_pause" time="0.010" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_invalidated_intent_cannot_append_dispatch_ledger" time="0.004" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_revision_cannot_erase_reconciled_effect[UNKNOWN]" time="0.005"><failure message="Failed: DID NOT RAISE MissionStoreError">store = &lt;assistant.missions.store.MissionStore object at 0x10cc36cc0&gt;
+outcome = 'UNKNOWN'
+
+    @pytest.mark.parametrize("outcome", ["UNKNOWN", "CONFIRMED"])
+    async def test_revision_cannot_erase_reconciled_effect(store: MissionStore, outcome: str) -&gt; None:
+        from assistant.missions.store import MissionStoreError
+        mission, item = await claimed(store)
+        await store.mark_dispatched(item.execution_id)
+        await store.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
+            expected_plan_version=1, expected_control_epoch=1, kind="REVISE", revision_request="again"))
+        await store.mark_attempt_reconciled(item.execution_id, outcome)
+&gt;       with pytest.raises(MissionStoreError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE MissionStoreError
+
+tests/integration/test_phase1_corrective_boundaries.py:113: Failed</failure></testcase><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_revision_cannot_erase_reconciled_effect[CONFIRMED]" time="0.004"><failure message="Failed: DID NOT RAISE MissionStoreError">store = &lt;assistant.missions.store.MissionStore object at 0x10cc36360&gt;
+outcome = 'CONFIRMED'
+
+    @pytest.mark.parametrize("outcome", ["UNKNOWN", "CONFIRMED"])
+    async def test_revision_cannot_erase_reconciled_effect(store: MissionStore, outcome: str) -&gt; None:
+        from assistant.missions.store import MissionStoreError
+        mission, item = await claimed(store)
+        await store.mark_dispatched(item.execution_id)
+        await store.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
+            expected_plan_version=1, expected_control_epoch=1, kind="REVISE", revision_request="again"))
+        await store.mark_attempt_reconciled(item.execution_id, outcome)
+&gt;       with pytest.raises(MissionStoreError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE MissionStoreError
+
+tests/integration/test_phase1_corrective_boundaries.py:113: Failed</failure></testcase><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_normal_resume_schedules_pending_work" time="0.013"><failure message="AssertionError: assert [] == ['789de125-10...5a2d92100785']&#10;  &#10;  Right contains one more item: '789de125-10dc-4feb-8056-5a2d92100785'&#10;  Use -v to get more diff">store = &lt;assistant.missions.store.MissionStore object at 0x10cc69e80&gt;
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-7/test_normal_resume_schedules_p0')
+
+    async def test_normal_resume_schedules_pending_work(store: MissionStore, tmp_path: Any) -&gt; None:
+        from types import SimpleNamespace
+        from assistant.missions.controller import DeepController
+        from assistant.missions.evidence import EvidenceStore
+        from assistant.missions.service import MissionService
+        mission, _ = await claimed(store)
+        svc = MissionService(SimpleNamespace(sani_data_dir=str(tmp_path)), store=store,
+            authority=MissionAuthority(store), evidence=EvidenceStore(tmp_path / "e", store),
+            executor=None, controller=DeepController(None))
+        scheduled: list[str] = []
+        svc._schedule_resume = scheduled.append
+        await svc.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
+            expected_plan_version=1, expected_control_epoch=1, kind="PAUSE"))
+        await svc.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
+            expected_plan_version=1, expected_control_epoch=2, kind="RESUME"))
+&gt;       assert scheduled == [mission.mission_id]
+E       AssertionError: assert [] == ['789de125-10...5a2d92100785']
+E         
+E         Right contains one more item: '789de125-10dc-4feb-8056-5a2d92100785'
+E         Use -v to get more diff
+
+tests/integration/test_phase1_corrective_boundaries.py:132: AssertionError</failure></testcase><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_controller_selects_registered_submission[RECOVER-submit_recovery_decision]" time="0.001"><failure message="AssertionError: assert 'submit_mission_response' == 'submit_recovery_decision'&#10;  &#10;  - submit_recovery_decision&#10;  + submit_mission_response">role = 'RECOVER', registered = 'submit_recovery_decision'
+
+    @pytest.mark.parametrize("role,registered", [
+        ("RECOVER", "submit_recovery_decision"), ("REVIEW", "submit_final_review")])
+    async def test_controller_selects_registered_submission(role: str, registered: str) -&gt; None:
+        from assistant.missions.controller import DeepController
+        async def transport(actual_role: str, tool: str, payload: Any) -&gt; Any:
+            assert actual_role == role
+            assert tool == registered
+            return {}
+&gt;       await DeepController(None)._call(role, "{}", transport)
+
+tests/integration/test_phase1_corrective_boundaries.py:143: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/assistant/missions/controller.py:189: in _call
+    response = await invoke(role, tool, {"prompt": prompt})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+actual_role = 'RECOVER', tool = 'submit_mission_response'
+payload = {'prompt': '{}'}
+
+    async def transport(actual_role: str, tool: str, payload: Any) -&gt; Any:
+        assert actual_role == role
+&gt;       assert tool == registered
+E       AssertionError: assert 'submit_mission_response' == 'submit_recovery_decision'
+E         
+E         - submit_recovery_decision
+E         + submit_mission_response
+
+tests/integration/test_phase1_corrective_boundaries.py:141: AssertionError</failure></testcase><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_controller_selects_registered_submission[REVIEW-submit_final_review]" time="0.000"><failure message="AssertionError: assert 'submit_mission_response' == 'submit_final_review'&#10;  &#10;  - submit_final_review&#10;  + submit_mission_response">role = 'REVIEW', registered = 'submit_final_review'
+
+    @pytest.mark.parametrize("role,registered", [
+        ("RECOVER", "submit_recovery_decision"), ("REVIEW", "submit_final_review")])
+    async def test_controller_selects_registered_submission(role: str, registered: str) -&gt; None:
+        from assistant.missions.controller import DeepController
+        async def transport(actual_role: str, tool: str, payload: Any) -&gt; Any:
+            assert actual_role == role
+            assert tool == registered
+            return {}
+&gt;       await DeepController(None)._call(role, "{}", transport)
+
+tests/integration/test_phase1_corrective_boundaries.py:143: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/assistant/missions/controller.py:189: in _call
+    response = await invoke(role, tool, {"prompt": prompt})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+actual_role = 'REVIEW', tool = 'submit_mission_response'
+payload = {'prompt': '{}'}
+
+    async def transport(actual_role: str, tool: str, payload: Any) -&gt; Any:
+        assert actual_role == role
+&gt;       assert tool == registered
+E       AssertionError: assert 'submit_mission_response' == 'submit_final_review'
+E         
+E         - submit_final_review
+E         + submit_mission_response
+
+tests/integration/test_phase1_corrective_boundaries.py:141: AssertionError</failure></testcase><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_plan_secret_is_rejected_before_any_row" time="0.004"><failure message="Failed: DID NOT RAISE MissionStoreError">store = &lt;assistant.missions.store.MissionStore object at 0x10cc37410&gt;
+
+    async def test_plan_secret_is_rejected_before_any_row(store: MissionStore) -&gt; None:
+        from assistant.missions.store import MissionStoreError
+        mission, _ = await claimed(store)
+        secret = "sk-corrective-synthetic-secret-12345678901234567890"
+        step = mission.steps[0].model_copy(update={"objective": secret})
+&gt;       with pytest.raises(MissionStoreError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE MissionStoreError
+
+tests/integration/test_phase1_corrective_boundaries.py:151: Failed</failure></testcase><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_zero_packet_jev_does_not_call_provider_with_authority" time="0.014"><failure message="AssertionError: assert [JevDecisionR...sk_version=0)] == []&#10;  &#10;  Left contains one more item: JevDecisionRequest(objective='click fixture', requested_app='', target_summary='', scene_facts=(), candidates=(Candida..., args={}, target_pid=None),), payload_ids=(), last_outcome='', reason='semantic_ui control selection', task_version=0)&#10;  Use -v to get more diff">store = &lt;assistant.missions.store.MissionStore object at 0x10cc36570&gt;
+
+    async def test_zero_packet_jev_does_not_call_provider_with_authority(store: MissionStore) -&gt; None:
+        from tests.unit.test_mission_executor import _RecordingJev, _executor
+        from tests.unit.velo_fakes import standard_tools
+        from assistant.velo.contracts import JevDecision, DecisionStatus
+        _, item = await claimed(store)
+        item = item.model_copy(update={"budget": BudgetLimits(max_jev_calls=0)})
+        jev = _RecordingJev(JevDecision(status=DecisionStatus.ACT, selected_id="candidate"))
+        executor, _ = _executor(standard_tools(), jev=jev, authority=MissionAuthority(store))
+        await executor._choose_candidate(item, [{"element_token": "candidate", "role": "AXButton",
+                                                "label": "fixture", "purpose": "primary"}])
+&gt;       assert jev.requests == []
+E       AssertionError: assert [JevDecisionR...sk_version=0)] == []
+E         
+E         Left contains one more item: JevDecisionRequest(objective='click fixture', requested_app='', target_summary='', scene_facts=(), candidates=(Candida..., args={}, target_pid=None),), payload_ids=(), last_outcome='', reason='semantic_ui control selection', task_version=0)
+E         Use -v to get more diff
+
+tests/integration/test_phase1_corrective_boundaries.py:167: AssertionError</failure></testcase><testcase classname="tests.unit.test_mission_desktop_queue" name="test_cancel_exactly_at_grant_does_not_strand_queue" time="0.098" /><testcase classname="tests.unit.test_mission_desktop_queue" name="test_ownership_log_reconstructs_grant_release" time="0.000" /><testcase classname="tests.unit.test_mission_desktop_queue" name="test_stop_owner_reports_actual_state" time="0.000" /><testcase classname="tests.unit.test_mission_desktop_queue" name="test_generation_invalidates_old_lease" time="0.000" /><testcase classname="tests.unit.test_mission_desktop_queue" name="test_lease_context_manager_cleans_up_on_cancellation" time="0.022" /><testcase classname="tests.unit.test_mission_desktop_queue" name="test_interleaved_missions_one_owner_at_a_time" time="0.103" /><testcase classname="tests.unit.test_mission_desktop_queue" name="test_timeout_while_waiting_releases_any_grant_race" time="0.062" /><testcase classname="tests.unit.test_mission_desktop_queue" name="test_concurrent_same_run_acquire_cannot_double_grant" time="0.011" /><testcase classname="tests.unit.test_mission_desktop_queue" name="test_stale_releaser_cannot_release_newer_lease" time="0.000" /><testcase classname="tests.unit.test_mission_desktop_queue" name="test_release_with_wrong_fence_is_refused" time="0.000" /><testcase classname="tests.unit.test_mission_desktop_queue" name="test_duplicate_waiter_never_releases_original_owner[False]" time="0.011"><failure message="AssertionError: assert False&#10; +  where False = check_usable(LeaseHandle(run_id='same', fence='a89937de518743d8b3a3cace9eb6d0d6', generation=1, granted_at=1801.301930541))&#10; +    where check_usable = &lt;assistant.runtime.desktop_queue.DesktopQueue object at 0x10ccb58e0&gt;.check_usable">cancel = False
+
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_duplicate_waiter_never_releases_original_owner(cancel: bool) -&gt; None:
+        q = DesktopQueue()
+        original = await q.acquire("same")
+        waiter = asyncio.create_task(q.acquire("same", timeout=0.01))
+        await asyncio.sleep(0)
+        if cancel:
+            waiter.cancel()
+        with pytest.raises(asyncio.CancelledError if cancel else DesktopLeaseBusy):
+            await waiter
+&gt;       assert q.check_usable(original)
+E       AssertionError: assert False
+E        +  where False = check_usable(LeaseHandle(run_id='same', fence='a89937de518743d8b3a3cace9eb6d0d6', generation=1, granted_at=1801.301930541))
+E        +    where check_usable = &lt;assistant.runtime.desktop_queue.DesktopQueue object at 0x10ccb58e0&gt;.check_usable
+
+tests/unit/test_mission_desktop_queue.py:221: AssertionError</failure></testcase><testcase classname="tests.unit.test_mission_desktop_queue" name="test_duplicate_waiter_never_releases_original_owner[True]" time="0.001"><failure message="AssertionError: assert False&#10; +  where False = check_usable(LeaseHandle(run_id='same', fence='6be93b90911842998808800a6607c182', generation=1, granted_at=1801.31570925))&#10; +    where check_usable = &lt;assistant.runtime.desktop_queue.DesktopQueue object at 0x10ccb51c0&gt;.check_usable">cancel = True
+
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_duplicate_waiter_never_releases_original_owner(cancel: bool) -&gt; None:
+        q = DesktopQueue()
+        original = await q.acquire("same")
+        waiter = asyncio.create_task(q.acquire("same", timeout=0.01))
+        await asyncio.sleep(0)
+        if cancel:
+            waiter.cancel()
+        with pytest.raises(asyncio.CancelledError if cancel else DesktopLeaseBusy):
+            await waiter
+&gt;       assert q.check_usable(original)
+E       AssertionError: assert False
+E        +  where False = check_usable(LeaseHandle(run_id='same', fence='6be93b90911842998808800a6607c182', generation=1, granted_at=1801.31570925))
+E        +    where check_usable = &lt;assistant.runtime.desktop_queue.DesktopQueue object at 0x10ccb51c0&gt;.check_usable
+
+tests/unit/test_mission_desktop_queue.py:221: AssertionError</failure></testcase><testcase classname="tests.unit.test_mission_desktop_queue" name="test_handoff_reserves_owner_before_waiter_wakes" time="0.001"><failure message="AssertionError: assert None == 'b'&#10; +  where None = &lt;assistant.runtime.desktop_queue.DesktopQueue object at 0x10ccb5280&gt;.current_owner">async def test_handoff_reserves_owner_before_waiter_wakes() -&gt; None:
+        q = DesktopQueue()
+        a = await q.acquire("a")
+        b = asyncio.create_task(q.acquire("b"))
+        await asyncio.sleep(0)
+        await q.release("a", fence=a.fence)
+&gt;       assert q.current_owner == "b"
+E       AssertionError: assert None == 'b'
+E        +  where None = &lt;assistant.runtime.desktop_queue.DesktopQueue object at 0x10ccb5280&gt;.current_owner
+
+tests/unit/test_mission_desktop_queue.py:231: AssertionError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,108 @@
+.........FFFFF                                                           [100%]
+=================================== FAILURES ===================================
+______________ test_targeted_discovery_requires_named_fresh_scope ______________
+
+store = <assistant.missions.store.MissionStore object at 0x10e87acf0>
+
+    async def test_targeted_discovery_requires_named_fresh_scope(store: MissionStore) -> None:
+        from assistant.missions.authority import AuthorityDenied
+        from assistant.missions.contracts import ActionIntent, ScopeObservation
+        mission, item = await claimed(store)
+        item = item.model_copy(update={"allowed_action_scope": item.allowed_action_scope.model_copy(
+            update={"tool_ids": ["get_window_state"]})})
+        # _check_surface is the production containment check; intent integrity is
+        # orthogonal to whether an unknown PID may be read.
+        authority = MissionAuthority(store)
+        action = ActionIntent(tool="get_window_state", args={"pid": 99, "window_id": 1},
+                              effect_class="READ_ONLY")
+>       with pytest.raises(AuthorityDenied):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AuthorityDenied
+
+tests/integration/test_phase1_corrective_boundaries.py:181: Failed
+___________________ test_packet_budget_counts_more_than_zero ___________________
+
+store = <assistant.missions.store.MissionStore object at 0x10e8b01d0>
+
+    async def test_packet_budget_counts_more_than_zero(store: MissionStore) -> None:
+        from assistant.missions.authority import AuthorityDenied
+        from types import SimpleNamespace
+        _, item = await claimed(store)
+        item = item.model_copy(update={"budget": BudgetLimits(max_jev_calls=1)})
+        async def no_runtime() -> None:
+            return None
+        authority = MissionAuthority(store)
+        executor = VeloExecutor(SimpleNamespace(), get_runtime=no_runtime,
+                                authority=authority, store=store)
+        first = await executor._reserve_for(item, "jev_calls")
+        await authority.settle(first, consumed=True)
+        # Fresh executor rules out an in-memory-only ceiling.
+        resumed = VeloExecutor(SimpleNamespace(), get_runtime=no_runtime,
+                               authority=authority, store=store)
+>       with pytest.raises(AuthorityDenied):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AuthorityDenied
+
+tests/integration/test_phase1_corrective_boundaries.py:204: Failed
+____________ test_expected_payload_cannot_satisfy_page_observation _____________
+
+store = <assistant.missions.store.MissionStore object at 0x10e8b1b50>
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-10/test_expected_payload_cannot_s0')
+
+    async def test_expected_payload_cannot_satisfy_page_observation(store: MissionStore,
+                                                                   tmp_path: Any) -> None:
+        from assistant.missions.contracts import CheckSpec, EvidenceCandidate
+        from assistant.missions.evidence import EvidenceStore
+        mission, item = await claimed(store)
+        evidence = EvidenceStore(tmp_path / "e", store)
+        ref = await evidence.put(EvidenceCandidate(kind="ui_state", payload={
+            "elements": [{"role": "AXStaticText", "label": "unrelated screen"}],
+            "resolved_payloads": {"user_text_1": "expected-marker"}},
+            captured_at_ms=int(time.time() * 1000)), mission_id=mission.mission_id)
+        result = await evidence.verify(CheckSpec(check_id="page", verifier_id="page_state",
+            verifier_version="1.0.0", expected={"markers": ["expected-marker"]}), item, refs=[ref])
+>       assert not result.passed
+E       AssertionError: assert not True
+E        +  where True = CheckResult(check_id='page', passed=True, evidence_ids=['d54104cc-5528-42b2-8b35-ee36ed8c5d7a'], checked_at_ms=1790661908039, verifier_id='page_state', verifier_version='1.0.0', reason='all markers observed').passed
+
+tests/integration/test_phase1_corrective_boundaries.py:220: AssertionError
+____________________ test_short_search_has_required_outcome ____________________
+
+    def test_short_search_has_required_outcome() -> None:
+        from assistant.missions.service import _fast_checks_for
+>       assert any(c.required for c in _fast_checks_for("search_browser", {"query": "AI"}))
+E       assert False
+E        +  where False = any(<generator object test_short_search_has_required_outcome.<locals>.<genexpr> at 0x10e97f040>)
+
+tests/integration/test_phase1_corrective_boundaries.py:225: AssertionError
+________________ test_fast_path_does_not_invoke_review_provider ________________
+
+store = <assistant.missions.store.MissionStore object at 0x10e8b23c0>
+
+    async def test_fast_path_does_not_invoke_review_provider(store: MissionStore) -> None:
+        from tests.unit.test_mission_service import _service, _safari_world, _request
+        from tests.unit.velo_fakes import reset_world
+        reset_world()
+        _safari_world()
+        service, _ = _service(store)
+        calls: list[str] = []
+        async def transport(role: str, tool: str, payload: Any) -> Any:
+            calls.append(role)
+            return {"review": {"supported_summary": "fixture"}}
+        service._transport_factory = lambda mission: transport
+        try:
+            result = await service.submit(_request("open safari"), cancel=CancellationToken())
+            assert result.status == "COMPLETED"
+>           assert calls == []
+E           AssertionError: assert ['REVIEW'] == []
+E             
+E             Left contains one more item: 'REVIEW'
+E             Use -v to get more diff
+
+tests/integration/test_phase1_corrective_boundaries.py:242: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integration/test_phase1_corrective_boundaries.py::test_targeted_discovery_requires_named_fresh_scope
+FAILED tests/integration/test_phase1_corrective_boundaries.py::test_packet_budget_counts_more_than_zero
+FAILED tests/integration/test_phase1_corrective_boundaries.py::test_expected_payload_cannot_satisfy_page_observation
+FAILED tests/integration/test_phase1_corrective_boundaries.py::test_short_search_has_required_outcome
+FAILED tests/integration/test_phase1_corrective_boundaries.py::test_fast_path_does_not_invoke_review_provider

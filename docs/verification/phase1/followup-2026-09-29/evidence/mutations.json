@@ -1,0 +1,45 @@
+[
+  {
+    "name": "stale-ledger",
+    "path": "src/assistant/missions/store.py",
+    "replacements": [
+      {
+        "old": "if row[1] != row[3] or row[2] != row[4] or row[5] != \"RUNNING\":",
+        "new": "if False:"
+      },
+      {
+        "old": "if row is None or str(row[0]) not in {\"INTENT_COMMITTED\", \"DISPATCHED\"}:",
+        "new": "if row is None:"
+      }
+    ],
+    "test": "test_invalidated_intent_cannot_append_dispatch_ledger",
+    "exit_code": 1,
+    "disposable_copy": "/private/tmp/phase1-mutation-qw5lggy7"
+  },
+  {
+    "name": "packet-budget",
+    "path": "src/assistant/missions/store.py",
+    "replacements": [
+      {
+        "old": "if int(spent) + charge.amount > packet_ceiling:",
+        "new": "if False:"
+      }
+    ],
+    "test": "test_packet_budget_counts_more_than_zero",
+    "exit_code": 1,
+    "disposable_copy": "/private/tmp/phase1-mutation-rhy3kpon"
+  },
+  {
+    "name": "final-stop",
+    "path": "src/assistant/tools/policy.py",
+    "replacements": [
+      {
+        "old": "final_check = mission_final_dispatch_check.get()",
+        "new": "final_check = None"
+      }
+    ],
+    "test": "test_stop_during_ledger_await_prevents_actual_effect",
+    "exit_code": 1,
+    "disposable_copy": "/private/tmp/phase1-mutation-467xtx28"
+  }
+]

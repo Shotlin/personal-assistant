@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.050" timestamp="2026-10-01T02:18:24.761835+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_unknown_origin_cannot_read_protected_content" time="0.008"><failure message="Failed: DID NOT RAISE AuthorityDenied">store = &lt;assistant.missions.store.MissionStore object at 0x110708890&gt;
+
+    async def test_unknown_origin_cannot_read_protected_content(store: MissionStore) -&gt; None:
+        """A READ_ONLY content read with an unknown origin is refused when the
+        mission scope configures allowed origins — reading is not a wildcard."""
+        from assistant.missions.authority import AuthorityDenied
+    
+        scope = _scope(origins=["https://trusted.example"])
+        _mission, item = await _claimed(store, scope)
+        authority = MissionAuthority(store)
+&gt;       with pytest.raises(AuthorityDenied) as denied:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AuthorityDenied
+
+tests/integration/test_phase1_scope_outcomes.py:86: Failed</failure></testcase></testsuite></testsuites>

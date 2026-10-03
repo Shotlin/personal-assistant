@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.037" timestamp="2026-09-29T19:10:57.902182+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.unit.test_verify_phase1_launcher" name="test_corrective_boundaries_are_in_normal_integration_gate" time="0.000"><failure message="AssertionError: assert 'tests/integration/test_phase1_corrective_boundaries.py' in ['tests/integration/test_mission_sqlite.py', 'tests/integration/test_mission_policy.py', 'tests/integration/test_missi...mission_ipc.py', 'tests/integration/test_mission_restart.py', 'tests/integration/test_mission_desktop_control.py', ...]">def test_corrective_boundaries_are_in_normal_integration_gate():
+        from scripts.verify_phase1 import SUITE_FILES
+    
+&gt;       assert "tests/integration/test_phase1_corrective_boundaries.py" in SUITE_FILES["integration"][1]
+E       AssertionError: assert 'tests/integration/test_phase1_corrective_boundaries.py' in ['tests/integration/test_mission_sqlite.py', 'tests/integration/test_mission_policy.py', 'tests/integration/test_missi...mission_ipc.py', 'tests/integration/test_mission_restart.py', 'tests/integration/test_mission_desktop_control.py', ...]
+
+tests/unit/test_verify_phase1_launcher.py:344: AssertionError</failure></testcase></testsuite></testsuites>

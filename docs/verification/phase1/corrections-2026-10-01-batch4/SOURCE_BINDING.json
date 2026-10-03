@@ -1,0 +1,8 @@
+{
+  "base_head": "df04060f189a10bb81baf522a58347cddc6cc915",
+  "dirty_diff_sha256": "462a045ac0c08f2a86d2b72f88f71410e24fb307af37dc70a5df05d9488eded9",
+  "source_manifest_sha256": "aa8ad5beed776db239e642edd6b288ae2a1973615388dfa495070173b60e56b0",
+  "binding_scope": "tracked plus non-ignored source files; docs/verification output excluded by verifier policy",
+  "generated_at": "2026-10-01",
+  "live_actions": false
+}

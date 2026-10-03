@@ -1,0 +1,2 @@
+sani-tts worker environment built (engine: pending audition)
+sani/scripts/build-tts.sh: line 27: cd: sani/scripts/../src-tauri: No such file or directory

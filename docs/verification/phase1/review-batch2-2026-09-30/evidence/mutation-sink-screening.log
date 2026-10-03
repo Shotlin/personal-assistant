@@ -1,0 +1,36 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_canaries_withheld_at_result_and_final_review_sinks ____________
+
+store = <assistant.missions.store.MissionStore object at 0x10cd06f30>
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-43/test_canaries_withheld_at_resu0')
+
+    async def test_canaries_withheld_at_result_and_final_review_sinks(
+        store: MissionStore, tmp_path: Any
+    ) -> None:
+        """A synthetic canary riding in an exception result or the final review
+        is withheld at the persistence sink — never persisted verbatim."""
+        canary = "sk-sink-synthetic-canary-12345678901234567890"
+        mission, _ = await _claimed(store, tmp_path)
+        item = await store.claim_step(mission.mission_id, 1, 1, tool_ids=["list_apps"])
+        assert item is not None
+        applied = await store.apply_result(StepResult(
+            mission_id=mission.mission_id, plan_version=1, control_epoch=1, step_id="s1",
+            execution_id=item.execution_id, attempt=1, status="NEEDS_CONTROLLER",
+            effect_outcome="NOT_ATTEMPTED", failure_category="TRANSPORT_LOST",
+            uncertainty=f"driver said: {canary}"))
+        assert applied == "APPLIED"
+        raw = store._conn.execute(
+            "SELECT result_json FROM mission_attempts WHERE execution_id=?",
+            (item.execution_id,)).fetchone()
+>       assert raw is not None and canary not in str(raw[0])
+E       assert (('{"artifact_ids":[],"attempt":1,"control_epoch":1,"effect_outcome":"NOT_ATTEMPTED","elapsed_ms":0,"evidence_ids":[],"...ll,"known_input_tokens":0,"known_output_tokens":0,"known_reasoning_tokens":0,"reserved":{},"unknown_usage_calls":0}}',) is not None and 'sk-sink-syn...901234567890' not in '{"artifact_...e_calls":0}}'
+E         
+E         'sk-sink-synthetic-...2345678901234567890' is contained here:
+E           ver said: sk-sink-synthetic-canary-12345678901234567890","usage":{"active_ms":0,"consumed":{},"external_wait_ms":0,"known_cache_tokens":0,"known_cost_microunits":null,"known_input_tokens":0,"known_output_tokens":0,"known_reasoning_tokens":0,"reserved":{},"unknown_usage_calls":0}}
+E         ?           +++++++++++++++++++++++++++++++++++++++++++++)
+
+tests/integration/test_phase1_provider_privacy.py:205: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integration/test_phase1_provider_privacy.py::test_canaries_withheld_at_result_and_final_review_sinks
+1 failed in 0.89s

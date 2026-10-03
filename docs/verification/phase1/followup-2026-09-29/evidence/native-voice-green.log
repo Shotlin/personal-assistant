@@ -1,0 +1,122 @@
+   Compiling sani v0.1.0 (/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/sani/src-tauri)
+warning: unused import: `AsyncWrite`
+  --> src/tts.rs:22:42
+   |
+22 | use tokio::io::{AsyncReadExt, AsyncRead, AsyncWrite, AsyncWriteExt};
+   |                                          ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Duration` and `Instant`
+  --> src/tts_queue.rs:18:17
+   |
+18 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^  ^^^^^^^
+
+warning: type `RunGuard` is more private than the item `SaniState::run`
+  --> src/app_state.rs:60:5
+   |
+60 |     pub(crate) run: Mutex<Option<RunGuard>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `SaniState::run` is reachable at visibility `pub(crate)`
+   |
+note: but type `RunGuard` is only usable at visibility `pub(self)`
+  --> src/app_state.rs:50:1
+   |
+50 | struct RunGuard {
+   | ^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: fields `sample_rate` and `stop` are never read
+  --> src/audio.rs:30:9
+   |
+28 | pub struct AudioHandle {
+   |            ----------- fields in this struct
+29 |     pub device_name: String,
+30 |     pub sample_rate: u32,
+   |         ^^^^^^^^^^^
+...
+36 |     pub stop: Arc<AtomicBool>,
+   |         ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `WORKER_CANCEL_TIMEOUT_MS` is never used
+  --> src/tts.rs:25:11
+   |
+25 | pub const WORKER_CANCEL_TIMEOUT_MS: u64 = 250;
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `has_stdin` and `shutdown` are never used
+   --> src/tts.rs:121:12
+    |
+ 52 | impl TtsSupervisor {
+    | ------------------ methods in this implementation
+...
+121 |     pub fn has_stdin(&self) -> bool {
+    |            ^^^^^^^^^
+...
+133 |     pub async fn shutdown(&self) {
+    |                  ^^^^^^^^
+
+warning: methods `update_generation` and `generation` are never used
+   --> src/tts_protocol.rs:151:12
+    |
+143 | impl StreamValidator {
+    | -------------------- methods in this implementation
+...
+151 |     pub fn update_generation(&mut self, generation: u64) {
+    |            ^^^^^^^^^^^^^^^^^
+...
+156 |     pub fn generation(&self) -> u64 {
+    |            ^^^^^^^^^^
+
+warning: variants `Disabled` and `Loading` are never constructed
+  --> src/tts_queue.rs:53:5
+   |
+52 | pub enum QueueState {
+   |          ---------- variants in this enum
+53 |     Disabled,
+   |     ^^^^^^^^
+54 |     Loading,
+   |     ^^^^^^^
+   |
+   = note: `QueueState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `hide_main` is never used
+   --> src/windows.rs:518:8
+    |
+518 | pub fn hide_main(app: &AppHandle) {
+    |        ^^^^^^^^^
+
+warning: function `show_overlays` is never used
+   --> src/windows.rs:979:8
+    |
+979 | pub fn show_overlays(app: &AppHandle) {
+    |        ^^^^^^^^^^^^^
+
+warning: `sani` (bin "sani" test) generated 10 warnings (run `cargo fix --bin "sani" -p sani --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.54s
+     Running unittests src/main.rs (/private/tmp/jarvis-review29/sani/src-tauri/target/debug/deps/sani-68884cb1d9c85746)
+
+running 18 tests
+test tts::tests::worker_env_allowlist_is_credential_free ... ok
+test tts_protocol::tests::stale_generation_refused ... ok
+test tts_protocol::tests::non_monotonic_sequence_refused ... ok
+test tts::tests::supervisor_defaults_to_disabled ... ok
+test tts_protocol::tests::oversize_text_is_refused ... ok
+test tts_protocol::tests::unknown_kind_and_bad_rate_refuse ... ok
+test tts_protocol::tests::valid_pcm_decodes ... ok
+test tts_protocol::tests::nan_pcm_is_refused ... ok
+test tts_protocol::tests::valid_request_passes ... ok
+test tts::tests::host_request_satisfies_worker_contract ... ok
+test tts_queue::tests::enqueue_and_finish_cycle ... ok
+test tts_queue::tests::queue_bounds_at_three_utterances ... ok
+test tts::tests::stop_worker_without_worker_is_false ... ok
+test tts_queue::tests::sink_failure_sets_error_state ... ok
+test tts_queue::tests::stale_chunk_after_stop_is_refused ... ok
+test tts_queue::tests::stop_bumps_generation_and_clears_queue ... ok
+test tts_queue::tests::buffer_bound_blocks_flood ... ok
+test tts_queue::tests::drained_stream_does_not_accumulate_lifetime_samples ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 100 filtered out; finished in 0.03s
+

@@ -1,0 +1,18 @@
+{
+ "mutation-approval-release": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-origin-readonly": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-stop-noop": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-sink-screening": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ }
+}

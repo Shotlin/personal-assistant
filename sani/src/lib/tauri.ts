@@ -249,7 +249,7 @@ export const onCoreEvent = (cb: (e: CoreEvent) => void) =>
 
 // -------------------------------------------------------------- commands
 
-export const getState = () => invoke<{ state: UiState; stt_ready: boolean; stt_model: string; partial: string; mic_permission: MicPermission }>("get_state");
+export const getState = () => invoke<{ state: UiState; stt_ready: boolean; stt_model: string; partial: string; mic_permission: MicPermission; active_conversation_id: string }>("get_state");
 export const getSettings = () => invoke<SettingsShape>("get_settings");
 export const voiceModels = () => invoke<VoiceModelDescriptor[]>("voice_models");
 export const installVoiceModel = (model: string) =>
@@ -385,6 +385,7 @@ export const missionControl = (
   expectedPlanVersion: number,
   expectedControlEpoch: number,
   reason = "",
+  extras: { revision_request?: string; priority?: number } = {},
 ) =>
   invoke<{ mission_id: string; status: MissionStatusValue }>("mission_control_cmd", {
     method: "mission.control",
@@ -395,15 +396,70 @@ export const missionControl = (
       expected_control_epoch: expectedControlEpoch,
       kind,
       reason,
+      ...(extras.revision_request !== undefined ? { revision_request: extras.revision_request } : {}),
+      ...(extras.priority !== undefined ? { priority: extras.priority } : {}),
     },
   });
 
+/** D10: the owner approves the EXACT pending action (digest, plan version,
+ * epoch). The host mints provenance; the renderer only supplies the
+ * decision. */
+export const missionApprove = (
+  missionId: string, scopeHash: string, pending: MissionPendingApproval,
+) =>
+  invoke<{ approval_id: string }>("mission_control_cmd", {
+    method: "mission.approve",
+    params: {
+      approval_id: crypto.randomUUID(),
+      mission_id: missionId,
+      plan_version: pending.plan_version,
+      control_epoch: pending.control_epoch,
+      action_digest: pending.action_digest,
+      scope_hash: scopeHash,
+      target_ref: pending.target_ref,
+      account_ref: pending.account_ref,
+      workspace_ref: pending.workspace_ref,
+      effect_class: pending.effect_class,
+      issued_at_ms: Date.now(),
+      expires_at_ms: Date.now() + 300_000,
+    },
+  }).then((result) => result as { approval_id: string });
+
+/** D10: the exact per-step approval the owner owes, from durable state. */
+export interface MissionPendingApproval {
+  step_id: string;
+  tool: string;
+  action_digest: string;
+  plan_version: number;
+  control_epoch: number;
+  target_ref: string | null;
+  account_ref: string | null;
+  workspace_ref: string | null;
+  effect_class: "READ_ONLY" | "REPEATABLE_LOCAL" | "EXTERNAL_WRITE" | "DESTRUCTIVE";
+}
+
 /** Read one mission's durable record (status truth for the UI). */
 export const missionGet = (missionId: string) =>
-  invoke<{ mission_id: string; status: MissionStatusValue; plan_version: number; control_epoch: number; verified: boolean }>(
+  invoke<{ mission_id: string; status: MissionStatusValue; plan_version: number; control_epoch: number; verified: boolean; pending_approvals: MissionPendingApproval[]; scope: { scope_hash: string; allowed_apps: string[] }; owner_id: string }>(
     "mission_get_cmd",
     { missionId },
   );
+
+/** D12/D16: owner deletion of one mission's derivative records. The core
+ * verifies mission/owner identity before anything is touched. */
+export const missionPurge = (missionId: string, ownerId: string) =>
+  invoke<{ purged: boolean; reason?: string; evidence_files_deleted: number; recommendations_deleted: string[] }>(
+    "mission_control_cmd",
+    { method: "mission.purge", params: { mission_id: missionId, owner_id: ownerId } },
+  );
+
+/** D16: durable owner hold control; expiry workers read this same record. */
+export const missionRetentionHold = (
+  missionId: string, ownerId: string, held: boolean, reason = "owner retention control",
+) => invoke<{ mission_id: string; held: boolean }>("mission_control_cmd", {
+  method: "mission.retention_hold",
+  params: { mission_id: missionId, owner_id: ownerId, held, reason },
+});
 
 /** Replay mission events after a reconnect cursor. */
 export const missionEvents = (missionId: string, afterSequence: number) =>

@@ -1,0 +1,32 @@
+............................................F.....................       [100%]
+=================================== FAILURES ===================================
+__________________ test_np04_recovery_uses_reserved_transport __________________
+
+store = <assistant.missions.store.MissionStore object at 0x10c231d00>
+
+    async def test_np04_recovery_uses_reserved_transport(store: MissionStore) -> None:
+        """NP04 regression: NEEDS_CONTROLLER escalation invokes the RECOVER role
+        over the mission-bound transport, with the Deep call reserved durably."""
+        from assistant.missions.contracts import StepResult
+    
+        scripted = _ScriptedDeepInvoke()
+        service, _runtime = _service(store)
+        service._transport_factory = lambda mission: scripted
+        mission, item = await _mission_with_step(store)
+        result = StepResult(
+            mission_id=mission.mission_id, plan_version=1, control_epoch=1,
+            step_id="s1", execution_id=item.execution_id, attempt=1,
+            status="NEEDS_CONTROLLER", effect_outcome="NOT_ATTEMPTED",
+            failure_category="STALE_TARGET",
+        )
+        await service._escalate(mission.mission_id, item, result)
+>       assert ("RECOVER", "submit_mission_response") in scripted.calls, (
+            "recovery must invoke the real transport, not record a no-transport pause"
+        )
+E       AssertionError: recovery must invoke the real transport, not record a no-transport pause
+E       assert ('RECOVER', 'submit_mission_response') in [('RECOVER', 'submit_recovery_decision')]
+E        +  where [('RECOVER', 'submit_recovery_decision')] = <tests.unit.test_mission_service._ScriptedDeepInvoke object at 0x10c230890>.calls
+
+tests/unit/test_mission_service.py:606: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_mission_service.py::test_np04_recovery_uses_reserved_transport

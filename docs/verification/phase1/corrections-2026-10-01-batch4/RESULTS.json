@@ -1,0 +1,9 @@
+{
+  "status": "IMPLEMENTATION_FIXTURE_VERIFIED_NOT_ACCEPTED",
+  "targeted_python": "PASS",
+  "rust_tts_resolution": "PASS",
+  "renderer_build": "PASS",
+  "full_unit_integration": "ERROR: PostgreSQL fixture unavailable at 127.0.0.1:5433",
+  "physical_acceptance": "BLOCKED: owner authorization and physical harness required",
+  "pre_fix_red_reproduction": "HISTORICAL/PROSPECTIVE_ONLY: no pre-fix checkout was executed in this follow-up"
+}

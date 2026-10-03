@@ -1,0 +1,39 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________ test_purge_is_mission_scoped_and_idempotent __________________
+
+store = <assistant.missions.store.MissionStore object at 0x10ea16f30>
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-102/test_purge_is_mission_scoped_a0')
+
+    async def test_purge_is_mission_scoped_and_idempotent(store: MissionStore,
+                                                          tmp_path: Any) -> None:
+        """Deleting mission A must preserve mission B's files AND live rows —
+        the batch-2 probe deleted the bystander's files."""
+        mission_a = await _mission(store)
+        mission_b = await _mission(store)
+        evidence = EvidenceStore(tmp_path / "ev", store)
+        ref_a = await evidence.put(EvidenceCandidate(
+            kind="structured_facts", payload={"mission": "A"},
+            captured_at_ms=int(time.time() * 1000)), mission_id=mission_a.mission_id)
+        ref_b = await evidence.put(EvidenceCandidate(
+            kind="structured_facts", payload={"mission": "B"},
+            captured_at_ms=int(time.time() * 1000)), mission_id=mission_b.mission_id)
+        assert ref_a.relative_path and ref_b.relative_path
+        file_a = evidence.root / ref_a.relative_path
+        file_b = evidence.root / ref_b.relative_path
+        assert file_a.exists() and file_b.exists()
+    
+        service, _observer = _service(store, evidence,
+                                      RecommendationStore(tmp_path / "recs"))
+        report = await service.purge_mission_derivatives(mission_a.mission_id)
+        assert report["purged"] is True
+        assert not file_a.exists()
+        # Mission B is untouched: file present, row still live (deleted=0).
+>       assert file_b.exists()
+E       AssertionError: assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/private/tmp/pytest-of-sayan/pytest-102/test_purge_is_mission_scoped_a0/ev/452b9649-48ce-4e72-b67a-942c17e1aea3/4f780f25-48fa-40a8-b184-78f56dafa82b.json').exists
+
+tests/integration/test_deletion_retention.py:107: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integration/test_deletion_retention.py::test_purge_is_mission_scoped_and_idempotent

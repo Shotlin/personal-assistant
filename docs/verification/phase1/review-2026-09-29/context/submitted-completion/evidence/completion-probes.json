@@ -1,0 +1,132 @@
+[
+  {
+    "case": "NP01-production-composition",
+    "expected": "Executor has store and payload resolver",
+    "actual": {
+      "store_bound": true,
+      "payload_resolver_bound": true,
+      "ownership_probe_bound": true
+    }
+  },
+  {
+    "case": "NP02-uncertain-retry",
+    "expected": "Dispatched external write remains blocked until proof of NO_EFFECT",
+    "actual": {
+      "second_attempt": null,
+      "old_state": "RECONCILING"
+    }
+  },
+  {
+    "case": "NP03-multiple-external-operations",
+    "expected": "Mixed NO_EFFECT and CONFIRMED cannot authorize retry",
+    "actual": {
+      "result": {
+        "execution_id": "c945be8b-4346-4513-a12e-415a6e14522c",
+        "mission_id": "cb212bee-d2ea-4fca-bcb2-c2e6369edd1b",
+        "outcome": "CONFIRMED",
+        "retriable": false,
+        "reason": "probe confirmed second"
+      },
+      "operations_probed": [
+        "first",
+        "second"
+      ]
+    }
+  },
+  {
+    "case": "NP04-recovery-transport",
+    "expected": "Recovery invokes shared Deep transport with reserved budget",
+    "actual": {
+      "recovery_invoked": [
+        "RECOVER"
+      ],
+      "deep_consumed": 1
+    }
+  },
+  {
+    "case": "NP05-revision-transport-and-privacy",
+    "expected": "Revision safely persists screened intent and invokes versioned planner",
+    "actual": {
+      "error": "MissionStoreError: revision refused by privacy policy: provider-style API key",
+      "synthetic_secret_persisted": false
+    }
+  },
+  {
+    "case": "NP06-required-checks",
+    "expected": "Every mutating recipe has independent required outcome checks",
+    "actual": {
+      "open_app": 1,
+      "navigate": 1,
+      "search_browser": 1,
+      "scroll": 1,
+      "type_text": 1,
+      "press_ordinal": 1
+    }
+  },
+  {
+    "case": "NP07-discovery-bootstrap",
+    "expected": "Approved recipe may discover app before scoped action",
+    "actual": {
+      "refusal": null
+    }
+  },
+  {
+    "case": "NP08-per-step-catalog",
+    "expected": "Second scroll step receives scroll permission",
+    "actual": {
+      "recipe": "scroll",
+      "tools": [
+        "list_apps",
+        "get_window_state",
+        "scroll"
+      ]
+    }
+  },
+  {
+    "case": "NP09-zero-JEV-budget",
+    "expected": "No JEV call when allowance is zero",
+    "actual": {
+      "calls": 0,
+      "outcome": "escalated"
+    }
+  },
+  {
+    "case": "NP10-deep-accounting",
+    "expected": "One transport invocation consumes one unit",
+    "actual": {
+      "usage": {
+        "reserved": {
+          "deep_calls": 0
+        },
+        "consumed": {
+          "deep_calls": 1
+        },
+        "known_input_tokens": 0,
+        "known_output_tokens": 0,
+        "known_cache_tokens": 0,
+        "known_reasoning_tokens": 0,
+        "unknown_usage_calls": 0,
+        "known_cost_microunits": null,
+        "external_wait_ms": 0,
+        "active_ms": 0
+      }
+    }
+  },
+  {
+    "case": "NP11-selectable-deep-bypass",
+    "expected": "Mission-enabled Deep route may not mutate outside a mission",
+    "actual": {
+      "synthetic_mutations": 0,
+      "model_calls": 2
+    }
+  },
+  {
+    "case": "NP12-stale-JUnit",
+    "expected": "Nonzero process exit cannot pass by reading previous JUnit",
+    "actual": {
+      "status": "FAIL",
+      "exit_code": 7,
+      "observed": ""
+    }
+  }
+]

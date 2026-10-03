@@ -1,0 +1,15 @@
+{
+  "head_unchanged": true,
+  "source_manifest_unchanged": true,
+  "dirty_identity_unchanged": true,
+  "probe_count": 12,
+  "old_review_changed": [],
+  "original_gate_json_matches_review_copies": {
+    "unit": true,
+    "integration": true,
+    "performance": true,
+    "rust": true,
+    "renderer": true
+  },
+  "documents_exist": true
+}

@@ -1,0 +1,30 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________________ test_packet_budget_counts_more_than_zero ___________________
+
+store = <assistant.missions.store.MissionStore object at 0x10e5b7aa0>
+
+    async def test_packet_budget_counts_more_than_zero(store: MissionStore) -> None:
+        from types import SimpleNamespace
+    
+        from assistant.missions.authority import AuthorityDenied
+        _, item = await claimed(store)
+        item = item.model_copy(update={"budget": BudgetLimits(max_jev_calls=1)})
+        async def no_runtime() -> None:
+            return None
+        authority = MissionAuthority(store)
+        executor = VeloExecutor(SimpleNamespace(), get_runtime=no_runtime,
+                                authority=authority, store=store)
+        first = await executor._reserve_for(item, "jev_calls")
+        assert first is not None
+        await authority.settle(first, consumed=True)
+        # Fresh executor rules out an in-memory-only ceiling.
+        resumed = VeloExecutor(SimpleNamespace(), get_runtime=no_runtime,
+                               authority=authority, store=store)
+>       with pytest.raises(AuthorityDenied):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AuthorityDenied
+
+tests/integration/test_phase1_corrective_boundaries.py:214: Failed
+=========================== short test summary info ============================
+FAILED tests/integration/test_phase1_corrective_boundaries.py::test_packet_budget_counts_more_than_zero

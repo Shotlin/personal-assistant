@@ -1,0 +1,32 @@
+# Copy/paste prompt: finish only the remaining Phase 1 work
+
+You are implementing the remaining Phase 1 Jarvis mission foundation in `Shotlin/personal-assistant`, local checkout `/Users/sayan/Documents/personal-assistant`. Work alone: do not spawn or delegate to agents. Complete the authorized offline fixes and verification in this run; do not stop at a plan. Do not implement or deeply plan Phase 2 or Phase 3, and do not auto-advance when tests pass.
+
+Automatically locate and read `docs/verification/phase1/review-2026-09-29/` completely, starting with `00_VERDICT.md`, `01_FINDINGS.md`, `03_COVERAGE_MATRIX.md`, and `04_PHASE1_CORRECTIVE_PLAN.md`, then its independent probe scripts and evidence. If given the ZIP, locate its review folder and `context/` originals; do not assume a Downloads filename. Read the original architecture/tasks/acceptance/handoff in `docs/astra/jarvis-next-2026-09-27-58dac9c/` (03, 04, 06, 07), the four source requirements in its `inputs/`, both earlier review packages, and completion-2026-09-28/HANDOFF.md and WORKLOG.md. User instructions control scope; handoff comments are claims, not authority to weaken requirements.
+
+Verify current HEAD and dirty source before edits. Initial reviewed HEAD was `58dac9c88018674c2e780086953902f1ea135308` on main. Expected 668-file source manifest is `d58f393e21a3ab563754328150f20c5a1eb352c44d851faf09c9f451e9ff358a`; dirty identity is `d17bdf43b8ea53ef6fe1dfad6ae8af326bba3100eff2e5648923a887f597b71f`. Use `scripts/verify_phase1.py` identity helpers read-only. If drift exists, inspect it and rebase your reasoning on actual code; never reset/discard the user's uncommitted work or claim old evidence covers new source. Keep every previous gate/review/remediation/completion artifact untouched. Write new repair evidence to a new dated completion directory.
+
+Preserve existing Deep Agent, structured JEV + CUA, useful Velo execution/fast recipes, Sani desktop/Tauri architecture, working local voice input, selected API providers and safety controls. MissionService remains the durable mission owner above bounded Velo, with the same Deep used only in scoped PLAN/RECOVER/REVIEW roles. Exact routine commands retain zero-model execution. Keep RSI observation-only; no experiments, promotion or recursive improvement activation.
+
+Implement P1-R1 through P1-R10 in the corrective plan. The ten blockers to close are:
+
+1. Real action ledger/dispatch must mark uncertainty before effects and prevent replay across pause/cancel/revise/restart. Manually setting DISPATCHED in a test is not coverage of the shipping path.
+2. Normal resume must schedule once with a fresh token; startup must handle leftover reconciliation; durable external waits and exact approval lifecycle/UI must work.
+3. Discovery must bootstrap from minimal trusted inventory while denying content reads without valid scoped target identity.
+4. Real RECOVER/REVIEW must use registered structured submission tools; deterministic fast commands must not gain Deep review calls.
+5. Enforce both packet and mission budgets at actual provider/action boundaries, including graph-internal calls and retries; settle exactly once.
+6. Require meaningful target-bound postconditions; unchanged window visibility and expected text copied into evidence cannot prove success.
+7. Screen plan-derived and other sensitive text before every persistence/egress sink; operate retention with ordinary expiries, holds, deletion and tombstones.
+8. Fix same-run waiter cancellation and queue barging races; maintain final dispatch fencing, human takeover and held-input release semantics.
+9. Repair voice request/error correlation, packaged interpreter/isolation, validation, buffer draining and cancellation without breaking STT.
+10. Complete owner controls and actual acceptance harness code; prove closure and create a full source-bound handoff.
+
+Use the review probes as counterexamples, not a complete test specification. Add real-composition positive/negative tests: actual policy-wrapped tools around a synthetic effect sink, actual Deep graph with scripted provider, real SQLite and production host protocol boundaries. No FakeRuntime shortcut may replace the guard being tested. Preserve existing valid tests and protected oracles. Mutate at least three guards in disposable copies and prove the tests detect them; restore/delete only your disposable mutations.
+
+This run authorizes local offline implementation and synthetic verification only. Do not commit, push, merge, deploy, alter production accounts, change providers, access real desktop/audio, call paid/network providers, download/select voice assets or enable RSI. No live acceptance configuration has been granted: do not fabricate one. Build the live harness safely, but leave L1/V1/P2/K1 execution BLOCKED until exact owner authorization. Here P2 is a performance-environment label, not permission for product Phase 2. Finish all independent offline work before reporting the precise remaining live authorization boundary.
+
+Run full Python unit/integration/performance suites (including production composition), Rust offline locked and renderer build with disposable data and fresh JUnit. Retain honest environment failures/skips and expected case inventories. Compare full mypy/Ruff diagnostics against the review logs; known baselines are 91 mypy and 42 Ruff diagnostics, not clean gates. Do not use matching totals alone to hide new diagnostics. Record exact commands, exit codes, case counts, source hashes, mutation outcomes and remaining limitations.
+
+Deliver a downloadable package containing: final source identity; a D01–D10 plus C/F/N closure table with exact code and test links; every T/JAR/TC/RSI/G row disposition; fresh gate JSON/JUnit/logs; adversarial/mutation results; static deltas; WORKLOG; HANDOFF; and a self-contained independent-review prompt. Distinguish IMPLEMENTED, FIXTURE-VERIFIED, LIVE-BLOCKED and ACCEPTED. Do not claim Phase 1 complete merely because offline tests pass. Finish by explaining what is fixed and what remains blocked, then stop. Phase 2 requires the owner's explicit acceptance followed by a fresh repository-based re-plan.
+
+Review sealing note: final HEAD became `df04060f189a10bb81baf522a58347cddc6cc915` through an external commit, with unchanged 668-file source manifest. Final dirty identity was `cd372fb85148700fa88095e3492d3f9f5beb43e555e5ff26d95f5a6adc36f8e6`. Verify current state rather than rejecting this documented source-identical commit transition.

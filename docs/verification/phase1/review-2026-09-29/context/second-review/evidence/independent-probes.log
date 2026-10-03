@@ -1,0 +1,165 @@
+mission_recovery_failed: no Deep transport is wired into the controller
+[
+  {
+    "case": "NP01-production-composition",
+    "expected": "Executor has store and payload resolver",
+    "actual": {
+      "store_bound": false,
+      "payload_resolver_bound": false
+    }
+  },
+  {
+    "case": "NP02-uncertain-retry",
+    "expected": "Dispatched external write remains blocked until proof of NO_EFFECT",
+    "actual": {
+      "second_attempt": 2,
+      "old_state": "CANCELLED",
+      "reconciliation": {
+        "execution_id": "da69b3a1-56a8-4e63-82c1-978f4eeffb24",
+        "mission_id": "89a3bb15-006c-472b-a83a-2a7f62c03eb7",
+        "outcome": "UNKNOWN",
+        "retriable": false,
+        "reason": "attempt state CANCELLED is final"
+      }
+    }
+  },
+  {
+    "case": "NP03-multiple-external-operations",
+    "expected": "Mixed NO_EFFECT and CONFIRMED cannot authorize retry",
+    "actual": {
+      "result": {
+        "execution_id": "54fa6a9a-4dc4-436a-a475-c0ac29334dc8",
+        "mission_id": "ee3ae0cf-9bc5-40d7-9d54-c96e65f51d35",
+        "outcome": "NO_EFFECT",
+        "retriable": true,
+        "reason": "probe disproved first"
+      },
+      "operations_probed": [
+        "first"
+      ]
+    }
+  },
+  {
+    "case": "NP04-recovery-transport",
+    "expected": "Recovery invokes shared Deep transport with reserved budget",
+    "actual": {
+      "events": [
+        {
+          "schema_version": 1,
+          "event_id": "a796882b-c7a0-42e0-b58a-259c5618bf0f",
+          "sequence": 17,
+          "trace_id": "3f589f75-c9b2-4cb0-990d-b3bacaac9f5e",
+          "mission_id": "3f589f75-c9b2-4cb0-990d-b3bacaac9f5e",
+          "plan_version": 1,
+          "control_epoch": 2,
+          "step_id": null,
+          "execution_id": null,
+          "kind": "control",
+          "safe_payload": {
+            "from_status": "RUNNING",
+            "kind": "PAUSE",
+            "reason": "recovery unavailable: no Deep transport is wired into the controller",
+            "revision": "",
+            "to_status": "PAUSED"
+          },
+          "expected_state": null,
+          "observed_state": null,
+          "evidence_ids": [],
+          "component_versions": {},
+          "skill_versions": {},
+          "occurred_at_ms": 1790541959275,
+          "previous_hash": "95eadf58d4a1d9769036bbc8594c071af8d0a9009c346434a04256ca485e6c36",
+          "event_hash": "4d29800fa45e0db5bf05637ec2c5a942805adcae9d2f30b504c028a76a71cf39"
+        }
+      ]
+    }
+  },
+  {
+    "case": "NP05-revision-transport-and-privacy",
+    "expected": "Revision safely persists screened intent and invokes versioned planner",
+    "actual": {
+      "error": "RuntimeError: no Deep transport is wired into the controller",
+      "synthetic_secret_persisted": true
+    }
+  },
+  {
+    "case": "NP06-required-checks",
+    "expected": "Every mutating recipe has independent required outcome checks",
+    "actual": {
+      "open_app": 1,
+      "navigate": 0,
+      "search_browser": 0,
+      "scroll": 0,
+      "type_text": 0,
+      "press_ordinal": 0
+    }
+  },
+  {
+    "case": "NP07-discovery-bootstrap",
+    "expected": "Approved recipe may discover app before scoped action",
+    "actual": {
+      "refusal": "Refused: SCOPE_MISMATCH: effect READ_ONLY exceeds the step's permitted effects"
+    }
+  },
+  {
+    "case": "NP08-per-step-catalog",
+    "expected": "Second scroll step receives scroll permission",
+    "actual": {
+      "recipe": "scroll",
+      "tools": [
+        "list_apps",
+        "list_windows",
+        "launch_app",
+        "bring_to_front",
+        "get_window_state"
+      ]
+    }
+  },
+  {
+    "case": "NP09-zero-JEV-budget",
+    "expected": "No JEV call when allowance is zero",
+    "actual": {
+      "calls": 1
+    }
+  },
+  {
+    "case": "NP10-deep-accounting",
+    "expected": "One transport invocation consumes one unit",
+    "actual": {
+      "calls": 1,
+      "usage": {
+        "reserved": {
+          "deep_calls": 0
+        },
+        "consumed": {
+          "deep_calls": 2
+        },
+        "known_input_tokens": 0,
+        "known_output_tokens": 0,
+        "known_cache_tokens": 0,
+        "known_reasoning_tokens": 0,
+        "unknown_usage_calls": 0,
+        "known_cost_microunits": null,
+        "external_wait_ms": 0,
+        "active_ms": 0
+      }
+    }
+  },
+  {
+    "case": "NP11-selectable-deep-bypass",
+    "expected": "Mission-enabled Deep route may not mutate outside a mission",
+    "actual": {
+      "synthetic_mutations": 1,
+      "model_calls": 2
+    }
+  },
+  {
+    "case": "NP12-stale-JUnit",
+    "expected": "Nonzero process exit cannot pass by reading previous JUnit",
+    "actual": {
+      "status": "PASS",
+      "exit_code": 7,
+      "observed": "1 cases, none skipped"
+    }
+  }
+]

@@ -1,0 +1,33 @@
+{
+  "NP01": {
+    "store_bound": true,
+    "payload_bound": true
+  },
+  "NP07": {
+    "discovery_refusal": null,
+    "mutation_refusal": "Refused: STALE_TARGET: the surface observation carries no timestamp"
+  },
+  "NP08": {
+    "recipe": "scroll",
+    "tools": [
+      "list_apps",
+      "get_window_state",
+      "scroll"
+    ]
+  },
+  "NP05": {
+    "secret_revision_refused": true,
+    "persisted": false
+  },
+  "targeted_discovery_unknown_identity": {
+    "permit_issued": true
+  },
+  "NP11": {
+    "mutations": 0,
+    "provider_calls": 2
+  },
+  "NP12": {
+    "status": "FAIL",
+    "exit": 7
+  }
+}

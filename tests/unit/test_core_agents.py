@@ -185,3 +185,41 @@ async def test_status_provider_reports_subsystems(tmp_path: Any) -> None:
     payload = await provider()
     assert payload["driver"]["found"] is False
     assert payload["memory_backend"] == "sqlite"
+
+
+async def test_deep_entry_stops_a_repeating_loop_fail_closed() -> None:
+    script = [_chunk(f"m{i}", "I will find the second video and click it now.") for i in range(6)]
+    agent = _StreamingDeepAgent(script)
+
+    async def builder() -> _StreamingDeepAgent:
+        return agent
+
+    entry = DeepAgentEntry(_settings(), agent_builder=builder)
+    result = await entry.run(
+        "play the second video", thread_id="c", on_event=_EventLog(), cancel_check=lambda: False
+    )
+
+    assert result["status"] == "blocked"
+    assert "repeating" in result["response"]
+
+
+class _HungDeepAgent:
+    async def astream(self, messages, config, context=None, stream_mode=None):  # noqa: ANN001
+        await asyncio.sleep(30)
+        yield _chunk("m1", "never"), {}
+
+
+async def test_deep_entry_ends_a_hung_model_request_at_the_hard_limit() -> None:
+    agent = _HungDeepAgent()
+
+    async def builder() -> _HungDeepAgent:
+        return agent
+
+    entry = DeepAgentEntry(
+        _settings(deep_run_deadline_seconds=-29), agent_builder=builder
+    )
+    result = await entry.run(
+        "do something", thread_id="c", on_event=_EventLog(), cancel_check=lambda: False
+    )
+    assert result["status"] == "blocked"
+    assert "time limit" in result["response"]

@@ -1,0 +1,17 @@
+..F........                                                              [100%]
+=================================== FAILURES ===================================
+_________________________ test_oversize_text_rejected __________________________
+
+tts = <module 'sani_tts_test' from '/private/tmp/jarvis-review29/sani/src-tauri/python/sani_tts.py'>
+
+    def test_oversize_text_rejected(tts: Any) -> None:
+        events = _serve(tts, [{"type": "request", "request": _request_payload(text="x" * 4001)}])
+>       assert events[-1]["event"] == "error"
+E       AssertionError: assert 'finished' == 'error'
+E         
+E         - error
+E         + finished
+
+tests/unit/test_sani_tts_worker.py:102: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_sani_tts_worker.py::test_oversize_text_rejected - Asse...

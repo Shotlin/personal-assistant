@@ -305,6 +305,8 @@ async def test_checksum_ledger_records_migration(tmp_path: Path) -> None:
     rows = store._conn.execute(
         "SELECT version, checksum FROM mission_schema_migrations"
     ).fetchall()
-    assert [int(r[0]) for r in rows] == [1, 2, 3]
+    # New waits and durable file cleanup join additively; every migration
+    # still carries its integrity checksum.
+    assert [int(r[0]) for r in rows] == [1, 2, 3, 4, 5, 6, 7, 8]
     assert all(len(r[1]) == 64 for r in rows)
     await store.close()

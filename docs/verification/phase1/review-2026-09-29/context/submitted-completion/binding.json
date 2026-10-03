@@ -1,0 +1,14 @@
+{
+ "head": "58dac9c88018674c2e780086953902f1ea135308",
+ "branch": "main",
+ "source_manifest_sha256": "d58f393e21a3ab563754328150f20c5a1eb352c44d851faf09c9f451e9ff358a",
+ "source_file_count": 668,
+ "dirty_diff_sha256": "d17bdf43b8ea53ef6fe1dfad6ae8af326bba3100eff2e5648923a887f597b71f",
+ "computed_after": "C01-C10 implementation complete; last change = final mypy/ruff fixes",
+ "baseline": {
+  "head": "58dac9c88018674c2e780086953902f1ea135308",
+  "reviewed_source_manifest": "007fb39445cd981303d635ea72d421aadb9790c93b6276ff89621db71e74ffc7",
+  "reviewed_dirty_identity": "c10e71fcb0762551f30a2cfe89935f8ee5cec77e76c242033f4ef0311ad615ce",
+  "note": "the working tree already carried the remediation implementation at review time; this binding records the post-completion state"
+ }
+}

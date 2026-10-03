@@ -1,0 +1,8 @@
+{
+  "command": "git apply --check phase1-corrections.patch",
+  "cwd": "/Users/sayan/Documents/personal-assistant",
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "applied": false
+}

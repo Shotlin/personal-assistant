@@ -1,0 +1,11 @@
+{
+  "base": "df04060f189a10bb81baf522a58347cddc6cc915",
+  "patch_sha256": "fd58106c62c11caa05223a1e7b6537d783eeee9beeb5eee7b8497b340af6b81d",
+  "files": 810,
+  "patch_reconstruction_mismatches": [],
+  "missing_submission_files": [
+    "RESULTS.json",
+    "SOURCE_BINDING.json",
+    "WORKLOG.md"
+  ]
+}

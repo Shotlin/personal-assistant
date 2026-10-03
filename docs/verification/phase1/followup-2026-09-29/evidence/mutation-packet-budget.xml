@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.949" timestamp="2026-09-29T19:15:15.217159+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_packet_budget_counts_more_than_zero" time="0.007"><failure message="Failed: DID NOT RAISE AuthorityDenied">store = &lt;assistant.missions.store.MissionStore object at 0x10e5b7aa0&gt;
+
+    async def test_packet_budget_counts_more_than_zero(store: MissionStore) -&gt; None:
+        from types import SimpleNamespace
+    
+        from assistant.missions.authority import AuthorityDenied
+        _, item = await claimed(store)
+        item = item.model_copy(update={"budget": BudgetLimits(max_jev_calls=1)})
+        async def no_runtime() -&gt; None:
+            return None
+        authority = MissionAuthority(store)
+        executor = VeloExecutor(SimpleNamespace(), get_runtime=no_runtime,
+                                authority=authority, store=store)
+        first = await executor._reserve_for(item, "jev_calls")
+        assert first is not None
+        await authority.settle(first, consumed=True)
+        # Fresh executor rules out an in-memory-only ceiling.
+        resumed = VeloExecutor(SimpleNamespace(), get_runtime=no_runtime,
+                               authority=authority, store=store)
+&gt;       with pytest.raises(AuthorityDenied):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AuthorityDenied
+
+tests/integration/test_phase1_corrective_boundaries.py:214: Failed</failure></testcase></testsuite></testsuites>

@@ -521,7 +521,9 @@ async def test_migration_is_idempotent_across_reopen(tmp_path: Path) -> None:
     rows = store_b._conn.execute(
         "SELECT version FROM mission_schema_migrations"
     ).fetchall()
-    assert [int(r[0]) for r in rows] == [1, 2, 3], "no duplicate migration rows"
+    # Migration 4 (exact approvals + external waits) joins additively; the
+    # idempotency claim is unchanged: reopen never duplicates a row.
+    assert [int(r[0]) for r in rows] == [1, 2, 3, 4, 5, 6, 7, 8], "no duplicate migration rows"
     await store_b.close()
 
 

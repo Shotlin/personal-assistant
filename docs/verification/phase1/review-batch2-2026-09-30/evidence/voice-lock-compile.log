@@ -1,0 +1,60 @@
+warning: unused import: `Instant`
+  --> docs/verification/phase1/review-batch2-2026-09-30/evidence/voice-lock-probe.rs:19:27
+   |
+19 | use std::time::{Duration, Instant};
+   |                           ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `drain` is never used
+  --> docs/verification/phase1/review-batch2-2026-09-30/evidence/voice-lock-probe.rs:26:8
+   |
+22 | pub trait AudioSink: Send {
+   |           --------- method in this trait
+...
+26 |     fn drain(&mut self);
+   |        ^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `NullSink` is never constructed
+  --> docs/verification/phase1/review-batch2-2026-09-30/evidence/voice-lock-probe.rs:33:12
+   |
+33 | pub struct NullSink;
+   |            ^^^^^^^^
+
+warning: variants `Disabled`, `Loading`, and `Cancelling` are never constructed
+  --> docs/verification/phase1/review-batch2-2026-09-30/evidence/voice-lock-probe.rs:54:5
+   |
+53 | pub enum QueueState {
+   |          ---------- variants in this enum
+54 |     Disabled,
+   |     ^^^^^^^^
+55 |     Loading,
+   |     ^^^^^^^
+...
+59 |     Cancelling,
+   |     ^^^^^^^^^^
+   |
+   = note: `QueueState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `state`, `contains_utterance`, `replace_sink`, and `stop` are never used
+   --> docs/verification/phase1/review-batch2-2026-09-30/evidence/voice-lock-probe.rs:97:12
+    |
+ 84 | impl<S: AudioSink> SpeechQueue<S> {
+    | --------------------------------- methods in this implementation
+...
+ 97 |     pub fn state(&self) -> QueueState {
+    |            ^^^^^
+...
+109 |     pub fn contains_utterance(&self, id: &str, generation: u64) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+138 |     pub fn replace_sink(&self, sink: S) -> Option<S> {
+    |            ^^^^^^^^^^^^
+...
+145 |     pub fn stop(&self) -> QueueState {
+    |            ^^^^
+
+warning: 5 warnings emitted
+

@@ -20,7 +20,7 @@ import asyncio
 import logging
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -35,7 +35,8 @@ DEFAULT_QUEUE_TIMEOUT_SECONDS = 30.0
 @dataclass
 class _QueueWaiter:
     run_id: str
-    future: asyncio.Future[None]
+    future: asyncio.Future[LeaseHandle]
+    granted: LeaseHandle | None = None
     queued_at: float = field(default_factory=time.monotonic)
 
 
@@ -49,6 +50,16 @@ class LeaseHandle:
     granted_at: float
 
 
+@dataclass(frozen=True)
+class CleanupTicket:
+    """Identity of the stopped lease whose physical cleanup is pending."""
+
+    owner: str
+    fence: str
+    operation_id: str
+    generation: int
+
+
 class DesktopQueue:
     """FIFO queue managing serialized access to the single desktop session."""
 
@@ -60,6 +71,11 @@ class DesktopQueue:
         self._waiters: list[_QueueWaiter] = []
         self._lock = asyncio.Lock()
         self._history: list[dict[str, Any]] = []
+        # D19: when bounded physical cleanup went unacknowledged, further
+        # dispatch is BLOCKED until the driver acks or a human confirms the
+        # cleanup — uncertainty never leaks into the next owner's effects.
+        self._cleanup_uncertain = False
+        self._pending_cleanup: CleanupTicket | None = None
 
     @property
     def current_owner(self) -> str | None:
@@ -100,69 +116,64 @@ class DesktopQueue:
         logger.info("desktop_queue_%s", event, extra={"event": f"desktop_queue_{event}",
                                                       "run_id": run_id, **extra})
 
+    def _grant_locked(self, run_id: str, *, queued: bool) -> LeaseHandle:
+        self._generation += 1
+        self._owner = run_id
+        self._owner_fence = uuid.uuid4().hex
+        handle = LeaseHandle(run_id, self._owner_fence, self._generation, time.monotonic())
+        self._log("granted", run_id, generation=handle.generation,
+                  fence=handle.fence, queued=queued)
+        return handle
+
+    def _grant_next_locked(self) -> None:
+        if self._cleanup_uncertain:
+            # D19: no successor is granted while physical cleanup is
+            # unacknowledged; waiters keep their position.
+            return
+        while self._waiters:
+            waiter = self._waiters.pop(0)
+            if waiter.future.done():
+                continue
+            # Reserve ownership BEFORE waking the task. An arriving caller
+            # cannot barge into the gap between notification and resumption.
+            waiter.granted = self._grant_locked(waiter.run_id, queued=True)
+            waiter.future.set_result(waiter.granted)
+            return
+
     async def acquire(self, run_id: str, *, timeout: float | None = None) -> LeaseHandle:
-        """Acquire the desktop lease, queuing if another run owns it.
-
-        C06/N09: acquisition is strictly single-flight. A concurrent acquire
-        by the SAME run id queues behind the active lease instead of being
-        re-granted a second fence — two callers in one mission can never
-        both believe they own the desktop with different fences.
-        """
+        """Acquire one unique lease; repeated run IDs are separate waiters."""
         wait_limit = self._timeout if timeout is None else timeout
-        waiter: _QueueWaiter | None = None
-
         async with self._lock:
+            if self._cleanup_uncertain:
+                raise DesktopLeaseBusy(
+                    "physical input cleanup after a stop was not acknowledged; "
+                    "dispatch stays blocked until the driver acks or a human "
+                    "confirms the cleanup"
+                )
             if self._owner is None:
-                self._generation += 1
-                self._owner = run_id
-                self._owner_fence = uuid.uuid4().hex
-                self._log("granted", run_id, generation=self._generation,
-                          fence=self._owner_fence, queued=False)
-                return LeaseHandle(run_id, self._owner_fence, self._generation,
-                                   time.monotonic())
-
-            loop = asyncio.get_running_loop()
-            waiter = _QueueWaiter(run_id=run_id, future=loop.create_future())
+                return self._grant_locked(run_id, queued=False)
+            waiter = _QueueWaiter(run_id, asyncio.get_running_loop().create_future())
             self._waiters.append(waiter)
             self._log("waiting", run_id, owner=self._owner, position=len(self._waiters))
-
         try:
-            await asyncio.wait_for(waiter.future, timeout=wait_limit)
-        except TimeoutError as exc:
+            handle = await asyncio.wait_for(waiter.future, timeout=wait_limit)
+            async with self._lock:
+                if not self.check_usable(handle):
+                    raise DesktopLeaseBusy("lease invalidated before acquisition completed")
+                return handle
+        except (TimeoutError, asyncio.CancelledError) as exc:
             async with self._lock:
                 if waiter in self._waiters:
                     self._waiters.remove(waiter)
-                granted = self._owner == run_id
-                if granted:
-                    # The grant landed as the timeout fired. We hold the
-                    # lease; release it instead of leaving a ghost owner.
-                    self._release_locked(run_id, reason="timeout_released_grant")
-            raise DesktopLeaseBusy(
-                f"Timed out waiting for desktop lease after {wait_limit}s (held by {self._owner!r})"
-            ) from exc
-        except asyncio.CancelledError:
-            async with self._lock:
-                if waiter in self._waiters:
-                    self._waiters.remove(waiter)
-                granted = self._owner == run_id
-                if granted:
-                    # Cancelled exactly when the queue granted (the race the
-                    # original code lost): release before propagating.
-                    self._release_locked(run_id, reason="cancelled_released_grant")
+                # Run identity alone cannot prove THIS waiter owns a grant.
+                if waiter.granted is not None:
+                    self._release_locked(run_id, reason="abandoned_grant",
+                                         fence=waiter.granted.fence)
+            if isinstance(exc, TimeoutError):
+                raise DesktopLeaseBusy(
+                    f"Timed out waiting for desktop lease after {wait_limit}s"
+                ) from exc
             raise
-        async with self._lock:
-            # The future resolved, but a cancellation may have been delivered
-            # in the same tick; only keep the lease if this task is alive.
-            if waiter.future.cancelled():
-                self._release_locked(run_id, reason="grant_raced_cancellation")
-                raise asyncio.CancelledError
-            self._generation += 1
-            self._owner = run_id
-            self._owner_fence = uuid.uuid4().hex
-            handle = LeaseHandle(run_id, self._owner_fence, self._generation, time.monotonic())
-            self._log("granted", run_id, generation=self._generation,
-                      fence=self._owner_fence, queued=True)
-            return handle
 
     def _release_locked(self, run_id: str, *, reason: str, fence: str = "") -> bool:
         """Release only the exact lease the caller still holds.
@@ -172,7 +183,6 @@ class DesktopQueue:
         newer grant) cannot release the newer lease out from under it.
         """
         if self._owner != run_id:
-            self._waiters = [w for w in self._waiters if w.run_id != run_id]
             return False
         if fence and fence != self._owner_fence:
             self._log("stale_release_refused", run_id,
@@ -181,51 +191,117 @@ class DesktopQueue:
         self._owner = None
         self._owner_fence = ""
         self._log("released", run_id, reason=reason)
-        while self._waiters:
-            next_waiter = self._waiters.pop(0)
-            if not next_waiter.future.cancelled():
-                self._log("granted", next_waiter.run_id, generation=self._generation,
-                          fence="", note="handoff_pending")
-                next_waiter.future.set_result(None)
-                break
+        self._grant_next_locked()
         return True
 
-    async def release(self, run_id: str, *, fence: str = "") -> None:
+    async def release(self, run_id: str, *, fence: str = "") -> bool:
         """Release the desktop lease and grant it to the next queued waiter.
 
         With ``fence`` supplied, a stale releaser is refused: only the
-        holder of the CURRENT fence can release it.
+        holder of the CURRENT fence can release it. Returns whether the
+        release happened (D19: an old lease's cleanup against a same-run
+        newer lease reports False, it never silently no-ops).
         """
         async with self._lock:
-            self._release_locked(run_id, reason="normal_release", fence=fence)
+            return self._release_locked(run_id, reason="normal_release", fence=fence)
 
-    async def stop_owner(self, run_id: str | None = None) -> dict[str, Any]:
+    async def stop_owner(
+        self,
+        run_id: str | None = None,
+        *,
+        release_input: Callable[[CleanupTicket], Awaitable[bool]] | None = None,
+    ) -> dict[str, Any]:
         """Stop the current owner and report the ACTUAL state produced.
 
-        Returns ``{"stopped": bool, "owner": str | None, "certain": bool}``.
-        Certainty is about whether stopping produced the claimed state
-        locally; whether any held physical input was released is a driver
-        capability question that only a live capability test can answer --
-        this method never claims it did.
+        D08 semantics:
+        - a stop naming a run that does NOT own the lease is a NO-OP — the
+          generation must not move, so an unrelated valid lease survives
+          and the queue is never left unusable;
+        - a stop of a run that is still QUEUED removes its waiter without
+          touching the live lease (no grant was ever made);
+        - stopping the real owner bumps the generation, releases the lease
+          to the next waiter, and — when the driver protocol supplies a
+          ``release_input`` hook — reports whether the driver ACKNOWLEDGED
+          releasing held physical input. Local certainty about lease state
+          is never a claim about physical release.
+
+        Returns ``{"stopped": bool, "owner": str | None, "certain": bool,
+        ...}``.
         """
         async with self._lock:
             target = run_id or self._owner
-            if target is None or self._owner != target:
-                self._generation += 1
-                self._log("stop_noop", target or "", generation=self._generation)
+            if target is None:
+                # Nothing owned and nothing named: a no-op stop. The
+                # generation does not move — invalidating nothing is not a
+                # stop.
+                self._log("stop_noop", "", generation=self._generation)
+                return {"stopped": False, "owner": None, "certain": True}
+            if self._owner != target:
+                waiting = self.is_waiting(target)
+                if waiting:
+                    # Stop while queued: the run never held the desktop, so
+                    # removing its pending grant touches no lease and no
+                    # generation.
+                    waiter = next(
+                        (w for w in self._waiters
+                         if w.run_id == target and not w.future.done()),
+                        None,
+                    )
+                    if waiter is not None:
+                        self._waiters.remove(waiter)
+                        waiter.future.cancel()
+                        self._log("stop_queued", target, position=len(self._waiters) + 1)
+                    return {"stopped": False, "owner": self._owner, "certain": True,
+                            "queued": True}
+                self._log("stop_not_owner", target, owner=self._owner,
+                          generation=self._generation)
                 return {"stopped": False, "owner": self._owner, "certain": True}
+            stopped_fence = self._owner_fence
             self._generation += 1
             self._owner = None
             self._owner_fence = ""
+            ticket = CleanupTicket(
+                owner=target,
+                fence=stopped_fence,
+                operation_id=uuid.uuid4().hex,
+                generation=self._generation,
+            )
+            result: dict[str, Any] = {"stopped": True, "owner": target, "certain": True,
+                                      "generation": self._generation,
+                                      "input_released_acked": False,
+                                      "cleanup_ticket": {
+                                          "owner": ticket.owner,
+                                          "fence": ticket.fence,
+                                          "operation_id": ticket.operation_id,
+                                          "generation": ticket.generation,
+                                      }}
+            # D19: bounded physical cleanup is acknowledged BEFORE any
+            # effectful successor is granted — old-owner cleanup can never
+            # race the next owner's held input. The ack runs inside the
+            # lock on purpose: stop is rare, and serializing it against
+            # grants is exactly the safety property required.
+            if release_input is not None:
+                try:
+                    result["input_released_acked"] = bool(
+                        await asyncio.wait_for(release_input(ticket), timeout=2.0)
+                    )
+                except TimeoutError:
+                    result["input_released_acked"] = False
+                except Exception:  # noqa: BLE001 -- honest ack only
+                    result["input_released_acked"] = False
+            if result["input_released_acked"] is not True:
+                # A missing hook is also uncertainty: releasing the local
+                # lease cannot prove a held key/button is up.  Only this
+                # exact ticket can lift the interlock.
+                self._cleanup_uncertain = True
+                self._pending_cleanup = ticket
+                self._log("stopped_cleanup_uncertain", target,
+                          generation=self._generation, fence=stopped_fence,
+                          operation_id=ticket.operation_id)
+                return result
             self._log("stopped", target, generation=self._generation)
-            # Wake the next waiter: it will observe the generation change and
-            # re-check before acting.
-            while self._waiters:
-                next_waiter = self._waiters.pop(0)
-                if not next_waiter.future.cancelled():
-                    next_waiter.future.set_result(None)
-                    break
-            return {"stopped": True, "owner": target, "certain": True}
+            self._grant_next_locked()
+            return result
 
     def check_usable(self, handle: LeaseHandle) -> bool:
         """A lease survives only under the same generation and fence."""
@@ -234,6 +310,76 @@ class DesktopQueue:
             and self._owner_fence == handle.fence
             and self._generation == handle.generation
         )
+
+    async def acknowledge_driver_cleanup(
+        self, *, owner: str, fence: str, operation_id: str
+    ) -> bool:
+        """D19: the driver acks the pending physical release; queued waiters
+        are granted again."""
+        async with self._lock:
+            ticket = self._pending_cleanup
+            if ticket is None:
+                return False
+            if (ticket.owner, ticket.fence, ticket.operation_id) != (
+                owner, fence, operation_id,
+            ):
+                self._log("driver_cleanup_ack_refused", owner,
+                          fence=fence, operation_id=operation_id)
+                return False
+            self._cleanup_uncertain = False
+            self._pending_cleanup = None
+            self._log("driver_cleanup_acknowledged", owner, generation=self._generation,
+                      fence=fence, operation_id=operation_id)
+            self._grant_next_locked()
+            return True
+
+    async def confirm_manual_cleanup(
+        self, *, owner: str, fence: str, operation_id: str
+    ) -> bool:
+        """D19: a human confirms the physical cleanup; dispatch unblocks.
+
+        A confirmation must identify the stopped lease, so an old UI event
+        cannot unlock a newer emergency stop.
+        """
+        async with self._lock:
+            ticket = self._pending_cleanup
+            if ticket is None or (ticket.owner, ticket.fence, ticket.operation_id) != (
+                owner, fence, operation_id,
+            ):
+                self._log("manual_cleanup_refused", owner,
+                          fence=fence, operation_id=operation_id)
+                return False
+            self._cleanup_uncertain = False
+            self._pending_cleanup = None
+            self._log("manual_cleanup_confirmed", owner, generation=self._generation,
+                      fence=fence, operation_id=operation_id)
+            self._grant_next_locked()
+            return True
+
+    def confirm_takeover(self, run_id: str) -> dict[str, Any]:
+        """D08: the owner ACKNOWLEDGED a human takeover of the desktop.
+
+        The mission that owned the lease ends here (its fence is dead), and
+        the takeover is recorded in the ownership history. Naming a run
+        that is not the current owner is a refused no-op — a takeover
+        acknowledgment can never kill an unrelated lease. Whether any held
+        PHYSICAL input was released is a driver capability question this
+        local record never answers.
+
+        Sync on purpose: there is no await inside, so the check-and-act is
+        atomic on the single-threaded event loop.
+        """
+        if self._owner != run_id:
+            self._log("takeover_refused", run_id, owner=self._owner)
+            return {"acknowledged": False, "owner": self._owner,
+                    "generation": self._generation}
+        self._generation += 1
+        self._owner = None
+        self._owner_fence = ""
+        self._log("human_takeover", run_id, generation=self._generation)
+        self._grant_next_locked()
+        return {"acknowledged": True, "owner": run_id,
+                "generation": self._generation}
 
 
 class QueuedDesktopSessionManager:
@@ -244,12 +390,12 @@ class QueuedDesktopSessionManager:
         self.queue = queue or DesktopQueue()
 
     async def open_run(self, run_id: str, timeout: float | None = None) -> AsyncIterator[Any]:
-        await self.queue.acquire(run_id, timeout=timeout)
+        handle = await self.queue.acquire(run_id, timeout=timeout)
         try:
             async with self.inner.open(run_id) as run:
                 yield run
         finally:
-            await self.queue.release(run_id)
+            await self.queue.release(run_id, fence=handle.fence)
 
     @asynccontextmanager
     async def lease(
@@ -275,4 +421,4 @@ class QueuedDesktopSessionManager:
             await self.queue.release(run_id, fence=handle.fence)
 
 
-__all__ = ["DesktopQueue", "LeaseHandle", "QueuedDesktopSessionManager"]
+__all__ = ["CleanupTicket", "DesktopQueue", "LeaseHandle", "QueuedDesktopSessionManager"]

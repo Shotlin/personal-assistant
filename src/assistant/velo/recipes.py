@@ -21,10 +21,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
 
+from assistant.velo import scene, sight
+from assistant.velo import verify as outcome_check
 from assistant.velo.adapter import CuaAdapter
 from assistant.velo.contracts import (
     AppIdentity,
@@ -35,7 +39,7 @@ from assistant.velo.contracts import (
     TargetOwnership,
     TaskState,
 )
-from assistant.velo import verify as outcome_check
+from assistant.velo.scene import SCENES
 
 logger = logging.getLogger("assistant.velo.recipes")
 
@@ -48,6 +52,9 @@ class RecipeResult:
     state: OutcomeState
     answer: str
     verification: Verification | None = None
+    #: Options Sani asked the user to pick from; the controller remembers them
+    #: so "the first one" or a label answers the question.
+    choices: tuple[str, ...] = ()
 
 
 def _focused_editable(state: dict[str, Any]) -> dict[str, Any] | None:
@@ -87,7 +94,7 @@ async def _observe(task: TaskState, adapter: CuaAdapter, pid: int, window_id: in
 
 async def _wait_foreground(
     adapter: CuaAdapter, task: TaskState, pid: int,
-    *, attempts: int = 6, delay_seconds: float = 0.4,
+    *, attempts: int = 16, delay_seconds: float = 0.15,
 ) -> bool:
     """Wait until the driver reports ``pid`` active, bounded.
 
@@ -118,8 +125,8 @@ async def _verify_patiently(
     *,
     expect_pid: int | None = None,
     expect_window_id: int | None = None,
-    attempts: int = 5,
-    delay_seconds: float = 1.2,
+    attempts: int = 12,
+    delay_seconds: float = 0.4,
 ) -> Verification:
     """Check a postcondition, then keep checking while a result loads.
 
@@ -634,6 +641,501 @@ async def press_ordinal(
     )
 
 
+async def _scene_surface(
+    task: TaskState, adapter: CuaAdapter
+) -> tuple[Target, int, int] | str:
+    """The bound (target, pid, window) to read, or an honest sentence."""
+    target = await _resolve_target(task, adapter)
+    pid = target.app.pid if target else None
+    if target is None or pid is None:
+        return "Nothing is bound yet; open the app first, then ask what I see."
+    window_id = target.window_id or await adapter.front_window(task, pid)
+    if window_id is None:
+        return f"I can't find a window for {target.app.name or 'that app'} to look at."
+    return target, pid, window_id
+
+
+async def describe_screen(task: TaskState, adapter: CuaAdapter) -> RecipeResult:
+    """Read the bound window and say what is on it, numbered, ads flagged."""
+    surface = await _scene_surface(task, adapter)
+    if isinstance(surface, str):
+        return RecipeResult("describe_screen", OutcomeState.NO_EFFECT, surface)
+    target, pid, window_id = surface
+    state = await adapter.observe_window(task, pid, window_id, max_elements=800, settle=True)
+    app_name = target.app.name or "the app"
+    title = scene.page_title(state) or str(state.get("window_title") or "").strip()
+    items = scene.extract_items(state, fallback=False)
+    SCENES.remember(task.conversation, items or scene.extract_items(state))
+    if len(items) >= 2:
+        return RecipeResult(
+            "describe_screen", OutcomeState.CONFIRMED,
+            scene.describe(items, app=app_name, title=title),
+        )
+    return RecipeResult(
+        "describe_screen", OutcomeState.CONFIRMED,
+        scene.describe_general(state, app=app_name, title=title),
+    )
+
+
+async def press_item(
+    task: TaskState,
+    adapter: CuaAdapter,
+    *,
+    index: int | None = None,
+    title: str = "",
+) -> RecipeResult:
+    """Open the Nth (or named) item from what was just described.
+
+    The page is re-read first -- tokens go stale -- and the remembered title
+    at that number is re-matched, so "the second one" means the second item
+    the user heard, even if the list shifted. Advertisements are never opened.
+    """
+    surface = await _scene_surface(task, adapter)
+    if isinstance(surface, str):
+        return RecipeResult("press_item", OutcomeState.NO_EFFECT, surface)
+    target, pid, window_id = surface
+    before = await adapter.observe_window(task, pid, window_id, max_elements=800, settle=True)
+    fresh = scene.extract_items(before)
+    remembered = SCENES.recall(task.conversation)
+
+    chosen: scene.SceneItem | None = None
+    if title:
+        chosen = scene.match_title(fresh, title)
+    elif index is not None:
+        if remembered and index <= len(remembered):
+            chosen = scene.match_title(fresh, remembered[index - 1].title)
+        if chosen is None and index <= len(fresh) and not remembered:
+            chosen = fresh[index - 1]
+    if chosen is None:
+        what = f"the {_ordinal_word(index)} one" if index else f"'{title}'"
+        return RecipeResult(
+            "press_item",
+            OutcomeState.NO_EFFECT,
+            f"I can see {len(fresh)} item{'' if len(fresh) == 1 else 's'} here but could not "
+            f"match {what}. Ask what I see, then pick a number.",
+        )
+    if chosen.is_ad:
+        return RecipeResult(
+            "press_item",
+            OutcomeState.NO_EFFECT,
+            f"That one is an advertisement ({chosen.title[:50]}), so I did not open it.",
+        )
+    await adapter.acting_call(
+        task, "click", pid=pid, window_id=window_id, element_token=chosen.token
+    )
+    digest_before = CuaAdapter.scene_digest(before)
+    wanted = scene._words(chosen.title)
+    for attempt in range(8):
+        if task.cancelled:
+            break
+        await asyncio.sleep(0.5 if attempt else 0.3)
+        after = await adapter.observe_window(task, pid, window_id, for_verification=True)
+        if CuaAdapter.scene_digest(after) == digest_before:
+            continue
+        seen = scene._words(f"{scene.page_title(after)} " + " ".join(
+            str(e.get("label") or "") for e in (after.get("elements") or [])
+            if isinstance(e, dict)
+        ))
+        if wanted and len(wanted & seen) / len(wanted) >= 0.5:
+            return RecipeResult(
+                "press_item",
+                OutcomeState.CONFIRMED,
+                f"Opened {chosen.title[:70]}.",
+            )
+    return RecipeResult(
+        "press_item",
+        OutcomeState.UNKNOWN,
+        f"I clicked {chosen.title[:70]} but could not confirm it opened. Tell me if it did not.",
+    )
+
+
+async def click_named(task: TaskState, adapter: CuaAdapter, *, label: str) -> RecipeResult:
+    """Click the visible control the user named, then confirm the screen moved."""
+    surface = await _scene_surface(task, adapter)
+    if isinstance(surface, str):
+        return RecipeResult("click_named", OutcomeState.NO_EFFECT, surface)
+    target, pid, window_id = surface
+    before = await adapter.observe_window(task, pid, window_id, max_elements=800, settle=True)
+    element, alternatives = scene.find_by_label(before, label)
+    if element is None:
+        if alternatives:
+            return RecipeResult(
+                "click_named",
+                OutcomeState.NO_EFFECT,
+                f"More than one thing matches '{label}': " + "; ".join(alternatives)
+                + ". Which one?",
+                choices=tuple(alternatives),
+            )
+        seen = await sight.find_and_click(
+            task, adapter, pid=pid, window_id=window_id, label=label,
+            scope=sight.scope_from_state(target.app.name, before),
+        )
+        if seen is not None:
+            return RecipeResult("click_named", seen[0], seen[1])
+        return RecipeResult(
+            "click_named",
+            OutcomeState.NO_EFFECT,
+            f"I can't see '{label}' on screen in {target.app.name or 'this window'}. "
+            "Ask what I see, or scroll and try again.",
+        )
+    await adapter.acting_call(
+        task, "click", pid=pid, window_id=window_id, element_token=element["element_token"]
+    )
+    digest_before = CuaAdapter.scene_digest(before)
+    shown = " ".join(str(element.get("label") or label).split())[:50]
+    for attempt in range(6):
+        if task.cancelled:
+            break
+        await asyncio.sleep(0.25 if attempt == 0 else 0.4)
+        after = await adapter.observe_window(
+            task, pid, window_id, for_verification=True, max_elements=800
+        )
+        if CuaAdapter.scene_digest(after) != digest_before:
+            return RecipeResult("click_named", OutcomeState.CONFIRMED, f"Clicked {shown}.")
+    return RecipeResult(
+        "click_named",
+        OutcomeState.UNKNOWN,
+        f"I clicked {shown} but the screen did not visibly change. Tell me if it did not work.",
+    )
+
+
+async def fill_field(
+    task: TaskState, adapter: CuaAdapter, *, text: str, target: str = "", submit: bool = False
+) -> RecipeResult:
+    """Click the input box the user means, type the text, optionally press Enter."""
+    surface = await _scene_surface(task, adapter)
+    if isinstance(surface, str):
+        return RecipeResult("fill_field", OutcomeState.NO_EFFECT, surface)
+    app, pid, window_id = surface
+    state = await adapter.observe_window(task, pid, window_id, max_elements=800, settle=True)
+    field = scene.find_field(state, target)
+    if field is None:
+        return RecipeResult(
+            "fill_field",
+            OutcomeState.NO_EFFECT,
+            f"I don't see an input box in {app.app.name or 'this window'} right now. "
+            "Which box do you mean, or should I click something first?",
+        )
+    await adapter.acting_call(
+        task, "click", pid=pid, window_id=window_id, element_token=field["element_token"]
+    )
+    reply = await adapter.acting_call(
+        task, "set_value", pid=pid, window_id=window_id,
+        element_token=field["element_token"], value=text,
+    )
+    if reply.text.lower().startswith(("error", "refused")):
+        await adapter.acting_call(
+            task, "type_text", pid=pid, window_id=window_id, text=text,
+            delivery_mode="foreground",
+        )
+    check = await _verify_patiently(
+        adapter, task, Postcondition(kind=PostconditionKind.TEXT_IN_FIELD, text=text),
+        expect_pid=pid, expect_window_id=window_id, attempts=3, delay_seconds=0.3,
+    )
+    if not check.satisfied and not reply.text.lower().startswith(("error", "refused")):
+        # A web composer can accept set_value without its page noticing. Only
+        # when the box visibly STILL reads empty is typing keystrokes safe;
+        # if it exposes no value at all, typing again could duplicate the text.
+        reread = await adapter.observe_window(
+            task, pid, window_id, for_verification=True, max_elements=800
+        )
+        again = scene.find_field(reread, target)
+        value = again.get("value") if again else None
+        if isinstance(value, str) and not value.strip():
+            await adapter.acting_call(
+                task, "type_text", pid=pid, window_id=window_id, text=text,
+                delivery_mode="foreground",
+            )
+            check = await _verify_patiently(
+                adapter, task, Postcondition(kind=PostconditionKind.TEXT_IN_FIELD, text=text),
+                expect_pid=pid, expect_window_id=window_id, attempts=3, delay_seconds=0.3,
+            )
+    shown = " ".join(str(field.get("label") or "the input box").split())[:40]
+    if not submit:
+        if check.satisfied:
+            return RecipeResult("fill_field", OutcomeState.CONFIRMED, f"Typed it into {shown}.", check)
+        return RecipeResult(
+            "fill_field", OutcomeState.UNKNOWN,
+            f"I typed it into {shown} but that box does not show its text, so I can't confirm it.",
+            check,
+        )
+    before = CuaAdapter.scene_digest(state)
+    await adapter.acting_call(
+        task, "press_key", pid=pid, window_id=window_id, key="Return",
+        delivery_mode="foreground",
+    )
+    for attempt in range(4):
+        await asyncio.sleep(0.25 if attempt == 0 else 0.5)
+        after = await adapter.observe_window(
+            task, pid, window_id, for_verification=True, max_elements=800
+        )
+        if CuaAdapter.scene_digest(after) != before:
+            return RecipeResult(
+                "fill_field", OutcomeState.CONFIRMED, f"Typed it into {shown} and submitted."
+            )
+    return RecipeResult(
+        "fill_field", OutcomeState.UNKNOWN,
+        f"I typed it into {shown} and pressed Enter, but nothing on screen changed.",
+    )
+
+
+_DOWNLOAD_ALL = re.compile(r"\b(?:download|save)\s+\d+\s+images?|all\s+images?|series|every", re.I)
+_SKIP_DOWNLOAD_LABELS = re.compile(r"\b(?:app|update|history)\b", re.I)
+_DOWNLOAD_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".zip", ".pdf", ".mp4", ".svg"}
+
+
+def _downloads_dir() -> Path:
+    return Path.home() / "Downloads"
+
+
+def _download_snapshot() -> dict[str, int]:
+    try:
+        return {
+            p.name: p.stat().st_size
+            for p in _downloads_dir().iterdir()
+            if p.suffix.lower() in _DOWNLOAD_SUFFIXES and not p.name.startswith(".")
+        }
+    except OSError:
+        return {}
+
+
+async def download_images(task: TaskState, adapter: CuaAdapter) -> RecipeResult:
+    """Download the images on screen (e.g. everything ChatGPT just generated).
+
+    Opens the first image if no viewer is open, opens the Download menu, takes
+    the "download all / N images in this series" entry when there is one (else
+    "Download image"), then confirms by watching the Downloads folder: a click
+    on a download button proves nothing until a file lands.
+    """
+    surface = await _scene_surface(task, adapter)
+    if isinstance(surface, str):
+        return RecipeResult("download_images", OutcomeState.NO_EFFECT, surface)
+    target, pid, window_id = surface
+    state = await adapter.observe_window(task, pid, window_id, max_elements=1500, settle=True)
+
+    def pick(state: dict[str, Any], roles: set[str], rx: re.Pattern[str]) -> dict[str, Any] | None:
+        strict = any(isinstance(e.get("frame"), dict) for e in state.get("elements") or [])
+        for e in state.get("elements") or []:
+            if (
+                isinstance(e, dict) and scene._role(e) in roles and e.get("element_token")
+                and scene._visible(e, strict=strict)
+                and rx.search(str(e.get("label") or ""))
+                and not _SKIP_DOWNLOAD_LABELS.search(str(e.get("label") or ""))
+            ):
+                return e
+        return None
+
+    async def click(element: dict[str, Any]) -> None:
+        await adapter.acting_call(
+            task, "click", pid=pid, window_id=window_id, element_token=element["element_token"]
+        )
+
+    async def look() -> dict[str, Any]:
+        await asyncio.sleep(0.8)
+        return await adapter.observe_window(
+            task, pid, window_id, for_verification=True, max_elements=1500
+        )
+
+    download_btn = pick(state, {"popupbutton", "button"}, re.compile(r"^download\b", re.I))
+    opened_viewer = False
+    if download_btn is None:
+        image = pick(state, {"button", "image"}, re.compile(r"^generated image\s*1\b|^image\s*1\b", re.I))
+        if image is None:
+            image = pick(state, {"button"}, re.compile(r"generated image|image \d", re.I))
+        if image is None:
+            return RecipeResult(
+                "download_images", OutcomeState.NO_EFFECT,
+                f"I don't see any images or a Download button in {target.app.name or 'this window'}. "
+                "Which image do you want, or should I scroll to it first?",
+            )
+        await click(image)
+        opened_viewer = True
+        state = await look()
+        download_btn = pick(state, {"popupbutton", "button"}, re.compile(r"^download\b", re.I))
+        if download_btn is None:
+            return RecipeResult(
+                "download_images", OutcomeState.UNKNOWN,
+                "I opened the image but can't find its Download button. "
+                "Do you see one on screen? Tell me where it is.",
+            )
+
+    before = _download_snapshot()
+    await click(download_btn)
+    menu = await look()
+    item = None
+    for e in menu.get("elements") or []:
+        if isinstance(e, dict) and scene._role(e) == "menuitem" and e.get("element_token") and (
+            scene._visible(e, strict=True) if isinstance(e.get("frame"), dict) else True
+        ) and str(e.get("label") or "").lower().startswith("download"):
+            if _DOWNLOAD_ALL.search(str(e["label"])):
+                item = e
+                break
+            item = item or e
+    if item is not None:
+        await click(item)
+    # else: the button itself downloaded (no menu), which the folder check will show.
+
+    seen = 0
+    stable = 0
+    for _ in range(40):
+        await asyncio.sleep(0.5)
+        now = _download_snapshot()
+        new = [n for n in now if n not in before]
+        if len(new) > seen:
+            seen, stable = len(new), 0
+        elif seen:
+            stable += 1
+            if stable >= 5:
+                break
+        if task.cancelled:
+            break
+    if opened_viewer:
+        closer = pick(
+            await adapter.observe_window(
+                task, pid, window_id, for_verification=True, max_elements=1500
+            ),
+            {"button"}, re.compile(r"close viewer", re.I),
+        )
+        if closer is not None:
+            await click(closer)
+    if seen:
+        return RecipeResult(
+            "download_images", OutcomeState.CONFIRMED,
+            f"Downloaded {seen} image{'s' if seen != 1 else ''} to your Downloads folder.",
+        )
+    return RecipeResult(
+        "download_images", OutcomeState.UNKNOWN,
+        "I clicked Download but no new file showed up in your Downloads folder. "
+        "Is the browser asking where to save, or blocked the download?",
+    )
+
+
+async def click_in_utterance(
+    task: TaskState, adapter: CuaAdapter, *, utterance: str
+) -> RecipeResult:
+    """Click the control named somewhere in loose dictation, then confirm the screen moved."""
+    surface = await _scene_surface(task, adapter)
+    if isinstance(surface, str):
+        return RecipeResult("click_in_utterance", OutcomeState.NO_EFFECT, surface)
+    target, pid, window_id = surface
+    before = await adapter.observe_window(task, pid, window_id, max_elements=1500, settle=True)
+    element = scene.find_in_utterance(before, utterance)
+    if element is None:
+        label = sight.guess_label(utterance)
+        seen = await sight.find_and_click(
+            task, adapter, pid=pid, window_id=window_id, label=label,
+            scope=sight.scope_from_state(target.app.name, before), description=utterance,
+        ) if label else None
+        if seen is not None:
+            return RecipeResult("click_in_utterance", seen[0], seen[1])
+        shown = scene.compact_observation(before) or ""
+        names = [ln.split('"')[1] for ln in shown.splitlines() if '"' in ln and "Button" in ln][:8]
+        return RecipeResult(
+            "click_in_utterance", OutcomeState.NO_EFFECT,
+            f"I can't see that button in {target.app.name or 'this window'}. "
+            + (f"The buttons I can see include: {', '.join(names)}. Which one?" if names
+               else "Tell me what it says or where it is."),
+            choices=tuple(names),
+        )
+    await adapter.acting_call(
+        task, "click", pid=pid, window_id=window_id, element_token=element["element_token"]
+    )
+    digest_before = CuaAdapter.scene_digest(before)
+    shown = " ".join(str(element.get("label") or "").split())[:50]
+    for attempt in range(6):
+        await asyncio.sleep(0.3 if attempt == 0 else 0.5)
+        after = await adapter.observe_window(
+            task, pid, window_id, for_verification=True, max_elements=1500
+        )
+        if CuaAdapter.scene_digest(after) != digest_before:
+            return RecipeResult("click_in_utterance", OutcomeState.CONFIRMED, f"Clicked {shown}.")
+    return RecipeResult(
+        "click_in_utterance", OutcomeState.UNKNOWN,
+        f"I clicked {shown} but the screen did not visibly change. Tell me if it did not work.",
+    )
+
+
+_NEXT = re.compile(r"^(?:next|forward)(?:\s+(?:image|slide|photo|picture|page|item))?$", re.I)
+_PREVIOUS = re.compile(r"^(?:previous|prev)(?:\s+(?:image|slide|photo|picture|page|item))?$", re.I)
+_IMAGE_CURSOR: dict[str, int] = {}
+
+
+async def step_item(task: TaskState, adapter: CuaAdapter, *, direction: str = "next") -> RecipeResult:
+    """"Next" / "previous": the viewer's own control, else the next numbered image, else scroll."""
+    surface = await _scene_surface(task, adapter)
+    if isinstance(surface, str):
+        return RecipeResult("step_item", OutcomeState.NO_EFFECT, surface)
+    target, pid, window_id = surface
+    before = await adapter.observe_window(task, pid, window_id, max_elements=1500, settle=True)
+    elements = [e for e in (before.get("elements") or []) if isinstance(e, dict)]
+    strict = any(isinstance(e.get("frame"), dict) for e in elements)
+    rx = _NEXT if direction == "next" else _PREVIOUS
+
+    def visible_ctl(e: dict[str, Any]) -> bool:
+        return bool(e.get("element_token")) and scene._visible(e, strict=strict)
+
+    control = next(
+        (e for e in elements if visible_ctl(e) and scene._role(e) in scene._ACTIONABLE
+         and rx.match(" ".join(str(e.get("label") or "").split()))),
+        None,
+    )
+    chosen = control
+    label_shown = "that"
+    if chosen is None:
+        thumbs = []
+        for e in elements:
+            m = re.search(r"generated image\s*(\d+)", str(e.get("label") or ""), re.I)
+            if m and visible_ctl(e) and scene._role(e) in {"checkbox", "button", "radiobutton"}:
+                thumbs.append((int(m.group(1)), e))
+        if thumbs:
+            numbers = sorted({n for n, _ in thumbs})
+            current = _IMAGE_CURSOR.get(task.conversation, numbers[0] if direction == "next" else 2)
+            want = current + 1 if direction == "next" else current - 1
+            if _IMAGE_CURSOR.get(task.conversation) is None and direction == "next":
+                want = numbers[0]
+            if want in numbers:
+                chosen = next(e for n, e in thumbs if n == want)
+                _IMAGE_CURSOR[task.conversation] = want
+                label_shown = f"image {want}"
+            else:
+                return RecipeResult(
+                    "step_item", OutcomeState.NO_EFFECT,
+                    "That's the last image." if direction == "next" else "That's the first image.",
+                )
+    if chosen is None:
+        return await scroll(
+            task, adapter, direction="down" if direction == "next" else "up", amount=3
+        )
+    await adapter.acting_call(
+        task, "click", pid=pid, window_id=window_id, element_token=chosen["element_token"]
+    )
+    digest_before = CuaAdapter.scene_digest(before)
+    for attempt in range(5):
+        await asyncio.sleep(0.3 if attempt == 0 else 0.5)
+        after = await adapter.observe_window(
+            task, pid, window_id, for_verification=True, max_elements=1500
+        )
+        if CuaAdapter.scene_digest(after) != digest_before:
+            return RecipeResult("step_item", OutcomeState.CONFIRMED, f"Showing {label_shown}.")
+    return RecipeResult(
+        "step_item", OutcomeState.UNKNOWN, "I pressed it but the screen did not change."
+    )
+
+
+async def learn_screen(task: TaskState, adapter: CuaAdapter) -> RecipeResult:
+    """Look at this window once and remember where every control is."""
+    surface = await _scene_surface(task, adapter)
+    if isinstance(surface, str):
+        return RecipeResult("learn_screen", OutcomeState.NO_EFFECT, surface)
+    target, pid, window_id = surface
+    state = await adapter.observe_window(task, pid, window_id, max_elements=1500, settle=True)
+    state_out, sentence = await sight.learn_controls(
+        task, adapter, pid=pid, window_id=window_id,
+        scope=sight.scope_from_state(target.app.name, state),
+    )
+    return RecipeResult("learn_screen", state_out, sentence)
+
+
 #: The recipes a candidate may name. The mapping is the executor's authority:
 #: a JEV-selected name outside it is a contract error, not a missing tool.
 RECIPE_TABLE: dict[str, Any] = {
@@ -643,6 +1145,14 @@ RECIPE_TABLE: dict[str, Any] = {
     "scroll": scroll,
     "type_text": type_text,
     "press_ordinal": press_ordinal,
+    "describe_screen": describe_screen,
+    "press_item": press_item,
+    "click_named": click_named,
+    "fill_field": fill_field,
+    "download_images": download_images,
+    "click_in_utterance": click_in_utterance,
+    "step_item": step_item,
+    "learn_screen": learn_screen,
 }
 
 
@@ -663,7 +1173,15 @@ __all__ = [
     "navigate",
     "open_app",
     "press_ordinal",
+    "click_in_utterance",
+    "click_named",
+    "describe_screen",
+    "download_images",
+    "learn_screen",
+    "fill_field",
+    "press_item",
     "scroll",
     "search_browser",
+    "step_item",
     "type_text",
 ]

@@ -51,6 +51,9 @@ _MISSION_METHODS = {
     "mission.control": "_handle_mission_control",
     "mission.approve": "_handle_mission_approve",
     "mission.events": "_handle_mission_events",
+    "mission.purge": "_handle_mission_purge",
+    "mission.retention_hold": "_handle_mission_retention_hold",
+    "mission.driver_cleanup_ack": "_handle_mission_driver_cleanup_ack",
 }
 
 
@@ -388,6 +391,104 @@ class SaniCoreApp:
         await session.send(
             response_from_request(request, {"approval_id": approval.approval_id}).to_frame()
         )
+
+    async def _handle_mission_purge(self, session: _Session, request: Request) -> None:
+        """D12/D16: owner deletion of one mission's derivative data.
+
+        Identity checks: the caller must name the mission AND the owner the
+        mission belongs to — a purge that does not prove ownership of the
+        record is refused before anything is touched.
+        """
+        service = await self._missions()
+        params = request.params
+        mission_id = params.get("mission_id")
+        owner_id = params.get("owner_id")
+        if not isinstance(mission_id, str) or not mission_id:
+            await session.send(
+                error_from_request(request, "mission.purge requires 'mission_id'").to_frame()
+            )
+            return
+        if not isinstance(owner_id, str) or not owner_id:
+            await session.send(
+                error_from_request(request, "mission.purge requires 'owner_id'").to_frame()
+            )
+            return
+        record = await service.get(mission_id)
+        if record is None or record.owner_id != owner_id:
+            await session.send(
+                error_from_request(
+                    request, "mission.purge refused: mission/owner identity mismatch"
+                ).to_frame()
+            )
+            return
+        report = await service.purge_mission_derivatives(mission_id)
+        await session.send(
+            response_from_request(request, report).to_frame()
+        )
+
+    async def _handle_mission_retention_hold(self, session: _Session, request: Request) -> None:
+        """Owner-controlled durable hold/release (D16)."""
+        service = await self._missions()
+        params = request.params
+        mission_id = params.get("mission_id")
+        owner_id = params.get("owner_id")
+        held = params.get("held")
+        reason = params.get("reason", "owner retention control")
+        if (not isinstance(mission_id, str) or not mission_id or
+                not isinstance(owner_id, str) or not owner_id or
+                not isinstance(held, bool) or not isinstance(reason, str)):
+            await session.send(error_from_request(
+                request, "mission.retention_hold requires mission_id, owner_id, held, and reason"
+            ).to_frame())
+            return
+        record = await service.get(mission_id)
+        if record is None or record.owner_id != owner_id:
+            await session.send(error_from_request(
+                request, "mission.retention_hold refused: mission/owner identity mismatch"
+            ).to_frame())
+            return
+        if held:
+            await service.store.set_retention_hold(mission_id, reason=reason[:400])
+        else:
+            await service.store.release_retention_hold(mission_id)
+        await session.send(response_from_request(
+            request, {"mission_id": mission_id, "held": held}
+        ).to_frame())
+
+    async def _handle_mission_driver_cleanup_ack(
+        self, session: _Session, request: Request
+    ) -> None:
+        """D19: relay one identity-bound host-driver cleanup acknowledgement.
+
+        The sidecar never accepts an unscoped "released" assertion: it must
+        match the mission owner, stopped lease fence, and cleanup operation.
+        """
+        service = await self._missions()
+        params = request.params
+        mission_id = params.get("mission_id")
+        owner_id = params.get("owner_id")
+        fence = params.get("fence")
+        operation_id = params.get("operation_id")
+        if not all(isinstance(value, str) and value for value in (
+            mission_id, owner_id, fence, operation_id,
+        )):
+            await session.send(error_from_request(
+                request,
+                "mission.driver_cleanup_ack requires mission_id, owner_id, fence, and operation_id",
+            ).to_frame())
+            return
+        record = await service.get(mission_id)
+        if record is None or record.owner_id != owner_id:
+            await session.send(error_from_request(
+                request, "mission.driver_cleanup_ack refused: mission/owner identity mismatch"
+            ).to_frame())
+            return
+        acknowledged = await service.acknowledge_driver_cleanup(
+            mission_id=mission_id, fence=fence, operation_id=operation_id,
+        )
+        await session.send(response_from_request(
+            request, {"mission_id": mission_id, "acknowledged": acknowledged}
+        ).to_frame())
 
     async def _handle_mission_events(self, session: _Session, request: Request) -> None:
         service = await self._missions()

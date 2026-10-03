@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.915" timestamp="2026-10-01T02:46:08.418610+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_deletion_retention" name="test_purge_is_mission_scoped_and_idempotent" time="0.011"><failure message="AssertionError: assert False&#10; +  where False = exists()&#10; +    where exists = PosixPath('/private/tmp/pytest-of-sayan/pytest-114/test_purge_is_mission_scoped_a0/ev/e1919ed5-9295-430a-ad42-8dda59f086ff/085b95e2-84bd-4c0a-b6bb-7e14d2e16c32.json').exists">store = &lt;assistant.missions.store.MissionStore object at 0x11008e5a0&gt;
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-114/test_purge_is_mission_scoped_a0')
+
+    async def test_purge_is_mission_scoped_and_idempotent(store: MissionStore,
+                                                          tmp_path: Any) -&gt; None:
+        """Deleting mission A must preserve mission B's files AND live rows —
+        the batch-2 probe deleted the bystander's files."""
+        mission_a = await _mission(store)
+        mission_b = await _mission(store)
+        evidence = EvidenceStore(tmp_path / "ev", store)
+        ref_a = await evidence.put(EvidenceCandidate(
+            kind="structured_facts", payload={"mission": "A"},
+            captured_at_ms=int(time.time() * 1000)), mission_id=mission_a.mission_id)
+        ref_b = await evidence.put(EvidenceCandidate(
+            kind="structured_facts", payload={"mission": "B"},
+            captured_at_ms=int(time.time() * 1000)), mission_id=mission_b.mission_id)
+        assert ref_a.relative_path and ref_b.relative_path
+        file_a = evidence.root / ref_a.relative_path
+        file_b = evidence.root / ref_b.relative_path
+        assert file_a.exists() and file_b.exists()
+    
+        service, _observer = _service(store, evidence,
+                                      RecommendationStore(tmp_path / "recs"))
+        report = await service.purge_mission_derivatives(mission_a.mission_id)
+        assert report["purged"] is True
+        assert not file_a.exists()
+        # Mission B is untouched: file present, row still live (deleted=0).
+&gt;       assert file_b.exists()
+E       AssertionError: assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/private/tmp/pytest-of-sayan/pytest-114/test_purge_is_mission_scoped_a0/ev/e1919ed5-9295-430a-ad42-8dda59f086ff/085b95e2-84bd-4c0a-b6bb-7e14d2e16c32.json').exists
+
+tests/integration/test_deletion_retention.py:111: AssertionError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="2.136" timestamp="2026-09-30T22:57:54.661189+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.unit.test_sani_tts_worker" name="test_cancel_control_is_processed_during_active_synthesis" time="2.006"><failure message="AssertionError: a cancelled utterance is never reported as finished&#10;assert not True&#10; +  where True = any(&lt;generator object test_cancel_control_is_processed_during_active_synthesis.&lt;locals&gt;.&lt;genexpr&gt; at 0x108b97030&gt;)">tts = &lt;module 'sani_tts_test' from '/private/tmp/phase1-red-baseline/sani/src-tauri/python/sani_tts.py'&gt;
+
+    def test_cancel_control_is_processed_during_active_synthesis(tts: Any) -&gt; None:
+        """Regression: synthesis used to run INLINE in the serve loop, so a
+        cancel control was unreadable until synthesis finished. The control
+        must be processed while the engine is mid-synthesis."""
+        synthesis_active = threading.Event()
+        release_synth = threading.Event()
+    
+        class _BlockingEngine(tts.EngineAdapter):
+            sample_rate = 24000
+    
+            def __init__(self) -&gt; None:
+                self.cancelled: set[int] = set()
+    
+            def synthesize(self, text: str, utterance_id: str, generation: int):  # type: ignore[no-untyped-def]
+                yield (24000, b"\x00\x00\x00\x00" * 240)
+                synthesis_active.set()
+                release_synth.wait(timeout=2.0)
+    
+            def cancel(self, generation: int) -&gt; None:
+                self.cancelled.add(generation)
+    
+        request_frame = _frame(json.dumps(
+            {"type": "request", "request": _request_payload()}).encode())
+        cancel_frame = _frame(json.dumps(
+            {"type": "control", "action": "cancel", "generation": 2}).encode())
+    
+        class _GatedReader:
+            """Serve the request frame (4-byte header protocol), then block
+            until synthesis is ACTIVELY running, then serve the cancel control,
+            then EOF. The gate proves the control frame is read while the
+            synthesis thread is mid-generator."""
+    
+            def __init__(self) -&gt; None:
+                self._buf = request_frame
+                self._pos = 0
+                self._gated = False
+    
+            def read(self, n: int) -&gt; bytes:
+                if self._pos &gt;= len(self._buf):
+                    if not self._gated:
+                        self._gated = True
+                        assert synthesis_active.wait(timeout=2.0), (
+                            "synthesis never became active; the fixture is broken")
+                        self._buf = cancel_frame
+                        self._pos = 0
+                    else:
+                        release_synth.set()
+                        return b""
+                chunk = self._buf[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+    
+        writer = io.BytesIO()
+        worker = tts.Worker(_GatedReader(), writer, engine=_BlockingEngine())
+        worker.serve()
+        events = _events(writer.getvalue())
+        assert any(e["event"] == "cancelled" and e.get("generation") == 2 for e in events), (
+            "the cancel control was processed during synthesis")
+&gt;       assert not any(e["event"] == "finished" for e in events), (
+            "a cancelled utterance is never reported as finished")
+E       AssertionError: a cancelled utterance is never reported as finished
+E       assert not True
+E        +  where True = any(&lt;generator object test_cancel_control_is_processed_during_active_synthesis.&lt;locals&gt;.&lt;genexpr&gt; at 0x108b97030&gt;)
+
+tests/unit/test_sani_tts_worker.py:274: AssertionError</failure></testcase><testcase classname="tests.unit.test_sani_tts_worker" name="test_cancel_never_kills_a_worker_without_engine_cancel_support" time="0.003"><failure message="assert False&#10; +  where False = any(&lt;generator object test_cancel_never_kills_a_worker_without_engine_cancel_support.&lt;locals&gt;.&lt;genexpr&gt; at 0x108d69cb0&gt;)">tts = &lt;module 'sani_tts_test' from '/private/tmp/phase1-red-baseline/sani/src-tauri/python/sani_tts.py'&gt;
+
+    def test_cancel_never_kills_a_worker_without_engine_cancel_support(tts: Any) -&gt; None:
+        """D09: engine.cancel is a safe no-op by default — a cancel control on
+        an engine without engine-side cancellation is answered, not a crash."""
+        events = _serve(tts, [
+            {"type": "control", "action": "cancel", "generation": 3},
+            {"type": "request", "request": _request_payload(generation=4)},
+        ], engine=tts.UnspecifiedEngine())
+&gt;       assert any(e["event"] == "cancelled" and e.get("generation") == 3 for e in events)
+E       assert False
+E        +  where False = any(&lt;generator object test_cancel_never_kills_a_worker_without_engine_cancel_support.&lt;locals&gt;.&lt;genexpr&gt; at 0x108d69cb0&gt;)
+
+tests/unit/test_sani_tts_worker.py:285: AssertionError</failure></testcase><testcase classname="tests.unit.test_sani_tts_worker" name="test_shutdown_during_active_synthesis_exits_cleanly" time="0.080"><failure message="AssertionError: a shutdown mid-synthesis is not a finished utterance&#10;assert not True&#10; +  where True = any(&lt;generator object test_shutdown_during_active_synthesis_exits_cleanly.&lt;locals&gt;.&lt;genexpr&gt; at 0x108d68c70&gt;)">tts = &lt;module 'sani_tts_test' from '/private/tmp/phase1-red-baseline/sani/src-tauri/python/sani_tts.py'&gt;
+
+    def test_shutdown_during_active_synthesis_exits_cleanly(tts: Any) -&gt; None:
+        """A shutdown control mid-synthesis exits the loop with a bounded join —
+        no hung thread, no torn final frame."""
+        release_synth = threading.Event()
+    
+        class _SlowEngine(tts.EngineAdapter):
+            sample_rate = 24000
+    
+            def synthesize(self, text: str, utterance_id: str, generation: int):  # type: ignore[no-untyped-def]
+                for _ in range(50):
+                    release_synth.wait(timeout=0.001)
+                    yield (24000, b"\x00\x00\x00\x00" * 24)
+    
+        request_frame = _frame(json.dumps(
+            {"type": "request", "request": _request_payload()}).encode())
+        shutdown_frame = _frame(json.dumps(
+            {"type": "control", "action": "shutdown"}).encode())
+        reader = io.BytesIO(request_frame + shutdown_frame)
+        writer = io.BytesIO()
+        worker = tts.Worker(reader, writer, engine=_SlowEngine())
+        worker.serve()  # must return, not hang
+        release_synth.set()
+        events = _events(writer.getvalue())
+        assert events[0]["event"] == "ready"
+&gt;       assert not any(e["event"] == "finished" for e in events), (
+            "a shutdown mid-synthesis is not a finished utterance")
+E       AssertionError: a shutdown mid-synthesis is not a finished utterance
+E       assert not True
+E        +  where True = any(&lt;generator object test_shutdown_during_active_synthesis_exits_cleanly.&lt;locals&gt;.&lt;genexpr&gt; at 0x108d68c70&gt;)
+
+tests/unit/test_sani_tts_worker.py:315: AssertionError</failure></testcase></testsuite></testsuites>

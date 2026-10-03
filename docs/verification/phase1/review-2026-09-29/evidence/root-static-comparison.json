@@ -1,0 +1,16 @@
+{
+  "mypy": {
+    "old_count": 91,
+    "new_count": 91,
+    "identical": true,
+    "introduced": [],
+    "removed": []
+  },
+  "ruff": {
+    "old_count": 42,
+    "new_count": 42,
+    "identical": true,
+    "introduced": [],
+    "removed": []
+  }
+}

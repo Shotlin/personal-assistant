@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.090" timestamp="2026-10-01T02:18:29.915374+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_provider_admission" name="test_limit_two_blocks_third_request_before_dispatch" time="0.886"><failure message="Failed: DID NOT RAISE ProviderRequestDenied">store = &lt;assistant.missions.store.MissionStore object at 0x10b312f60&gt;
+
+    async def test_limit_two_blocks_third_request_before_dispatch(
+        store: MissionStore,
+    ) -&gt; None:
+        """The reviewer's probe: limit 2 must not allow 5 responses. The third
+        request is refused BEFORE the client is invoked."""
+        mission = await _mission(store, max_requests=2)
+        controller = ProviderAdmissionController()
+        controller.bind_store(store)
+        inner = _CountingFake(responses=[f"r{i}" for i in range(5)])
+        model = wrap_chat_model(inner, controller)
+        scope = await controller.open_scope(mission.mission_id, 1, "fixture")
+        controller.push_scope(scope)
+        try:
+            for _ in range(2):
+                await model.ainvoke(_messages())
+&gt;           with pytest.raises(ProviderRequestDenied):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE ProviderRequestDenied
+
+tests/integration/test_provider_admission.py:121: Failed</failure></testcase></testsuite></testsuites>

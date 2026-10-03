@@ -1,0 +1,244 @@
+....................F..F.FF............................................. [ 18%]
+..................................F..................................... [ 36%]
+........................................................................ [ 54%]
+........................................................................ [ 73%]
+........................................................................ [ 91%]
+..................................                                       [100%]
+=================================== FAILURES ===================================
+______________ test_probe_driver_rejects_a_stale_embedded_socket _______________
+
+    async def test_probe_driver_rejects_a_stale_embedded_socket() -> None:
+        """A leftover socket pathname must not be presented as a ready daemon."""
+        stale_socket = Path(f"/private/tmp/sani-stale-{os.getpid()}.sock")
+        stale_socket.unlink(missing_ok=True)
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+>       listener.bind(str(stale_socket))
+E       PermissionError: [Errno 1] Operation not permitted
+
+tests/unit/test_core_desktop.py:83: PermissionError
+___________________ test_system_status_shape_has_no_secrets ____________________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-0/test_system_status_shape_has_n0')
+
+    async def test_system_status_shape_has_no_secrets(tmp_path: Path) -> None:
+        import asyncio
+    
+        shim = _shim(
+            tmp_path / "cua-driver",
+            'echo "permission mode: bounded"\n'
+            'echo "capability manifest: configured=true approved_at_startup=true valid=true"\n',
+        )
+>       settings = Settings(
+            app_env="development",
+            model_provider="generic_openai_compatible",
+            model_base_url="http://127.0.0.1:1",
+            model_api_key="k",
+            model_name="m",
+            cua_command=shim,
+            cua_enabled=True,
+            memory_backend="sqlite",
+            sani_data_dir=str(tmp_path),
+            openrouter_api_key="sk-or-secret-value",
+        )
+
+tests/unit/test_core_desktop.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/sayan/Documents/personal-assistant/.venv/lib/python3.12/site-packages/pydantic_settings/main.py:262: in __init__
+    super().__init__(**__pydantic_self__.__class__._settings_build_values(sources, init_kwargs))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Settings(app_env='development', app_host='127.0.0.1', app_port=8787, log_level='INFO', agent_gateway_api_key='change-m...velo_jev_model='jev-latest', velo_typesafe_base_url='', velo_max_decision_seconds=30, velo_command_deadline_seconds=90)
+
+    @model_validator(mode="after")
+    def _validate(self) -> Settings:
+        errors: list[str] = []
+    
+        if self.app_env not in SUPPORTED_APP_ENVS:
+            allowed = sorted(SUPPORTED_APP_ENVS)
+            errors.append(f"APP_ENV must be one of {allowed}, got {self.app_env!r}")
+        if self.log_level.upper() not in SUPPORTED_LOG_LEVELS:
+            allowed = sorted(SUPPORTED_LOG_LEVELS)
+            errors.append(f"LOG_LEVEL must be one of {allowed}, got {self.log_level!r}")
+        if not 1 <= self.app_port <= 65535:
+            errors.append(f"APP_PORT must be 1-65535, got {self.app_port}")
+        if self.model_timeout_seconds <= 0:
+            errors.append(f"MODEL_TIMEOUT_SECONDS must be > 0, got {self.model_timeout_seconds}")
+        if self.model_max_retries < 0:
+            errors.append(f"MODEL_MAX_RETRIES must be >= 0, got {self.model_max_retries}")
+        if self.model_reasoning_effort not in {"", "default", "low", "medium", "high"}:
+            errors.append(
+                f"MODEL_REASONING_EFFORT must be one of [default, low, medium, high], "
+                f"got {self.model_reasoning_effort!r}"
+            )
+        if self.model_max_tokens < 200:
+            errors.append(f"MODEL_MAX_TOKENS must be >= 200, got {self.model_max_tokens}")
+    
+        if self.memory_backend not in {"postgres", "sqlite"}:
+            errors.append(
+                f"MEMORY_BACKEND must be 'postgres' or 'sqlite', got {self.memory_backend!r}"
+            )
+        elif self.memory_backend == "sqlite" and not self.sani_data_dir:
+            errors.append(
+                "MEMORY_BACKEND=sqlite requires SANI_DATA_DIR (the Sani "
+                "application-data directory that holds sani.db)"
+            )
+        if self.status_quiet_seconds <= 0:
+            errors.append(f"STATUS_QUIET_SECONDS must be > 0, got {self.status_quiet_seconds}")
+    
+        if self.velo_jev_enabled:
+            if self.velo_provider not in {"openrouter", "typesafe"}:
+                errors.append(
+                    f"VELO_PROVIDER must be 'openrouter' or 'typesafe', "
+                    f"got {self.velo_provider!r}"
+                )
+            elif self.velo_provider == "openrouter" and not self.openrouter_api_key:
+                errors.append("VELO_PROVIDER=openrouter requires OPENROUTER_API_KEY")
+            elif self.velo_provider == "typesafe" and not self.typesafe_api_key:
+                errors.append("VELO_PROVIDER=typesafe requires TYPESAFE_API_KEY")
+            if self.velo_typesafe_base_url and not self.velo_typesafe_base_url.startswith(
+                "https://"
+            ):
+                errors.append(
+                    f"VELO_TYPESAFE_BASE_URL must be an https:// URL (got "
+                    f"{self.velo_typesafe_base_url!r})"
+                )
+            if self.velo_max_decision_seconds <= 0:
+                errors.append(
+                    f"VELO_MAX_DECISION_SECONDS must be > 0, got {self.velo_max_decision_seconds}"
+                )
+        if self.velo_command_deadline_seconds <= 0:
+            errors.append(
+                f"VELO_COMMAND_DEADLINE_SECONDS must be > 0, got "
+                f"{self.velo_command_deadline_seconds}"
+            )
+    
+        if self.model_provider not in SUPPORTED_MODEL_PROVIDERS:
+            errors.append(
+                f"MODEL_PROVIDER must be one of {sorted(SUPPORTED_MODEL_PROVIDERS)}, "
+                f"got {self.model_provider!r}"
+            )
+        elif self.model_provider == "openrouter" and not self.openrouter_api_key:
+            errors.append("MODEL_PROVIDER=openrouter requires OPENROUTER_API_KEY")
+        elif self.model_provider == "openai" and not self.openai_api_key:
+            errors.append("MODEL_PROVIDER=openai requires OPENAI_API_KEY")
+        elif self.model_provider == "generic_openai_compatible":
+            for field in ("model_base_url", "model_api_key", "model_name"):
+                if not getattr(self, field):
+                    errors.append(
+                        f"MODEL_PROVIDER=generic_openai_compatible requires {field.upper()}"
+                    )
+    
+        if not self.agent_gateway_api_key:
+            errors.append("AGENT_GATEWAY_API_KEY must not be empty")
+        elif self.is_production and self.agent_gateway_api_key == "change-me":
+            errors.append(
+                "AGENT_GATEWAY_API_KEY must be replaced from the placeholder in production"
+            )
+    
+        if self.cua_enabled:
+            if self.cua_permission_mode not in ("bounded", "standard"):
+                errors.append(
+                    "CUA_PERMISSION_MODE must be 'bounded' or 'standard' "
+                    f"(got {self.cua_permission_mode!r}); unrestricted mode is not allowed"
+                )
+            if self.cua_permission_mode == "bounded" and not self.cua_capability_manifest_path:
+                errors.append(
+                    "CUA_ENABLED=true with bounded mode requires CUA_CAPABILITY_MANIFEST_PATH"
+                )
+            if self.cua_capability_manifest_path and not (
+                self.cua_capability_manifest_path.startswith("/")
+            ):
+                errors.append("CUA_CAPABILITY_MANIFEST_PATH must be an absolute path")
+            if self.cua_socket and not self.cua_socket.startswith("/"):
+                errors.append("CUA_SOCKET must be an absolute path when configured")
+    
+        if errors:
+>           raise SettingsError("Invalid configuration:\n  - " + "\n  - ".join(errors))
+E           assistant.settings.SettingsError: Invalid configuration:
+E             - CUA_ENABLED=true with bounded mode requires CUA_CAPABILITY_MANIFEST_PATH
+
+src/assistant/settings.py:228: SettingsError
+____________ test_embedded_probe_reads_the_mode_over_its_own_socket ____________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-0/test_embedded_probe_reads_the_0')
+
+    async def test_embedded_probe_reads_the_mode_over_its_own_socket(tmp_path: Path) -> None:
+        """A connectable endpoint used to be enough; it proved nothing about mode.
+    
+        The shim records its own arguments, which is how this asserts the read was
+        aimed at Sani's private socket rather than at the global standalone daemon.
+        """
+        socket_path = Path(f"/private/tmp/sani-posture-{os.getpid()}.sock")
+        socket_path.unlink(missing_ok=True)
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+>       listener.bind(str(socket_path))
+E       PermissionError: [Errno 1] Operation not permitted
+
+tests/unit/test_core_desktop.py:181: PermissionError
+_____________ test_embedded_probe_reports_a_resurrected_wrong_mode _____________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-0/test_embedded_probe_reports_a_0')
+
+    async def test_embedded_probe_reports_a_resurrected_wrong_mode(tmp_path: Path) -> None:
+        socket_path = Path(f"/private/tmp/sani-wrongmode-{os.getpid()}.sock")
+        socket_path.unlink(missing_ok=True)
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+>       listener.bind(str(socket_path))
+E       PermissionError: [Errno 1] Operation not permitted
+
+tests/unit/test_core_desktop.py:202: PermissionError
+___________ test_a_lease_waits_for_a_driver_that_is_still_coming_up ____________
+
+    async def test_a_lease_waits_for_a_driver_that_is_still_coming_up() -> None:
+        """Measured live: after a restart the socket file exists before anything
+        accepts on it, and a lease opened in that window dies on 'Connection closed'.
+        So the wait is for a listening endpoint, not for a path."""
+        import socket as socket_module
+        from types import SimpleNamespace
+    
+        # A short, fixed directory: AF_UNIX paths are capped at ~104 bytes, and a
+        # pytest tmp_path blows straight through that.
+        base = "/private/tmp"
+        path = f"{base}/sani-late-{os.getpid()}.sock"
+        transport = StubTransport([])
+        transport._settings = SimpleNamespace(cua_socket=path)
+        transport.ENDPOINT_WAIT_SECONDS = 3.0
+        held: list[socket_module.socket] = []
+    
+        async def bind_later() -> None:
+            await asyncio.sleep(0.4)
+            listener = socket_module.socket(socket_module.AF_UNIX, socket_module.SOCK_STREAM)
+            listener.bind(path)
+            listener.listen(1)
+            held.append(listener)
+    
+        task = asyncio.create_task(bind_later())
+        loop = asyncio.get_running_loop()
+        began = loop.time()
+        await transport._wait_for_endpoint()
+        waited = loop.time() - began
+>       await task
+
+tests/unit/test_cua_transport_recovery.py:201: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def bind_later() -> None:
+        await asyncio.sleep(0.4)
+        listener = socket_module.socket(socket_module.AF_UNIX, socket_module.SOCK_STREAM)
+>       listener.bind(path)
+E       PermissionError: [Errno 1] Operation not permitted
+
+tests/unit/test_cua_transport_recovery.py:192: PermissionError
+=============================== warnings summary ===============================
+../../../Users/sayan/Documents/personal-assistant/.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /Users/sayan/Documents/personal-assistant/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_core_desktop.py::test_probe_driver_rejects_a_stale_embedded_socket
+FAILED tests/unit/test_core_desktop.py::test_system_status_shape_has_no_secrets
+FAILED tests/unit/test_core_desktop.py::test_embedded_probe_reads_the_mode_over_its_own_socket
+FAILED tests/unit/test_core_desktop.py::test_embedded_probe_reports_a_resurrected_wrong_mode
+FAILED tests/unit/test_cua_transport_recovery.py::test_a_lease_waits_for_a_driver_that_is_still_coming_up
+5 failed, 389 passed, 1 warning in 39.87s

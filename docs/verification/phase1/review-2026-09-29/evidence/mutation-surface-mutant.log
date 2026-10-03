@@ -1,0 +1,22 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________________ test_scope_sensitive_reads_are_guarded ____________________
+
+store = <assistant.missions.store.MissionStore object at 0x108353f80>
+
+    async def test_scope_sensitive_reads_are_guarded(store: MissionStore) -> None:
+        """A READ of an out-of-scope surface is denied, like a mutation."""
+        authority = MissionAuthority(store)
+        item = _item(
+            allowed_action_scope=_item().allowed_action_scope.model_copy(
+                update={"tool_ids": ["list_apps", "click", "type_text", "get_window_state"]}
+            )
+        )
+        await _Intent(store).commit(item)
+>       with pytest.raises(AuthorityDenied):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AuthorityDenied
+
+tests/unit/test_mission_authority.py:537: Failed
+=========================== short test summary info ============================
+FAILED tests/unit/test_mission_authority.py::test_scope_sensitive_reads_are_guarded

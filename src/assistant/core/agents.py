@@ -85,6 +85,44 @@ class RuntimeProvider:
             await cm.__aexit__(None, None, None)
 
 
+class _LoopGuard:
+    """Bounds the Deep reasoning loop: steps, wall-clock, and repeated narration.
+
+    Live 2026-10-01: a free-tier model repeated "let me find the second video"
+    for minutes with no mutating action, so the mutating-action budget never
+    tripped. Observation-only loops are bounded here, and a trip ends the run
+    fail-closed with an honest message rather than spinning.
+    """
+
+    REPEAT_LIMIT = 3
+
+    def __init__(self, *, max_steps: int, deadline_seconds: float) -> None:
+        self._max_steps = max_steps
+        self._deadline = time.monotonic() + deadline_seconds
+        self._steps = 0
+        self._texts: dict[str, int] = {}
+
+    def tool_call(self) -> str | None:
+        self._steps += 1
+        if self._steps > self._max_steps:
+            return f"it used {self._max_steps} tool steps without finishing"
+        return self.check_time()
+
+    def check_time(self) -> str | None:
+        if time.monotonic() > self._deadline:
+            return "it ran past its time limit"
+        return None
+
+    def message(self, text: str) -> str | None:
+        key = " ".join(text.lower().split())[:160]
+        if len(key) < 20:
+            return None
+        self._texts[key] = self._texts.get(key, 0) + 1
+        if self._texts[key] >= self.REPEAT_LIMIT:
+            return "it kept repeating the same step"
+        return None
+
+
 class DeepAgentEntry:
     """The LangChain Deep Agent as a sani-core agent: reasoning + memory.
 
@@ -104,6 +142,7 @@ class DeepAgentEntry:
     ) -> None:
         if provider is not None and agent_builder is not None:
             raise ValueError("give the provider the builder, not both")
+        self._settings = settings
         self._provider = provider or RuntimeProvider(settings, agent_builder=agent_builder)
         # A07 fix: cancellation is per run, not a shared boolean. Concurrent
         # runs over the same entry cancel independently; cancelling run A
@@ -135,6 +174,7 @@ class DeepAgentEntry:
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
         run_id: str = "",
+        usage_recorder: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         token = CancellationToken()
         if run_id:
@@ -146,6 +186,7 @@ class DeepAgentEntry:
                 on_event=on_event,
                 cancel_check=cancel_check,
                 token=token,
+                usage_recorder=usage_recorder,
             )
         finally:
             if run_id:
@@ -159,6 +200,7 @@ class DeepAgentEntry:
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
         cancel_check: Callable[[], bool],
         token: CancellationToken,
+        usage_recorder: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         runtime = await self._provider.runtime()
         from langchain_core.messages import AIMessage, HumanMessage
@@ -170,7 +212,9 @@ class DeepAgentEntry:
         # A12: usage is metered at the provider boundary for every core run,
         # not only in legacy routes. Unknown usage stays unknown (never zero).
         ledger = UsageLedger()
-        usage_handler = LedgerCallbackHandler(ledger, prefix=f"core-{uuid.uuid4().hex[:8]}")
+        usage_handler = LedgerCallbackHandler(
+            ledger, prefix=f"core-{uuid.uuid4().hex[:8]}", on_call=usage_recorder
+        )
 
         # The host's conversation id IS the agent thread, so turn two of a chat
         # resumes the memory of turn one. Without one, this stays a one-shot
@@ -186,42 +230,69 @@ class DeepAgentEntry:
         order: list[str] = []
         tool_backed: set[str] = set()
         announced_tools: set[str] = set()
+        guard = _LoopGuard(
+            max_steps=getattr(self._settings, "deep_max_tool_steps", 40),
+            deadline_seconds=getattr(self._settings, "deep_run_deadline_seconds", 180),
+        )
+        stopped_reason: str | None = None
+        counted_calls: set[tuple[str, int]] = set()
 
+        hard_limit = getattr(self._settings, "deep_run_deadline_seconds", 180) + 30
         async with runtime.run_scope(
             f"core-{uuid.uuid4().hex[:8]}", conversation=conversation
         ) as budget:
-            async for event in runtime.agent.astream(
-                {"messages": [HumanMessage(text)]},
-                {"configurable": {"thread_id": thread}, "callbacks": [usage_handler]},
-                context=AgentContext(user_id="sani-local", chat_id=thread),
-                stream_mode="messages",
-            ):
-                if cancel_check() or token.is_cancelled:
-                    raise asyncio.CancelledError
-                message = event[0] if isinstance(event, tuple) and event else event
-                # isinstance, not `message.type == "ai"`: a streamed
-                # AIMessageChunk reports its type as "AIMessageChunk", so the
-                # attribute test that works on finished messages silently
-                # matches nothing on the stream.
-                if not isinstance(message, AIMessage):
-                    continue
-                message_id = str(getattr(message, "id", "") or "")
-                for call in getattr(message, "tool_call_chunks", None) or ():
-                    name = str(call.get("name") or "")
-                    if not name:
-                        continue
-                    tool_backed.add(message_id)
-                    if name not in announced_tools:
-                        announced_tools.add(name)
-                        await on_event(AGENT_PROGRESS, {"message": f"Using {name}"})
-                delta = _message_text(message)
-                if not delta:
-                    continue
-                if message_id not in partials:
-                    partials[message_id] = []
-                    order.append(message_id)
-                partials[message_id].append(delta)
-                await on_event(AGENT_TOKEN, {"text": delta})
+            try:
+                # A single hung model request produces no tokens, so the loop guard
+                # alone never fires; the hard timeout ends the run regardless.
+                async with asyncio.timeout(hard_limit):
+                    async for event in runtime.agent.astream(
+                        {"messages": [HumanMessage(text)]},
+                        {"configurable": {"thread_id": thread}, "callbacks": [usage_handler]},
+                        context=AgentContext(user_id="sani-local", chat_id=thread),
+                        stream_mode="messages",
+                    ):
+                        if cancel_check() or token.is_cancelled:
+                            raise asyncio.CancelledError
+                        message = event[0] if isinstance(event, tuple) and event else event
+                        # isinstance, not `message.type == "ai"`: a streamed
+                        # AIMessageChunk reports its type as "AIMessageChunk", so the
+                        # attribute test that works on finished messages silently
+                        # matches nothing on the stream.
+                        if not isinstance(message, AIMessage):
+                            continue
+                        message_id = str(getattr(message, "id", "") or "")
+                        for call in getattr(message, "tool_call_chunks", None) or ():
+                            name = str(call.get("name") or "")
+                            if not name:
+                                continue
+                            tool_backed.add(message_id)
+                            call_key = (message_id, int(call.get("index") or 0))
+                            if call_key not in counted_calls:
+                                counted_calls.add(call_key)
+                                stopped_reason = stopped_reason or guard.tool_call()
+                            if name not in announced_tools:
+                                announced_tools.add(name)
+                                await on_event(AGENT_PROGRESS, {"message": f"Using {name}"})
+                        if stopped_reason is not None:
+                            break
+                        delta = _message_text(message)
+                        if not delta:
+                            continue
+                        if message_id not in partials:
+                            if order:
+                                stopped_reason = stopped_reason or guard.message(
+                                    "".join(partials[order[-1]])
+                                )
+                            partials[message_id] = []
+                            order.append(message_id)
+                        partials[message_id].append(delta)
+                        await on_event(AGENT_TOKEN, {"text": delta})
+                        if stopped_reason is None:
+                            stopped_reason = guard.check_time()
+                        if stopped_reason is not None:
+                            break
+            except TimeoutError:
+                stopped_reason = "it ran past its time limit"
 
         response = ""
         for message_id in reversed(order):
@@ -229,12 +300,19 @@ class DeepAgentEntry:
                 continue
             response = "".join(partials[message_id])
             break
+        if stopped_reason is not None:
+            # Fail closed: never present a loop that was cut off as a finish.
+            response = (
+                f"I stopped because {stopped_reason}, and I could not confirm the goal was "
+                "reached. Tell me what you see on screen, or give a more specific "
+                "instruction (for example the exact video title) and I will retry."
+            )
         usage_snapshot = ledger.snapshot()
         # Decimal cost is str()'d for the JSON frame; unknown stays None.
         if usage_snapshot.get("cost_usd") is not None:
             usage_snapshot["cost_usd"] = str(usage_snapshot["cost_usd"])
         return {
-            "status": "done",
+            "status": "blocked" if stopped_reason is not None else "done",
             "thread_id": thread,
             "response": response,
             "cua_actions_used": budget.used,
@@ -422,6 +500,10 @@ class MissionEntry:
         settings = self._settings
         store = await MissionStore.connect(settings.sani_db_path)
         await store.setup()
+        # D11: the transport's admission boundary now has durable accounting.
+        from assistant.models.admission import get_admission_controller
+
+        get_admission_controller().bind_store(store)
         # Startup recovery: uncertain attempts from a previous process are
         # marked for reconciliation before any new action (F07/R07); the
         # returned execution ids are CONSUMED through the real reconciler
@@ -468,8 +550,7 @@ class MissionEntry:
         # construction — no second service, provider, or graph is created.
         executor._payload_resolver = service._resolve_payloads
         service_probe_holder["probe"] = service._ownership_probe
-        if uncertain_ids:
-            await service.reconcile_startup(uncertain_ids)
+        await service.reconcile_startup(uncertain_ids)
         return service
 
     def _transport_for_mission(self, mission: Any) -> Any:
@@ -481,12 +562,18 @@ class MissionEntry:
         """
         token = self._run_tokens.get(mission.mission_id)
 
+        from assistant.models.admission import get_admission_controller
+
         return _DeepInvoke(
             self._deep,
             thread_id=mission.conversation_id,
             mission_id=mission.mission_id,
             plan_version=mission.plan_version,
             cancel_check=lambda: bool(token and token.is_cancelled),
+            # D11: the invocation opens its own admission scope; the
+            # transport admits before every request against the mission's
+            # documented limits.
+            admission=get_admission_controller(),
         )
 
     async def cancel(self, run_id: str | None = None) -> None:
@@ -602,6 +689,7 @@ class _DeepInvoke:
         plan_version: int = 0,
         on_event: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
         cancel_check: Callable[[], bool] | None = None,
+        admission: Any = None,
     ) -> None:
         self._deep = deep
         self._thread_id = thread_id
@@ -609,6 +697,11 @@ class _DeepInvoke:
         self._plan_version = plan_version
         self._on_event = on_event or _noop_event
         self._cancel_check = cancel_check or (lambda: False)
+        # D11: this invocation opens an admission SCOPE; every provider
+        # request (graph sub-calls, retries, streams) is admitted at the
+        # transport boundary BEFORE dispatch, against the mission's own
+        # documented limits, and fails closed when accounting is down.
+        self._admission = admission
 
     def bind(self, *, mission_id: str, plan_version: int) -> None:
         """Bind the mission identity so threads are namespaced per plan."""
@@ -627,6 +720,15 @@ class _DeepInvoke:
         )
         capture: dict[str, Any] = {}
         capture_token = submission_capture.set(capture)
+        scope = None
+        if self._admission is not None:
+            # D11: one admission scope per invocation, with the ceiling
+            # taken from the mission's own durable budget limits.
+            scope = await self._admission.open_scope(
+                self._mission_id, self._plan_version,
+                f"{kind}:{self._thread_id}",
+            )
+            self._admission.push_scope(scope)
         try:
             with controller_role(role):
                 await self._deep.run(
@@ -638,13 +740,38 @@ class _DeepInvoke:
                     on_event=self._on_event,
                     cancel_check=self._cancel_check,
                 )
+        except Exception as exc:
+            # D14: the established producer — a provider rate limit on any
+            # Controller role raises the typed wait signal instead of a
+            # dead failure.
+            text = str(exc).lower()
+            if "rate limit" in text or "429" in text or "too many requests" in text:
+                from assistant.missions.service import ExternalWaitRequested
+
+                raise ExternalWaitRequested(
+                    _retry_after_ms_from(exc), f"provider rate limited {role}"
+                ) from exc
+            raise
         finally:
             submission_capture.reset(capture_token)
+            if scope is not None:
+                self._admission.pop_scope(scope)
         # No valid structured submission: reject; the caller may allow one
         # bounded repair, but raw text is never parsed into authority.
         if capture.get(role) is None:
             raise ValueError(f"invalid {kind} submission: no {tool} call was made")
         return {kind: capture[role]}
+
+
+def _retry_after_ms_from(exc: BaseException) -> int:
+    """A bounded Retry-After from the provider error, else 30s (D14)."""
+    import re as _re
+
+    text = str(exc)
+    match = _re.search(r"retry[- ]after(?:\D)*(\d{1,4})", text, _re.IGNORECASE)
+    if match is not None:
+        return min(int(match.group(1)), 3_600) * 1000
+    return 30_000
 
 
 async def _noop_event(kind: str, data: dict[str, Any]) -> None:

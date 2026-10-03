@@ -1,0 +1,17 @@
+{
+ "base_head": "df04060f189a10bb81baf522a58347cddc6cc915",
+ "worktree": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant",
+ "main_repository": "/Users/sayan/Documents/personal-assistant",
+ "previous_batch": "docs/verification/phase1/followup-2026-09-29 (SOURCE_BINDING.json patch_sha256 07eac06ccae20ab1168322776a1dd480398b0b7cf91f95fce07917590b7cf73d)",
+ "baseline_source_file_count": 668,
+ "source_manifest_file_count": 672,
+ "source_manifest_sha256": "dfae0afcd6cf9049c0e3259b314f5ed70d8a7a5c662422e49ec27f91440663f2",
+ "dirty_diff_sha256": "3e88ed58aeebf3e2954523e24cb40c97ff4d0edce467b4ed7d0452b380abc729",
+ "patch_sha256": "cfadbcb756cb3d7d2e75fc611bf6284bec1800e171ffeba1d1714545b2ee522a",
+ "patch_file": "phase1-corrections-2.patch",
+ "committed": false,
+ "phase1_accepted": false,
+ "phase2_started": false,
+ "live_evidence": "NONE - physical desktop, voice audition, installed-bundle rollback, held-input release and PostgreSQL-expanded integration remain BLOCKED for owner-authorized runs",
+ "patch_semantics": "phase1-corrections-2.patch is the CUMULATIVE uncommitted diff of BOTH corrective batches against base df04060f189a10bb81baf522a58347cddc6cc915 (verified: applies cleanly to a fresh base worktree and reproduces the worktree source exactly). To apply elsewhere, start from that base; do NOT stack it on top of the first batch's patch."
+}

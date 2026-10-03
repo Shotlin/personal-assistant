@@ -1,0 +1,707 @@
+E501 Line too long (102 > 100)
+   --> src/assistant/velo/adapter.py:118:101
+    |
+116 |         task.check_usable()
+117 |         task.used_actions += 1
+118 |         await self._on_event("agent.progress", {"message": f"{tool_name} on {task.instruction[:48]}"})
+    |                                                                                                     ^^
+119 |         reply = await self.call(tool_name, **kwargs)
+120 |         task.last_outcome = _outcome_from_reply(reply)
+    |
+
+F822 Undefined name `TaskCancelled` in `__all__`
+   --> src/assistant/velo/adapter.py:367:5
+    |
+365 |     "BROWSER_CATEGORY_WORDS",
+366 |     "CuaAdapter",
+367 |     "TaskCancelled",
+    |     ^^^^^^^^^^^^^^^
+368 | ]
+    |
+
+UP037 [*] Remove quotes from type annotation
+   --> src/assistant/velo/contracts.py:151:19
+    |
+149 |     max_actions: int = 12
+150 |     used_actions: int = 0
+151 |     last_outcome: "ActionOutcome | None" = None
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+152 |     #: Every adapter step registers here; the tracker ends changeless churn.
+153 |     tracker: "NoProgressTracker" = field(default_factory=lambda: NoProgressTracker())
+    |
+help: Remove quotes
+    |
+150 |     used_actions: int = 0
+    -     last_outcome: "ActionOutcome | None" = None
+151 +     last_outcome: ActionOutcome | None = None
+152 |     #: Every adapter step registers here; the tracker ends changeless churn.
+    |
+
+UP037 [*] Remove quotes from type annotation
+   --> src/assistant/velo/contracts.py:153:14
+    |
+151 |     last_outcome: "ActionOutcome | None" = None
+152 |     #: Every adapter step registers here; the tracker ends changeless churn.
+153 |     tracker: "NoProgressTracker" = field(default_factory=lambda: NoProgressTracker())
+    |              ^^^^^^^^^^^^^^^^^^^
+154 |
+155 |     def expired(self) -> bool:
+    |
+help: Remove quotes
+    |
+152 |     #: Every adapter step registers here; the tracker ends changeless churn.
+    -     tracker: "NoProgressTracker" = field(default_factory=lambda: NoProgressTracker())
+153 +     tracker: NoProgressTracker = field(default_factory=lambda: NoProgressTracker())
+154 |
+    |
+
+UP037 [*] Remove quotes from type annotation
+   --> src/assistant/velo/contracts.py:264:14
+    |
+262 |     recovery_attempts: int = 0
+263 |     _last_digest: str = ""
+264 |     _recent: "deque[str]" = field(default_factory=deque, repr=False)
+    |              ^^^^^^^^^^^^
+265 |
+266 |     def register(self, kind: ProgressKind, scene_digest: str) -> bool:
+    |
+help: Remove quotes
+    |
+263 |     _last_digest: str = ""
+    -     _recent: "deque[str]" = field(default_factory=deque, repr=False)
+264 +     _recent: deque[str] = field(default_factory=deque, repr=False)
+265 |
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/assistant/velo/jev.py:75:9
+   |
+73 |                   "the Deep Agent, or any other model"
+74 |               )
+75 | /         from langchain_typesafe import TypeSafeClassifier
+76 | |
+77 | |         from langchain_core._api import LangChainBetaWarning
+   | |____________________________________________________________^
+78 |
+79 |           with warnings.catch_warnings():
+   |
+help: Organize imports
+   |
+74 |             )
+   -         from langchain_typesafe import TypeSafeClassifier
+   -
+75 |         from langchain_core._api import LangChainBetaWarning
+76 +         from langchain_typesafe import TypeSafeClassifier
+77 |
+   |
+
+UP037 [*] Remove quotes from type annotation
+   --> src/assistant/velo/jev.py:169:63
+    |
+167 |         return decision
+168 |
+169 |     async def _classify(self, request: JevDecisionRequest) -> "JevAnswers":
+    |                                                               ^^^^^^^^^^^^
+170 |         from langchain_typesafe import Choice, Noul
+    |
+help: Remove quotes
+    |
+168 |
+    -     async def _classify(self, request: JevDecisionRequest) -> "JevAnswers":
+169 +     async def _classify(self, request: JevDecisionRequest) -> JevAnswers:
+170 |         from langchain_typesafe import Choice, Noul
+    |
+
+UP037 [*] Remove quotes from type annotation
+   --> src/assistant/velo/jev.py:241:24
+    |
+240 |     def _decision_from(
+241 |         self, answers: "JevAnswers", request: JevDecisionRequest
+    |                        ^^^^^^^^^^^^
+242 |     ) -> JevDecision:
+243 |         """Map classifier answers onto the decision contract, validated."""
+    |
+help: Remove quotes
+    |
+240 |     def _decision_from(
+    -         self, answers: "JevAnswers", request: JevDecisionRequest
+241 +         self, answers: JevAnswers, request: JevDecisionRequest
+242 |     ) -> JevDecision:
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/assistant/velo/parse.py:17:1
+   |
+15 |   """
+16 |
+17 | / from __future__ import annotations
+18 | |
+19 | | import re
+20 | | from dataclasses import dataclass, field
+21 | | from typing import Any
+   | |______________________^
+22 |
+23 |   @dataclass(frozen=True)
+   |
+help: Organize imports
+   |
+22 |
+23 +
+24 | @dataclass(frozen=True)
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/assistant/velo/recipes.py:20:1
+   |
+18 |   """
+19 |
+20 | / from __future__ import annotations
+21 | |
+22 | | import asyncio
+23 | | import logging
+24 | | from dataclasses import dataclass
+25 | | from typing import Any
+26 | | from urllib.parse import quote_plus
+27 | |
+28 | | from assistant.velo.adapter import CuaAdapter
+29 | | from assistant.velo.contracts import (
+30 | |     AppIdentity,
+31 | |     OutcomeState,
+32 | |     Postcondition,
+33 | |     PostconditionKind,
+34 | |     Target,
+35 | |     TargetOwnership,
+36 | |     TaskState,
+37 | | )
+38 | | from assistant.velo import verify as outcome_check
+   | |__________________________________________________^
+39 |
+40 |   logger = logging.getLogger("assistant.velo.recipes")
+   |
+help: Organize imports
+   |
+27 |
+28 + from assistant.velo import verify as outcome_check
+29 | from assistant.velo.adapter import CuaAdapter
+--------------------------------------------------------------------------------
+38 | )
+   - from assistant.velo import verify as outcome_check
+39 |
+   |
+
+F821 Undefined name `Verification`
+  --> src/assistant/velo/recipes.py:50:19
+   |
+48 |     state: OutcomeState
+49 |     answer: str
+50 |     verification: Verification | None = None
+   |                   ^^^^^^^^^^^^
+
+E501 Line too long (101 > 100)
+  --> src/assistant/velo/recipes.py:82:101
+   |
+82 | async def _observe(task: TaskState, adapter: CuaAdapter, pid: int, window_id: int) -> dict[str, Any]:
+   |                                                                                                     ^
+83 |     # The adapter digests every structured observation into the task, so
+84 |     # no-progress tracking sees exactly what each step saw.
+   |
+
+F821 Undefined name `Verification`
+   --> src/assistant/velo/recipes.py:123:6
+    |
+121 |     attempts: int = 5,
+122 |     delay_seconds: float = 1.2,
+123 | ) -> Verification:
+    |      ^^^^^^^^^^^^
+124 |     """Check a postcondition, then keep checking while a result loads.
+    |
+
+E501 Line too long (109 > 100)
+   --> src/assistant/velo/recipes.py:370:101
+    |
+368 |     app_name_actual = target.app.name
+369 |     if check.satisfied:
+370 |         return RecipeResult("navigate", OutcomeState.CONFIRMED, f"Opened {url} in {app_name_actual}.", check)
+    |                                                                                                     ^^^^^^^^^
+371 |     return RecipeResult(
+372 |         "navigate",
+    |
+
+E501 Line too long (114 > 100)
+  --> src/assistant/velo/verify.py:80:101
+   |
+78 |     kind = postcondition.kind
+79 |     if kind in (PostconditionKind.APP_RUNNING, PostconditionKind.APP_FOREGROUND):
+80 |         return await _check_app(adapter, task, postcondition, foreground=kind is PostconditionKind.APP_FOREGROUND)
+   |                                                                                                     ^^^^^^^^^^^^^^
+81 |     if kind is PostconditionKind.NAVIGATED:
+82 |         return await _check_text_evidence(
+   |
+
+E501 Line too long (109 > 100)
+   --> src/assistant/velo/verify.py:102:101
+    |
+100 |         )
+101 |     if kind is PostconditionKind.PLAYBACK_STARTED:
+102 |         return await _check_playback(adapter, task, expect_pid=expect_pid, expect_window_id=expect_window_id)
+    |                                                                                                     ^^^^^^^^^
+103 |     if kind is PostconditionKind.VIEWPORT_CHANGED:
+104 |         return await _check_viewport(adapter, task, postcondition, expect_pid=expect_pid, expect_window_id=expect_window_id)
+    |
+
+E501 Line too long (124 > 100)
+   --> src/assistant/velo/verify.py:104:101
+    |
+102 |         return await _check_playback(adapter, task, expect_pid=expect_pid, expect_window_id=expect_window_id)
+103 |     if kind is PostconditionKind.VIEWPORT_CHANGED:
+104 |         return await _check_viewport(adapter, task, postcondition, expect_pid=expect_pid, expect_window_id=expect_window_id)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+105 |     return Verification(satisfied=False, kind=kind, detail=f"unknown postcondition {kind}")
+    |
+
+E501 Line too long (103 > 100)
+   --> src/assistant/velo/verify.py:140:101
+    |
+138 |     evidence = {"pid": app.pid, "window_id": window_id, "active": app.active}
+139 |     if not app.running or window_id is None:
+140 |         return Verification(False, postcondition.kind, evidence=evidence, detail="no on-screen window")
+    |                                                                                                     ^^^
+141 |     if foreground and not app.active:
+142 |         return Verification(
+    |
+
+E501 Line too long (103 > 100)
+   --> src/assistant/velo/verify.py:143:101
+    |
+141 |     if foreground and not app.active:
+142 |         return Verification(
+143 |             False, postcondition.kind, evidence=evidence, detail=f"{app.name} is not in the foreground"
+    |                                                                                                     ^^^
+144 |         )
+145 |     if not _has_usable_window(state):
+    |
+
+E501 Line too long (102 > 100)
+   --> src/assistant/velo/verify.py:164:101
+    |
+162 | ) -> Verification:
+163 |     """Marker text visible in the window's elements (address bar, field, page)."""
+164 |     pid = expect_pid if expect_pid is not None else (task.resolved.app.pid if task.resolved else None)
+    |                                                                                                     ^^
+165 |     window_id = expect_window_id if expect_window_id is not None else (task.resolved.window_id if task.resolved else None)
+166 |     if pid is None or window_id is None:
+    |
+
+E501 Line too long (122 > 100)
+   --> src/assistant/velo/verify.py:165:101
+    |
+163 |     """Marker text visible in the window's elements (address bar, field, page)."""
+164 |     pid = expect_pid if expect_pid is not None else (task.resolved.app.pid if task.resolved else None)
+165 |     window_id = expect_window_id if expect_window_id is not None else (task.resolved.window_id if task.resolved else None)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+166 |     if pid is None or window_id is None:
+167 |         return Verification(False, kind, detail="no bound surface to verify against")
+    |
+
+E501 Line too long (102 > 100)
+   --> src/assistant/velo/verify.py:202:101
+    |
+200 | ) -> Verification:
+201 |     """Playback evidence: a Pause control showing, or a play toggle already on."""
+202 |     pid = expect_pid if expect_pid is not None else (task.resolved.app.pid if task.resolved else None)
+    |                                                                                                     ^^
+203 |     window_id = expect_window_id if expect_window_id is not None else (task.resolved.window_id if task.resolved else None)
+204 |     if pid is None or window_id is None:
+    |
+
+E501 Line too long (122 > 100)
+   --> src/assistant/velo/verify.py:203:101
+    |
+201 |     """Playback evidence: a Pause control showing, or a play toggle already on."""
+202 |     pid = expect_pid if expect_pid is not None else (task.resolved.app.pid if task.resolved else None)
+203 |     window_id = expect_window_id if expect_window_id is not None else (task.resolved.window_id if task.resolved else None)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+204 |     if pid is None or window_id is None:
+205 |         return Verification(False, PostconditionKind.PLAYBACK_STARTED, detail="no bound surface")
+    |
+
+E501 Line too long (102 > 100)
+   --> src/assistant/velo/verify.py:231:101
+    |
+229 | ) -> Verification:
+230 |     """Scroll evidence: the surface's observed content differs from before."""
+231 |     pid = expect_pid if expect_pid is not None else (task.resolved.app.pid if task.resolved else None)
+    |                                                                                                     ^^
+232 |     window_id = expect_window_id if expect_window_id is not None else (task.resolved.window_id if task.resolved else None)
+233 |     if pid is None or window_id is None:
+    |
+
+E501 Line too long (122 > 100)
+   --> src/assistant/velo/verify.py:232:101
+    |
+230 |     """Scroll evidence: the surface's observed content differs from before."""
+231 |     pid = expect_pid if expect_pid is not None else (task.resolved.app.pid if task.resolved else None)
+232 |     window_id = expect_window_id if expect_window_id is not None else (task.resolved.window_id if task.resolved else None)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+233 |     if pid is None or window_id is None:
+234 |         return Verification(False, PostconditionKind.VIEWPORT_CHANGED, detail="no bound surface")
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/unit/test_velo_adapter.py:3:1
+   |
+ 1 |   """The CUA adapter: typed readback, contract failures, exact target resolution."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import pytest
+ 6 | |
+ 7 | | from assistant.tools.policy import STRUCTURED_CALLS
+ 8 | | from assistant.velo.adapter import CuaAdapter
+ 9 | | from assistant.velo.contracts import AdapterContractError, AppIdentity, TaskState
+10 | |
+11 | | from tests.unit.velo_fakes import FakeTool, app_entry
+   | |_____________________________________________________^
+help: Organize imports
+   |
+9  | from assistant.velo.contracts import AdapterContractError, AppIdentity, TaskState
+   -
+10 | from tests.unit.velo_fakes import FakeTool, app_entry
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/unit/test_velo_controller.py:3:1
+   |
+ 1 |   """The Velo controller: routes, carried targets, JEV, honest reporting."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import contextlib
+ 6 | | from typing import Any
+ 7 | |
+ 8 | | import pytest
+ 9 | |
+10 | | from assistant.agent.context import RunBudget
+11 | | from assistant.velo.controller import VeloEntry
+12 | | from assistant.velo.contracts import Candidate, CandidateKind, DecisionStatus, JevDecision
+13 | |
+14 | | from assistant.tools.policy import desktop_contexts
+15 | |
+16 | | from tests.unit.velo_fakes import (
+17 | |     EventLog,
+18 | |     FakeRuntime,
+19 | |     app_entry,
+20 | |     reset_world,
+21 | |     standard_tools,
+22 | |     window_state_payload,
+23 | | )
+   | |_^
+help: Organize imports
+   |
+10 | from assistant.agent.context import RunBudget
+   - from assistant.velo.controller import VeloEntry
+11 + from assistant.tools.policy import desktop_contexts
+12 | from assistant.velo.contracts import Candidate, CandidateKind, DecisionStatus, JevDecision
+   -
+   - from assistant.tools.policy import desktop_contexts
+   -
+13 + from assistant.velo.controller import VeloEntry
+14 | from tests.unit.velo_fakes import (
+   |
+
+F401 [*] `contextlib` imported but unused
+ --> tests/unit/test_velo_controller.py:5:8
+  |
+3 | from __future__ import annotations
+4 |
+5 | import contextlib
+  |        ^^^^^^^^^^
+6 | from typing import Any
+  |
+help: Remove unused import: `contextlib`
+  |
+4 |
+  - import contextlib
+5 | from typing import Any
+  |
+
+F401 [*] `assistant.agent.context.RunBudget` imported but unused
+  --> tests/unit/test_velo_controller.py:10:37
+   |
+ 8 | import pytest
+ 9 |
+10 | from assistant.agent.context import RunBudget
+   |                                     ^^^^^^^^^
+11 | from assistant.velo.controller import VeloEntry
+12 | from assistant.velo.contracts import Candidate, CandidateKind, DecisionStatus, JevDecision
+   |
+help: Remove unused import: `assistant.agent.context.RunBudget`
+   |
+9  |
+   - from assistant.agent.context import RunBudget
+10 | from assistant.velo.controller import VeloEntry
+   |
+
+F401 [*] `assistant.velo.contracts.Candidate` imported but unused
+  --> tests/unit/test_velo_controller.py:12:38
+   |
+10 | from assistant.agent.context import RunBudget
+11 | from assistant.velo.controller import VeloEntry
+12 | from assistant.velo.contracts import Candidate, CandidateKind, DecisionStatus, JevDecision
+   |                                      ^^^^^^^^^
+13 |
+14 | from assistant.tools.policy import desktop_contexts
+   |
+help: Remove unused import
+   |
+11 | from assistant.velo.controller import VeloEntry
+   - from assistant.velo.contracts import Candidate, CandidateKind, DecisionStatus, JevDecision
+12 + from assistant.velo.contracts import DecisionStatus, JevDecision
+13 |
+   |
+
+F401 [*] `assistant.velo.contracts.CandidateKind` imported but unused
+  --> tests/unit/test_velo_controller.py:12:49
+   |
+10 | from assistant.agent.context import RunBudget
+11 | from assistant.velo.controller import VeloEntry
+12 | from assistant.velo.contracts import Candidate, CandidateKind, DecisionStatus, JevDecision
+   |                                                 ^^^^^^^^^^^^^
+13 |
+14 | from assistant.tools.policy import desktop_contexts
+   |
+help: Remove unused import
+   |
+11 | from assistant.velo.controller import VeloEntry
+   - from assistant.velo.contracts import Candidate, CandidateKind, DecisionStatus, JevDecision
+12 + from assistant.velo.contracts import DecisionStatus, JevDecision
+13 |
+   |
+
+F841 Local variable `provider` is assigned to but never used
+   --> tests/unit/test_velo_jev.py:157:13
+    |
+155 |         @classmethod
+156 |         def from_settings(cls, settings):  # noqa: ANN001, ANN206
+157 |             provider = settings.velo_provider
+    |             ^^^^^^^^
+158 |             key = settings.openrouter_api_key
+159 |             model = settings.velo_jev_model
+    |
+help: Remove assignment to unused variable `provider`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/unit/test_velo_live_regressions.py:3:1
+   |
+ 1 |   """Regression tests from the 2026-09-26 03:00-03:16 live session."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import asyncio
+ 6 | |
+ 7 | | import pytest
+ 8 | |
+ 9 | | from assistant.velo.adapter import CuaAdapter
+10 | | from assistant.velo.contracts import (
+11 | |     AppIdentity,
+12 | |     OutcomeState,
+13 | |     Postcondition,
+14 | |     PostconditionKind,
+15 | |     Target,
+16 | |     TaskState,
+17 | | )
+18 | | from assistant.velo.parse import parse
+19 | | from assistant.velo.recipes import execute
+20 | |
+21 | | from tests.unit.velo_fakes import (
+22 | |     EventLog,
+23 | |     FakeTool,
+24 | |     app_entry,
+25 | |     reset_world,
+26 | |     standard_tools,
+27 | |     window_state_payload,
+28 | | )
+   | |_^
+help: Organize imports
+   |
+19 | from assistant.velo.recipes import execute
+   -
+20 | from tests.unit.velo_fakes import (
+   |
+
+F401 [*] `asyncio` imported but unused
+ --> tests/unit/test_velo_live_regressions.py:5:8
+  |
+3 | from __future__ import annotations
+4 |
+5 | import asyncio
+  |        ^^^^^^^
+6 |
+7 | import pytest
+  |
+help: Remove unused import: `asyncio`
+  |
+4 |
+  - import asyncio
+5 |
+  |
+
+F401 [*] `assistant.velo.contracts.Postcondition` imported but unused
+  --> tests/unit/test_velo_live_regressions.py:13:5
+   |
+11 |     AppIdentity,
+12 |     OutcomeState,
+13 |     Postcondition,
+   |     ^^^^^^^^^^^^^
+14 |     PostconditionKind,
+15 |     Target,
+   |
+help: Remove unused import
+   |
+12 |     OutcomeState,
+   -     Postcondition,
+   -     PostconditionKind,
+13 |     Target,
+   |
+
+F401 [*] `assistant.velo.contracts.PostconditionKind` imported but unused
+  --> tests/unit/test_velo_live_regressions.py:14:5
+   |
+12 |     OutcomeState,
+13 |     Postcondition,
+14 |     PostconditionKind,
+   |     ^^^^^^^^^^^^^^^^^
+15 |     Target,
+16 |     TaskState,
+   |
+help: Remove unused import
+   |
+12 |     OutcomeState,
+   -     Postcondition,
+   -     PostconditionKind,
+13 |     Target,
+   |
+
+F401 [*] `tests.unit.velo_fakes.FakeTool` imported but unused
+  --> tests/unit/test_velo_live_regressions.py:23:5
+   |
+21 | from tests.unit.velo_fakes import (
+22 |     EventLog,
+23 |     FakeTool,
+   |     ^^^^^^^^
+24 |     app_entry,
+25 |     reset_world,
+   |
+help: Remove unused import: `tests.unit.velo_fakes.FakeTool`
+   |
+22 |     EventLog,
+   -     FakeTool,
+23 |     app_entry,
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> tests/unit/test_velo_live_regressions.py:174:5
+    |
+172 |   async def test_route_b_without_jev_defers_to_the_reasoning_executor() -> None:
+173 |       """Live 03:16: an unparseable instruction got an unhelpful dead end."""
+174 | /     from tests.unit.velo_fakes import FakeRuntime
+175 | |
+176 | |     from assistant.velo.controller import VeloEntry
+    | |___________________________________________________^
+177 |
+178 |       class Deep:
+    |
+help: Organize imports
+    |
+173 |     """Live 03:16: an unparseable instruction got an unhelpful dead end."""
+    -     from tests.unit.velo_fakes import FakeRuntime
+    -
+174 |     from assistant.velo.controller import VeloEntry
+175 +     from tests.unit.velo_fakes import FakeRuntime
+176 |
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/unit/test_velo_recipes.py:3:1
+   |
+ 1 |   """Recipes: verified execution with explicit target ownership."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import pytest
+ 6 | |
+ 7 | | from assistant.velo.adapter import CuaAdapter
+ 8 | | from assistant.velo.contracts import (
+ 9 | |     AppIdentity,
+10 | |     OutcomeState,
+11 | |     PostconditionKind,
+12 | |     Target,
+13 | |     TaskState,
+14 | | )
+15 | | from assistant.velo.recipes import execute
+16 | |
+17 | | from tests.unit.velo_fakes import (
+18 | |     EventLog,
+19 | |     app_entry,
+20 | |     reset_world,
+21 | |     standard_tools,
+22 | |     window_state_payload,
+23 | | )
+   | |_^
+help: Organize imports
+   |
+15 | from assistant.velo.recipes import execute
+   -
+16 | from tests.unit.velo_fakes import (
+   |
+
+F401 [*] `assistant.velo.contracts.PostconditionKind` imported but unused
+  --> tests/unit/test_velo_recipes.py:11:5
+   |
+ 9 |     AppIdentity,
+10 |     OutcomeState,
+11 |     PostconditionKind,
+   |     ^^^^^^^^^^^^^^^^^
+12 |     Target,
+13 |     TaskState,
+   |
+help: Remove unused import: `assistant.velo.contracts.PostconditionKind`
+   |
+10 |     OutcomeState,
+   -     PostconditionKind,
+11 |     Target,
+   |
+
+F401 [*] `assistant.tools.policy.desktop_contexts` imported but unused
+  --> tests/unit/velo_fakes.py:15:69
+   |
+14 | from assistant.agent.context import RunBudget
+15 | from assistant.tools.policy import STRUCTURED_CALLS, cua_run_scope, desktop_contexts
+   |                                                                     ^^^^^^^^^^^^^^^^
+help: Remove unused import: `assistant.tools.policy.desktop_contexts`
+   |
+14 | from assistant.agent.context import RunBudget
+   - from assistant.tools.policy import STRUCTURED_CALLS, cua_run_scope, desktop_contexts
+15 + from assistant.tools.policy import STRUCTURED_CALLS, cua_run_scope
+16 |
+   |
+
+UP037 [*] Remove quotes from type annotation
+   --> tests/unit/velo_fakes.py:103:32
+    |
+101 |         self.opened_scopes: list[str] = []
+102 |
+103 |     async def runtime(self) -> "FakeRuntime":
+    |                                ^^^^^^^^^^^^^
+104 |         return self
+    |
+help: Remove quotes
+    |
+102 |
+    -     async def runtime(self) -> "FakeRuntime":
+103 +     async def runtime(self) -> FakeRuntime:
+104 |         return self
+    |
+
+Found 42 errors.
+[*] 24 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).

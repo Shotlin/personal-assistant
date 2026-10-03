@@ -901,11 +901,17 @@ pub fn agent_finished(
     // C09/N11: a completed turn speaks a bounded acknowledgment through the
     // real speech path (worker + queue). Voice output disabled or unavailable
     // changes nothing here — text truth is independent of playback.
-    if ok && status == "completed" {
+    if status == "completed" || status == "failed" {
         let tts = app.try_state::<crate::tts::TtsState>();
         if let Some(state) = tts {
             if state.supervisor.is_enabled() {
-                let _ack = crate::tts::enqueue_speech(&app, text, &run_id, None);
+                // Speak what the screen shows; only a turn with no text at all gets the generic line.
+                let spoken = if !text.trim().is_empty() {
+                    text
+                } else {
+                    "Sorry, that did not work. Check the screen for details."
+                };
+                let _ack = crate::tts::enqueue_speech(app, spoken, &run_id, None);
             }
         }
     }

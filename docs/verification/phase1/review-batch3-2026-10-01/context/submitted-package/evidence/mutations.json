@@ -1,0 +1,51 @@
+{
+ "mutation-approval-release": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-origin-readonly": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-stop-noop": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-sink-screening": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-provider-admission": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-deletion-isolation": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-ambiguous-replay": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-exact-target": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-fence-cleanup": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-harness-scope": {
+  "exit_code": 1,
+  "meaningful_failure": true
+ },
+ "mutation-voice-lock-order": {
+  "exit_code": -9,
+  "meaningful_failure": true,
+  "note": "timeout kill counts: the mutant deadlocks the test"
+ },
+ "_summary": {
+  "guards_tested": 11,
+  "meaningful_failures": 11
+ }
+}

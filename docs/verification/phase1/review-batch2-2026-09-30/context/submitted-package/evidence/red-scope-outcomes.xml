@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="7" skipped="0" tests="9" time="0.978" timestamp="2026-09-30T22:57:51.312876+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_unknown_origin_cannot_read_protected_content" time="0.006"><failure message="Failed: DID NOT RAISE AuthorityDenied">store = &lt;assistant.missions.store.MissionStore object at 0x10e290740&gt;
+
+    async def test_unknown_origin_cannot_read_protected_content(store: MissionStore) -&gt; None:
+        """A READ_ONLY content read with an unknown origin is refused when the
+        mission scope configures allowed origins — reading is not a wildcard."""
+        from assistant.missions.authority import AuthorityDenied
+    
+        scope = _scope(origins=["https://trusted.example"])
+        _mission, item = await _claimed(store, scope)
+        authority = MissionAuthority(store)
+&gt;       with pytest.raises(AuthorityDenied) as denied:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AuthorityDenied
+
+tests/integration/test_phase1_scope_outcomes.py:86: Failed</failure></testcase><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_trusted_origin_bootstrap_positive" time="0.004" /><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_real_wrapper_blocks_unknown_origin_read_before_sink" time="0.021"><failure message="AssertionError: a protected read must never reach the data sink&#10;assert [{'pid': 9, 'window_id': 2}] == []&#10;  &#10;  Left contains one more item: {'pid': 9, 'window_id': 2}&#10;  Use -v to get more diff">store = &lt;assistant.missions.store.MissionStore object at 0x10e532f30&gt;
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-27/test_real_wrapper_blocks_unkno0')
+
+    async def test_real_wrapper_blocks_unknown_origin_read_before_sink(
+        store: MissionStore, tmp_path: Any
+    ) -&gt; None:
+        """Production wrapper regression: with configured allowed_origins, an
+        unknown-origin protected read never reaches the data sink."""
+        from assistant.missions.executor import VeloExecutor
+    
+        scope = _scope(origins=["https://trusted.example"])
+        mission, item = await _claimed(store, scope)
+        reads: list[dict[str, Any]] = []
+    
+        async def get_window_state(pid: int, window_id: int, include_screenshot: bool = False,
+                                   max_elements: int = 120, max_depth: int = 12) -&gt; str:
+            """The data sink a protected read would hit."""
+            reads.append({"pid": pid, "window_id": window_id})
+            return json.dumps({"pid": pid, "window_id": window_id,
+                               "snapshot_id": "s", "elements": []})
+    
+        wrapped, _ = apply_tool_policy([
+            StructuredTool.from_function(coroutine=get_window_state, name="get_window_state"),
+        ])
+        from tests.unit.velo_fakes import FakeRuntime
+    
+        runtime = FakeRuntime({t.name: t for t in wrapped})
+    
+        async def get_runtime() -&gt; FakeRuntime:
+            return runtime
+    
+        executor = VeloExecutor(type("S", (), {})(), get_runtime=get_runtime,
+                                authority=MissionAuthority(store), store=store)
+        cancel = CancellationToken()
+    
+        async def guard(name: str, args: dict[str, Any]) -&gt; str | None:
+            return await executor._guard_dispatch(item, name, args, cancel)
+    
+        async with cua_run_scope(budget=None, run=None, ledger=None, mission_guard=guard):
+            state = cua_target_state.get()
+            assert state is not None
+            state["apps"] = {9: "com.fixture.safe"}
+            state["observed_at_ms"] = int(time.time() * 1000)
+            # No origin has been recorded for this surface: the driver never
+            # reported one. The wrapped read must refuse BEFORE the sink.
+            reply = await wrapped[0].ainvoke({"pid": 9, "window_id": 2})
+&gt;       assert reads == [], "a protected read must never reach the data sink"
+E       AssertionError: a protected read must never reach the data sink
+E       assert [{'pid': 9, 'window_id': 2}] == []
+E         
+E         Left contains one more item: {'pid': 9, 'window_id': 2}
+E         Use -v to get more diff
+
+tests/integration/test_phase1_scope_outcomes.py:152: AssertionError</failure></testcase><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_scroll_recheck_alone_is_not_success" time="0.005"><failure message="assert False&#10; +  where False = CheckResult(check_id='outcome', passed=False, evidence_ids=[], checked_at_ms=1790789272251, verifier_id='scroll_effect', verifier_version='unknown', reason=&quot;verifier 'scroll_effect' is not trusted&quot;).passed">store = &lt;assistant.missions.store.MissionStore object at 0x10e56e810&gt;
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-27/test_scroll_recheck_alone_is_n0')
+
+    async def test_scroll_recheck_alone_is_not_success(store: MissionStore, tmp_path: Any) -&gt; None:
+        """A re-observed window (the old window_visible {}) cannot verify a
+        scroll: the offset must move by the required delta."""
+        evidence = EvidenceStore(tmp_path / "ev", store)
+        scope = _scope()
+        mission, item = await _claimed(store, scope)
+        now = int(time.time() * 1000)
+        window = {"pid": 9, "window_id": 2}
+        before = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={**window, "scroll_offset": 0}, captured_at_ms=now - 500),
+            mission_id=mission.mission_id)
+        # The screen was re-observed but the offset did not move (no-op scroll).
+        after = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={**window, "scroll_offset": 0}, captured_at_ms=now),
+            mission_id=mission.mission_id)
+        result = await evidence.verify(_check("scroll_effect", {"direction": "down",
+            "min_delta": 3}), item, refs=[before, after])
+        assert not result.passed, "an unchanged offset is a no-op, not a scroll"
+        # A real delta passes.
+        moved = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={**window, "scroll_offset": 40}, captured_at_ms=now),
+            mission_id=mission.mission_id)
+        ok = await evidence.verify(_check("scroll_effect", {"direction": "down",
+            "min_delta": 3}), item, refs=[before, moved])
+&gt;       assert ok.passed
+E       assert False
+E        +  where False = CheckResult(check_id='outcome', passed=False, evidence_ids=[], checked_at_ms=1790789272251, verifier_id='scroll_effect', verifier_version='unknown', reason="verifier 'scroll_effect' is not trusted").passed
+
+tests/integration/test_phase1_scope_outcomes.py:189: AssertionError</failure></testcase><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_scroll_wrong_direction_or_window_fails" time="0.004" /><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_ordinal_press_without_state_change_is_not_success" time="0.005"><failure message="assert False&#10; +  where False = CheckResult(check_id='outcome', passed=False, evidence_ids=[], checked_at_ms=1790789272263, verifier_id='press_effect', verifier_version='unknown', reason=&quot;verifier 'press_effect' is not trusted&quot;).passed">store = &lt;assistant.missions.store.MissionStore object at 0x10e56e8d0&gt;
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-27/test_ordinal_press_without_sta0')
+
+    async def test_ordinal_press_without_state_change_is_not_success(
+        store: MissionStore, tmp_path: Any
+    ) -&gt; None:
+        """press_ordinal owes an activation-state flip in the SAME window;
+        a refused/no-op press must not complete."""
+        evidence = EvidenceStore(tmp_path / "ev", store)
+        scope = _scope()
+        mission, item = await _claimed(store, scope)
+        now = int(time.time() * 1000)
+        element = {"element_token": "tok-third", "role": "AXLink", "label": "third",
+                   "focused": False}
+        before = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={"pid": 9, "window_id": 2, "elements": [element]}, captured_at_ms=now - 500),
+            mission_id=mission.mission_id)
+        # No-op: the control did not gain focus/checked/selected.
+        after_noop = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={"pid": 9, "window_id": 2, "elements": [element]}, captured_at_ms=now),
+            mission_id=mission.mission_id)
+        noop = await evidence.verify(_check("press_effect", {"ordinal": "third"}), item,
+            refs=[before, after_noop])
+        assert not noop.passed, "a refused or no-op press is not a completion"
+        # The control gained focus: an exact, independent positive.
+        activated = dict(element, focused=True)
+        after_ok = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={"pid": 9, "window_id": 2, "elements": [activated]}, captured_at_ms=now),
+            mission_id=mission.mission_id)
+        ok = await evidence.verify(_check("press_effect", {"ordinal": "third"}), item,
+            refs=[before, after_ok])
+&gt;       assert ok.passed
+E       assert False
+E        +  where False = CheckResult(check_id='outcome', passed=False, evidence_ids=[], checked_at_ms=1790789272263, verifier_id='press_effect', verifier_version='unknown', reason="verifier 'press_effect' is not trusted").passed
+
+tests/integration/test_phase1_scope_outcomes.py:244: AssertionError</failure></testcase><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_missing_driver_evidence_blocks_honestly" time="0.004"><failure message="assert ('offset' in &quot;verifier 'scroll_effect' is not trusted&quot; or 'driver' in &quot;verifier 'scroll_effect' is not trusted&quot;)&#10; +  where &quot;verifier 'scroll_effect' is not trusted&quot; = &lt;built-in method lower of str object at 0x10e6c2ab0&gt;()&#10; +    where &lt;built-in method lower of str object at 0x10e6c2ab0&gt; = &quot;verifier 'scroll_effect' is not trusted&quot;.lower&#10; +      where &quot;verifier 'scroll_effect' is not trusted&quot; = CheckResult(check_id='outcome', passed=False, evidence_ids=[], checked_at_ms=1790789272270, verifier_id='scroll_effect', verifier_version='unknown', reason=&quot;verifier 'scroll_effect' is not trusted&quot;).reason&#10; +  and   &quot;verifier 'scroll_effect' is not trusted&quot; = &lt;built-in method lower of str object at 0x10e6c2ab0&gt;()&#10; +    where &lt;built-in method lower of str object at 0x10e6c2ab0&gt; = &quot;verifier 'scroll_effect' is not trusted&quot;.lower&#10; +      where &quot;verifier 'scroll_effect' is not trusted&quot; = CheckResult(check_id='outcome', passed=False, evidence_ids=[], checked_at_ms=1790789272270, verifier_id='scroll_effect', verifier_version='unknown', reason=&quot;verifier 'scroll_effect' is not trusted&quot;).reason">store = &lt;assistant.missions.store.MissionStore object at 0x10e56e570&gt;
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-27/test_missing_driver_evidence_b0')
+
+    async def test_missing_driver_evidence_blocks_honestly(store: MissionStore,
+                                                           tmp_path: Any) -&gt; None:
+        """A verifier the evidence cannot satisfy blocks; it never passes."""
+        evidence = EvidenceStore(tmp_path / "ev", store)
+        scope = _scope()
+        mission, item = await _claimed(store, scope)
+        now = int(time.time() * 1000)
+        # The driver reports no scroll_offset at all.
+        before = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={"pid": 9, "window_id": 2}, captured_at_ms=now - 500),
+            mission_id=mission.mission_id)
+        after = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={"pid": 9, "window_id": 2}, captured_at_ms=now),
+            mission_id=mission.mission_id)
+        result = await evidence.verify(_check("scroll_effect", {"direction": "down",
+            "min_delta": 1}), item, refs=[before, after])
+        assert not result.passed
+&gt;       assert "offset" in result.reason.lower() or "driver" in result.reason.lower()
+E       assert ('offset' in "verifier 'scroll_effect' is not trusted" or 'driver' in "verifier 'scroll_effect' is not trusted")
+E        +  where "verifier 'scroll_effect' is not trusted" = &lt;built-in method lower of str object at 0x10e6c2ab0&gt;()
+E        +    where &lt;built-in method lower of str object at 0x10e6c2ab0&gt; = "verifier 'scroll_effect' is not trusted".lower
+E        +      where "verifier 'scroll_effect' is not trusted" = CheckResult(check_id='outcome', passed=False, evidence_ids=[], checked_at_ms=1790789272270, verifier_id='scroll_effect', verifier_version='unknown', reason="verifier 'scroll_effect' is not trusted").reason
+E        +  and   "verifier 'scroll_effect' is not trusted" = &lt;built-in method lower of str object at 0x10e6c2ab0&gt;()
+E        +    where &lt;built-in method lower of str object at 0x10e6c2ab0&gt; = "verifier 'scroll_effect' is not trusted".lower
+E        +      where "verifier 'scroll_effect' is not trusted" = CheckResult(check_id='outcome', passed=False, evidence_ids=[], checked_at_ms=1790789272270, verifier_id='scroll_effect', verifier_version='unknown', reason="verifier 'scroll_effect' is not trusted").reason
+
+tests/integration/test_phase1_scope_outcomes.py:264: AssertionError</failure></testcase><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_field_value_binds_the_focused_field" time="0.005"><failure message="AssertionError: the payload in an unfocused field is not the typed field&#10;assert not True&#10; +  where True = CheckResult(check_id='field', passed=True, evidence_ids=['cc3fc829-ee24-4791-a4db-c6eca93c1f67'], checked_at_ms=1790789272278, verifier_id='field_value', verifier_version='1.0.0', reason='the resolved payload is present in a field value').passed">store = &lt;assistant.missions.store.MissionStore object at 0x10e56fc80&gt;
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-27/test_field_value_binds_the_foc0')
+
+    async def test_field_value_binds_the_focused_field(store: MissionStore,
+                                                       tmp_path: Any) -&gt; None:
+        """The payload in a DIFFERENT field than the focused one is not success."""
+        evidence = EvidenceStore(tmp_path / "ev", store)
+        scope = _scope()
+        mission, item = await _claimed(store, scope)
+        now = int(time.time() * 1000)
+        focused = {"element_token": "tok-body", "role": "AXTextField",
+                   "label": "body", "focused": True}
+        before = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={"pid": 9, "window_id": 2, "elements": [focused]}, captured_at_ms=now - 500),
+            mission_id=mission.mission_id)
+        # The same VALUE landed in a different field of the same window.
+        wrong_field = {"element_token": "tok-other", "role": "AXTextField",
+                       "label": "search", "value": "gentle hello", "focused": False}
+        after_wrong = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={"pid": 9, "window_id": 2, "elements": [wrong_field],
+                     "resolved_payloads": {"user_text_1": "gentle hello"}},
+            captured_at_ms=now), mission_id=mission.mission_id)
+        result = await evidence.verify(CheckSpec(check_id="field", verifier_id="field_value",
+            verifier_version="1.0.0", expected={"payload_ref": "user_text_1"}, required=True),
+            item, refs=[before, after_wrong])
+&gt;       assert not result.passed, "the payload in an unfocused field is not the typed field"
+E       AssertionError: the payload in an unfocused field is not the typed field
+E       assert not True
+E        +  where True = CheckResult(check_id='field', passed=True, evidence_ids=['cc3fc829-ee24-4791-a4db-c6eca93c1f67'], checked_at_ms=1790789272278, verifier_id='field_value', verifier_version='1.0.0', reason='the resolved payload is present in a field value').passed
+
+tests/integration/test_phase1_scope_outcomes.py:289: AssertionError</failure></testcase><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_fast_scroll_and_ordinal_owe_exact_checks" time="0.007"><failure message="AssertionError: assert ([CheckSpec(check_id='window-reobserved', verifier_id='window_visible', verifier_version='1.0.0', expected={}, target_scope_hash='', required=True)] and 'window_visible' == 'scroll_effect'&#10;  &#10;  - scroll_effect&#10;  + window_visible)">def test_fast_scroll_and_ordinal_owe_exact_checks() -&gt; None:
+        """The fast recipes no longer ship the weak window_visible {} check."""
+        from assistant.missions.service import _fast_checks_for
+    
+        scroll = _fast_checks_for("scroll", {"direction": "down", "amount": 4})
+&gt;       assert scroll and scroll[0].verifier_id == "scroll_effect"
+E       AssertionError: assert ([CheckSpec(check_id='window-reobserved', verifier_id='window_visible', verifier_version='1.0.0', expected={}, target_scope_hash='', required=True)] and 'window_visible' == 'scroll_effect'
+E         
+E         - scroll_effect
+E         + window_visible)
+
+tests/integration/test_phase1_scope_outcomes.py:307: AssertionError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,23 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_old_cleanup_cannot_release_a_same_run_newer_lease ____________
+
+    async def test_old_cleanup_cannot_release_a_same_run_newer_lease() -> None:
+        """D19: an unfenced cleanup from an old lease must fail against the
+        same run's newer lease — the run keeps its usable lease."""
+        q = DesktopQueue()
+        first = await q.acquire("mission:x")
+        # Same run re-acquires (stop/regrant interleaving): a NEW fence.
+        await q.release("mission:x", fence=first.fence)
+        second = await q.acquire("mission:x")
+        assert second.fence != first.fence
+        # The OLD lease's cleanup carries the old fence: refused.
+        released = await q.release("mission:x", fence=first.fence)
+>       assert released is False, "old cleanup must not release the newer lease"
+E       AssertionError: old cleanup must not release the newer lease
+E       assert True is False
+
+tests/unit/test_mission_desktop_queue.py:457: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_mission_desktop_queue.py::test_old_cleanup_cannot_release_a_same_run_newer_lease
+1 failed in 0.05s

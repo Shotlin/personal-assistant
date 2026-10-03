@@ -1,0 +1,19 @@
+Error in LedgerCallbackHandler.on_llm_end callback: RuntimeError('provider request ceiling exceeded (3 > 2) for mission 03d46a8c-e55b-46e5-81af-e35b4bf1df13')
+Error in LedgerCallbackHandler.on_llm_end callback: RuntimeError('provider request ceiling exceeded (4 > 2) for mission 03d46a8c-e55b-46e5-81af-e35b4bf1df13')
+Error in LedgerCallbackHandler.on_llm_end callback: RuntimeError('provider request ceiling exceeded (5 > 2) for mission 03d46a8c-e55b-46e5-81af-e35b4bf1df13')
+Traceback (most recent call last):
+  File "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-batch2-2026-09-30/evidence/probes.py", line 82, in <module>
+    asyncio.run(main())
+  File "/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-batch2-2026-09-30/evidence/probes.py", line 50, in main
+    await store.apply_result(StepResult(mission_id=m.mission_id,plan_version=1,control_epoch=1,step_id=item.step_id,execution_id=item.execution_id,attempt=1,status='BLOCKED',effect_outcome='NOT_ATTEMPTED',failure_category='APPROVAL_REQUIRED',pending_approval=PendingApprovalDigest(step_id=item.step_id,tool='click',action_digest='a'*64,plan_version=1,control_epoch=1,target_ref='win-2')))
+                                                                                                                                                                                                                                                                   ^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'PendingApprovalDigest' is not defined

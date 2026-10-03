@@ -1,0 +1,13 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_corrective_boundaries_are_in_normal_integration_gate ___________
+
+    def test_corrective_boundaries_are_in_normal_integration_gate():
+        from scripts.verify_phase1 import SUITE_FILES
+    
+>       assert "tests/integration/test_phase1_corrective_boundaries.py" in SUITE_FILES["integration"][1]
+E       AssertionError: assert 'tests/integration/test_phase1_corrective_boundaries.py' in ['tests/integration/test_mission_sqlite.py', 'tests/integration/test_mission_policy.py', 'tests/integration/test_missi...mission_ipc.py', 'tests/integration/test_mission_restart.py', 'tests/integration/test_mission_desktop_control.py', ...]
+
+tests/unit/test_verify_phase1_launcher.py:344: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_verify_phase1_launcher.py::test_corrective_boundaries_are_in_normal_integration_gate

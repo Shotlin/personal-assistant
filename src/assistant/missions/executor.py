@@ -66,7 +66,7 @@ logger = logging.getLogger("assistant.missions.executor")
 #: Recipes a work item may name. Everything else is UNSUPPORTED_ACTION.
 SUPPORTED_RECIPES = frozenset(
     {"open_app", "navigate", "search_browser", "scroll", "type_text", "press_ordinal",
-         "semantic_ui"}
+         "describe_screen", "press_item", "click_named", "fill_field", "download_images", "learn_screen", "click_in_utterance", "step_item", "semantic_ui"}
 )
 
 #: The trusted primitive tools semantic_ui may dispatch, by purpose.
@@ -90,6 +90,13 @@ _current_cancel: ContextVar[CancellationToken | None] = ContextVar(
 #: Payload refs resolve exact user text at dispatch; the resolver is injected
 #: by the service so the packet itself never carries payload content.
 PayloadResolver = Callable[[BoundedWorkItem, list[str]], dict[str, str]]
+
+#: D02: set when a dispatch is refused with APPROVAL_REQUIRED. NOTE: the
+#: policy wrapper may run a tool coroutine in a child task (LangChain tool
+#: invocation), so a ContextVar set at the guard does not reach the result
+#: assembly. The pending approval therefore travels on the executor keyed by
+#: execution id (``_pending_approval_by_exec``), which the same-thread guard
+#: writes and ``execute_work_item`` reads and clears.
 
 
 @dataclass
@@ -130,6 +137,9 @@ class VeloExecutor:
         # C06/N09: reads the CURRENT desktop-queue ownership (fence,
         # generation) for a mission at dispatch time — never a stored copy.
         self._ownership_probe = ownership_probe
+        # D02: the owed approval of the execution currently refusing, keyed
+        # by execution id (see the ContextVar note above for why not one).
+        self._pending_approval_by_exec: dict[str, dict[str, Any]] = {}
 
     # -- dispatch scope ------------------------------------------------------------
 
@@ -160,25 +170,37 @@ class VeloExecutor:
             if self._store is not None
             else None
         )
+        from assistant.tools.policy import mission_final_dispatch_check
+
+        def final_check() -> str | None:
+            if cancel.is_cancelled:
+                return "Refused: CANCELLED: the mission was cancelled"
+            if time.time() * 1000 >= item.deadline_at_ms:
+                return "Refused: DEADLINE: the work item expired"
+            if self._ownership_probe is not None and item.lease_fence:
+                current = self._ownership_probe(item.mission_id)
+                if inspect.isawaitable(current):
+                    if inspect.iscoroutine(current):
+                        current.close()
+                    return "Refused: STALE_TARGET: final ownership check must be synchronous"
+                fence = current[0] if isinstance(current, tuple) else current
+                if fence != item.lease_fence:
+                    return "Refused: STALE_TARGET: desktop ownership changed"
+            return None
+
         cancel_token = _current_cancel.set(cancel)
-        # R05/F06: the executor goes through the runtime's OWN run_scope so
-        # the real DesktopSessionManager (lazy session, action lock, single
-        # owner lease) is in the path -- never a bare ``run=None`` scope for
-        # real dispatch.
-        async with runtime.run_scope(
-            f"mission-{item.execution_id[:8]}",
-            item.mission_id,
-            ledger=ledger,
-            mission_guard=guard,
-            mission_strict_audit=True,
-            mission_withhold_screenshots=True,
-            max_actions=min(item.budget.max_actions, 12),
-        ):
-            try:
+        final_token = mission_final_dispatch_check.set(final_check)
+        try:
+            async with runtime.run_scope(
+                f"mission-{item.execution_id[:8]}", item.mission_id, ledger=ledger,
+                mission_guard=guard, mission_strict_audit=True,
+                mission_withhold_screenshots=True, max_actions=min(item.budget.max_actions, 12),
+            ):
                 yield runtime
-            finally:
-                _current_cancel.reset(cancel_token)
-                _current_item.reset(mission_token)
+        finally:
+            mission_final_dispatch_check.reset(final_token)
+            _current_cancel.reset(cancel_token)
+            _current_item.reset(mission_token)
 
     # -- entry ---------------------------------------------------------------------
 
@@ -224,6 +246,23 @@ class VeloExecutor:
         if time.time() * 1000 > item.deadline_at_ms:
             return base_result("FAILED", "NOT_ATTEMPTED", failure_category="DEADLINE")
 
+        self._pending_approval_by_exec.pop(item.execution_id, None)
+        try:
+            return await self._execute_dispatched(
+                item, cancel, on_event, base_result, usage, elapsed_ms
+            )
+        finally:
+            self._pending_approval_by_exec.pop(item.execution_id, None)
+
+    async def _execute_dispatched(
+        self,
+        item: BoundedWorkItem,
+        cancel: CancellationToken,
+        on_event: OnEvent | None,
+        base_result: Any,
+        usage: BudgetUsage,
+        elapsed_ms: Any,
+    ) -> StepResult:
         async with self.work_scope(item, cancel=cancel) as runtime:
 
             async def _event(kind: str, data: dict[str, Any]) -> None:
@@ -262,6 +301,16 @@ class VeloExecutor:
                         uncertainty=f"precondition failed: {precondition_failures[:480]}",
                     )
             task = self._task_from(item, cancel)
+            # D06: recipes whose success is only provable by a before/after
+            # diff capture the BEFORE observation now, so the verifier can
+            # demand an exact, independent change (scroll offset moved, the
+            # focused field now carries the payload, a control's activation
+            # state flipped) instead of a re-observed window.
+            before_ref = None
+            if item.recipe_id in {"type_text", "scroll", "press_ordinal"} and (
+                self._evidence is not None
+            ):
+                before_ref = await self._capture_before_evidence(item, adapter)
             try:
                 if item.recipe_id == "semantic_ui":
                     outcome = await self._run_semantic_ui(item, task, adapter, usage)
@@ -304,14 +353,56 @@ class VeloExecutor:
                     failure_category="TRANSPORT_LOST", uncertainty=str(exc)[:512],
                 )
 
+            # D02: an approval-gated refusal is a BLOCKED unit, not an
+            # unknown effect — the guard refused BEFORE any dispatch, so no
+            # effect is possible. The exact owed approval travels with the
+            # result and is persisted with the blocked step for exact
+            # release matching.
+            pending = self._pending_approval_by_exec.get(item.execution_id)
+            if outcome.status != "COMPLETED" and pending is not None:
+                from assistant.missions.contracts import PendingApprovalDigest
+
+                return base_result(
+                    "BLOCKED", "NOT_ATTEMPTED",
+                    failure_category="APPROVAL_REQUIRED",
+                    uncertainty=(
+                        "owner approval required for the exact dispatch of "
+                        f"{pending.get('tool')}"
+                    ),
+                    pending_approval=PendingApprovalDigest(
+                        step_id=item.step_id,
+                        tool=str(pending.get("tool") or ""),
+                        action_digest=str(pending.get("action_digest") or ""),
+                        plan_version=item.plan_version,
+                        control_epoch=item.control_epoch,
+                        target_ref=pending.get("target_ref"),
+                    ),
+                )
+
             # C04/N08: actions/observations are accounted at their real
             # dispatch boundaries via durable reservations — they are NOT
             # self-reported again here (that double-counted every unit).
 
             # Postcondition verification through the trusted catalog only.
             checks: list[CheckResult] = []
+            if item.expected_postconditions and self._evidence is None:
+                # D15 fail-closed: the plan demands required independent
+                # checks but no trusted verifier is bound — the unit can
+                # never claim completion, with zero exceptions.
+                required = [c.check_id for c in item.expected_postconditions
+                            if c.required]
+                if required:
+                    return base_result(
+                        "BLOCKED", outcome.effect_outcome
+                        if outcome.effect_outcome != "CONFIRMED" else "UNKNOWN",
+                        failure_category="VERIFICATION_FAILED",
+                        uncertainty="no evidence store is bound; required checks "
+                                    f"{required} cannot be verified",
+                    )
             if self._evidence is not None and item.expected_postconditions:
-                checks = await self._verify_postconditions(item, adapter, task, usage)
+                checks = await self._verify_postconditions(
+                    item, adapter, task, usage, extra_refs=[before_ref] if before_ref else None
+                )
 
             return self._assemble(item, outcome, checks, elapsed_ms(), usage)
 
@@ -566,6 +657,8 @@ class VeloExecutor:
         from assistant.missions.authority import AuthorityDenied
         from assistant.missions.contracts import BudgetCharge
 
+        if getattr(item.budget, f"max_{resource}", 0) <= 0:
+            raise AuthorityDenied("BUDGET_EXHAUSTED", f"packet {resource} allowance is zero")
         if self._authority is not None:
             charge = BudgetCharge(
                 resource=resource,
@@ -573,7 +666,7 @@ class VeloExecutor:
                 call_key=f"{resource}:{item.mission_id}:{item.execution_id}:{new_id()[:8]}",
             )
             try:
-                return await self._authority.reserve(item.mission_id, charge)
+                return await self._authority.reserve(item.mission_id, charge, item=item)
             except AuthorityDenied:
                 raise
         if getattr(item.budget, f"max_{resource}", 0) <= 0:
@@ -649,12 +742,52 @@ class VeloExecutor:
                 return f"{spec.check_id}: {result.reason[:200]}"
         return ""
 
+    async def _capture_before_evidence(self, item: BoundedWorkItem, adapter: CuaAdapter) -> Any:
+        """One BEFORE observation bound to the target window (D06)."""
+        assert self._evidence is not None
+        verify_task = self._task_from(item, CancellationToken(item.control_epoch))
+        observed = await self._observe_target(item, verify_task, adapter)
+        if observed is None:
+            return None
+        pid, window_id = observed
+        state = await adapter.observe_window(verify_task, pid, window_id,
+                                             for_verification=True)
+        from assistant.missions.contracts import EvidenceCandidate
+
+        candidate = EvidenceCandidate(
+            kind="ui_before",
+            payload={
+                "pid": pid,
+                "window_id": window_id,
+                "capture_phase": "before",
+                "scroll_offset": state.get("scroll_offset"),
+                "scroll_offset_x": state.get("scroll_offset_x"),
+                "scroll_offset_y": state.get("scroll_offset_y"),
+                "elements": [
+                    {
+                        k: e.get(k)
+                        for k in ("role", "label", "value", "focused", "checked",
+                                  "selected", "expanded", "element_token")
+                        if isinstance(e, dict)
+                    }
+                    for e in (state.get("elements") or [])[:60]
+                    if isinstance(e, dict)
+                ],
+            },
+            captured_at_ms=int(time.time() * 1000),
+        )
+        return await self._evidence.put(
+            candidate, mission_id=item.mission_id, execution_id=item.execution_id
+        )
+
     async def _verify_postconditions(
         self,
         item: BoundedWorkItem,
         adapter: CuaAdapter,
         task: TaskState,
         usage: BudgetUsage,
+        *,
+        extra_refs: list[Any] | None = None,
     ) -> list[CheckResult]:
         """Gather fresh observation evidence, then run the trusted catalog."""
         assert self._evidence is not None
@@ -686,9 +819,20 @@ class VeloExecutor:
                 payload={
                     "pid": pid,
                     "window_id": window_id,
+                    "capture_phase": "after",
+                    # D06: the driver-reported scroll offset (when present)
+                    # powers the exact scroll_effect verifier.
+                    "scroll_offset": state.get("scroll_offset"),
+                    "scroll_offset_x": state.get("scroll_offset_x"),
+                    "scroll_offset_y": state.get("scroll_offset_y"),
                     "apps": apps_snapshot,
                     "elements": [
-                        {k: e.get(k) for k in ("role", "label", "value") if isinstance(e, dict)}
+                        {
+                            k: e.get(k)
+                            for k in ("role", "label", "value", "focused", "checked",
+                                      "selected", "expanded", "element_token")
+                            if isinstance(e, dict)
+                        }
                         for e in (state.get("elements") or [])[:60]
                         if isinstance(e, dict)
                     ],
@@ -705,6 +849,8 @@ class VeloExecutor:
                     candidate, mission_id=item.mission_id, execution_id=item.execution_id
                 )
             )
+        if extra_refs:
+            refs = [*extra_refs, *refs]
         checks = []
         for spec in item.expected_postconditions:
             checks.append(
@@ -818,17 +964,29 @@ class VeloExecutor:
                 )
         effect = _effect_for_tool(tool, item)
         resource = "observations" if effect == "READ_ONLY" else "actions"
-        reservation = await self._reserve_for(item, resource)
+        try:
+            reservation = await self._reserve_for(item, resource)
+        except AuthorityDenied as exc:
+            return f"Refused: {exc.category}: {exc.reason}"
         state = cua_target_state.get() or {}
         apps = state.get("apps") or {}
         pid = kwargs.get("pid")
         app_bundle = apps.get(pid) if isinstance(pid, int) else None
         observed_at = state.get("observed_at_ms")
+        if tool in {"list_windows", "get_window_state", "get_accessibility_tree"}:
+            observed_at = observed_at or state.get("inventory_observed_at_ms")
         observed = ScopeObservation(
             app_bundle=str(app_bundle) if app_bundle else "",
             pid=pid if isinstance(pid, int) and pid > 0 else None,
             window_id=kwargs.get("window_id")
             if isinstance(kwargs.get("window_id"), int) and kwargs.get("window_id", 0) > 0
+            else None,
+            # D03: the driver's recorded origin for this exact surface, when
+            # it reported one. Configured origin scopes refuse content calls
+            # on unknown origins — reads included — so the observation must
+            # carry what the driver actually saw.
+            origin=(state.get("origins", {}) or {}).get(f"{pid}:{kwargs.get('window_id')}")
+            if isinstance(pid, int)
             else None,
             captured_at_ms=int(observed_at) if observed_at else 0,
             driver_generation=item.driver_generation,
@@ -840,6 +998,9 @@ class VeloExecutor:
         except AuthorityDenied as exc:
             if reservation is not None:
                 await self._authority.settle(reservation, consumed=False)
+            if exc.category == "APPROVAL_REQUIRED" and exc.pending is not None:
+                # D02: surface the exact owed approval to the result assembly.
+                self._pending_approval_by_exec[item.execution_id] = dict(exc.pending)
             return f"Refused: {exc.category}: {exc.reason}"
         if reservation is not None:
             await self._authority.settle(reservation, consumed=True)
@@ -884,6 +1045,8 @@ def exception_packet_for(
     item: BoundedWorkItem, result: StepResult
 ) -> ExceptionPacket:
     """The compact exception a NEEDS_CONTROLLER/NEEDS_HUMAN unit owes."""
+    from assistant.missions.store import _screen_private
+
     return ExceptionPacket(
         mission_id=item.mission_id,
         plan_version=item.plan_version,
@@ -893,7 +1056,9 @@ def exception_packet_for(
         attempt=item.attempt,
         category=result.failure_category or "UNSUPPORTED_ACTION",
         expected_summary=item.objective[:512],
-        observed_summary=(result.uncertainty or "")[:512],
+        # D07: the packet is MODEL EGRESS — the observed text is screened at
+        # this boundary, so a secret seen in a refusal never reaches Deep.
+        observed_summary=_screen_private(result.uncertainty or "")[:512],
         remaining_budget=result.usage,
         unresolved_effects=result.external_operation_ids,
         allowed_decisions=["REVISE", "ASK_OWNER", "BLOCK"]

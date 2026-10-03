@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.893" timestamp="2026-09-29T11:43:34.493231+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_stop_during_ledger_await_prevents_actual_effect" time="0.010"><failure message="AssertionError: assert ['effect'] == []&#10;  &#10;  Left contains one more item: 'effect'&#10;  Use -v to get more diff">store = &lt;assistant.missions.store.MissionStore object at 0x11052d040&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x110e38ce0&gt;
+
+    async def test_stop_during_ledger_await_prevents_actual_effect(store: MissionStore,
+                                                                 monkeypatch: Any) -&gt; None:
+        from types import SimpleNamespace
+        from contextlib import asynccontextmanager
+        import assistant.missions.store as storage
+    
+        mission, item = await claimed(store)
+        cancel = CancellationToken()
+        effects: list[str] = []
+        async def click(pid: int, window_id: int) -&gt; str:
+            """Synthetic device effect."""
+            effects.append("effect")
+            return "clicked"
+        wrapped, _ = apply_tool_policy([StructuredTool.from_function(coroutine=click, name="click")])
+        @asynccontextmanager
+        async def run_scope(*args: Any, **kwargs: Any) -&gt; Any:
+            # Only the device/session boundary is synthetic; policy scope,
+            # authority, ledger, executor and the final effect wrapper are real.
+            async with cua_run_scope(budget=None, run=None, ledger=kwargs["ledger"],
+                                     mission_guard=kwargs["mission_guard"],
+                                     mission_strict_audit=True):
+                yield None
+        runtime = SimpleNamespace(run_scope=run_scope)
+        async def get_runtime() -&gt; Any:
+            return runtime
+        executor = VeloExecutor(SimpleNamespace(), get_runtime=get_runtime,
+                                authority=MissionAuthority(store), store=store)
+        original = storage.MissionActionLedger.plan
+        async def interleaved(ledger: Any, **kwargs: Any) -&gt; int:
+            result = await original(ledger, **kwargs)
+            cancel.cancel()
+            return result
+        monkeypatch.setattr(storage.MissionActionLedger, "plan", interleaved)
+        async with executor.work_scope(item, cancel=cancel):
+            state = cua_target_state.get()
+            state["apps"] = {9: "com.fixture.safe"}
+            state["observed_at_ms"] = int(time.time() * 1000)
+            result = await wrapped[0].ainvoke({"pid": 9, "window_id": 2})
+&gt;       assert effects == []
+E       AssertionError: assert ['effect'] == []
+E         
+E         Left contains one more item: 'effect'
+E         Use -v to get more diff
+
+tests/integration/test_phase1_corrective_boundaries.py:286: AssertionError</failure></testcase></testsuite></testsuites>

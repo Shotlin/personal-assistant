@@ -1,0 +1,25 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________ test_release_matches_only_the_pending_digest _________________
+
+store = <assistant.missions.store.MissionStore object at 0x10cf158e0>
+
+    async def test_release_matches_only_the_pending_digest(store: MissionStore) -> None:
+        """An unrelated approval must not release an approval-blocked step."""
+        mission, scope = await claimed(store, steps=2)
+        right_digest = "a" * 64
+        wrong_digest = "b" * 64
+        item = await store.claim_step(mission.mission_id, 1, 1, tool_ids=["click"])
+        assert item is not None
+        _ = item.execution_id
+        applied = await store.apply_result(_blocked_result(mission, right_digest, item))
+        assert applied == "APPLIED"
+        # A real approval for a DIFFERENT action releases nothing.
+        await store.record_approval(_approval(mission, scope, wrong_digest))
+>       assert await store.release_approved_blocked_steps(mission.mission_id, 1) == 0
+E       assert 1 == 0
+
+tests/integration/test_phase1_owner_controls.py:119: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integration/test_phase1_owner_controls.py::test_release_matches_only_the_pending_digest
+1 failed in 0.94s

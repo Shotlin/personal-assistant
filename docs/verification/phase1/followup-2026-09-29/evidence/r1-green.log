@@ -1,0 +1,71 @@
+FF.............................                                          [100%]
+=================================== FAILURES ===================================
+____________ test_real_wrapped_effect_remains_uncertain_after_pause ____________
+
+store = <assistant.missions.store.MissionStore object at 0x10e5eb710>
+
+    async def test_real_wrapped_effect_remains_uncertain_after_pause(store: MissionStore) -> None:
+        """A delayed tool reply must not let pause turn a real effect into a safe retry."""
+        from types import SimpleNamespace
+    
+        mission, item = await claimed(store)
+        entered, release = asyncio.Event(), asyncio.Event()
+        effects: list[str] = []
+    
+        async def click(pid: int, window_id: int) -> str:
+            """Perform an in-memory effect then delay acknowledgment."""
+            effects.append("clicked")
+            entered.set()
+            await release.wait()
+            return "clicked"
+    
+        async def no_runtime() -> None:
+            return None
+    
+        executor = VeloExecutor(SimpleNamespace(), get_runtime=no_runtime,
+                                authority=MissionAuthority(store), store=store)
+        cancel = CancellationToken()
+    
+        async def guard(name: str, args: dict[str, Any]) -> str | None:
+            return await executor._guard_dispatch(item, name, args, cancel)
+    
+        tools, _ = apply_tool_policy([StructuredTool.from_function(coroutine=click, name="click")])
+        ledger = MissionActionLedger(store, execution_id=item.execution_id,
+                                    mission_id=mission.mission_id)
+        async with cua_run_scope(budget=None, run=None, ledger=ledger,
+                                 mission_guard=guard, mission_strict_audit=True):
+            state = cua_target_state.get()
+            state["apps"] = {9: "com.fixture.safe"}
+            state["observed_at_ms"] = int(time.time() * 1000)
+            task = asyncio.create_task(tools[0].ainvoke({"pid": 9, "window_id": 2}))
+            await asyncio.wait_for(entered.wait(), 2)
+            try:
+                await store.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
+                    expected_plan_version=1, expected_control_epoch=1, kind="PAUSE"))
+                attempt = await store.get_attempt(item.execution_id)
+>               assert attempt["dispatch_state"] == "RECONCILING"
+E               AssertionError: assert 'CANCELLED' == 'RECONCILING'
+E                 
+E                 - RECONCILING
+E                 + CANCELLED
+
+tests/integration/test_phase1_corrective_boundaries.py:82: AssertionError
+____________ test_invalidated_intent_cannot_append_dispatch_ledger _____________
+
+store = <assistant.missions.store.MissionStore object at 0x10e5ddb50>
+
+    async def test_invalidated_intent_cannot_append_dispatch_ledger(store: MissionStore) -> None:
+        mission, item = await claimed(store)
+        await store.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
+            expected_plan_version=1, expected_control_epoch=1, kind="PAUSE"))
+        ledger = MissionActionLedger(store, execution_id=item.execution_id,
+                                    mission_id=mission.mission_id)
+        from assistant.missions.store import MissionStoreError
+>       with pytest.raises(MissionStoreError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE MissionStoreError
+
+tests/integration/test_phase1_corrective_boundaries.py:101: Failed
+=========================== short test summary info ============================
+FAILED tests/integration/test_phase1_corrective_boundaries.py::test_real_wrapped_effect_remains_uncertain_after_pause
+FAILED tests/integration/test_phase1_corrective_boundaries.py::test_invalidated_intent_cannot_append_dispatch_ledger

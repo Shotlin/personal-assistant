@@ -1,0 +1,39 @@
+Esssssssssssssssss                                                       [100%]
+==================================== ERRORS ====================================
+___________ ERROR at setup of test_chat_survives_application_restart ___________
+
+self = <Coroutine test_chat_survives_application_restart>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:926: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+=========================== short test summary info ============================
+ERROR tests/e2e/test_chat_continuity.py::test_chat_survives_application_restart

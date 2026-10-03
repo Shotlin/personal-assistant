@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="97" time="1.598" timestamp="2026-09-29T11:36:23.083583+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_real_wrapped_effect_remains_uncertain_after_pause" time="0.011" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_invalidated_intent_cannot_append_dispatch_ledger" time="0.004" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_revision_cannot_erase_reconciled_effect[UNKNOWN]" time="0.004" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_revision_cannot_erase_reconciled_effect[CONFIRMED]" time="0.004" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_normal_resume_schedules_pending_work" time="0.008" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_controller_selects_registered_submission[RECOVER-submit_recovery_decision]" time="0.000" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_controller_selects_registered_submission[REVIEW-submit_final_review]" time="0.000" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_plan_secret_is_rejected_before_any_row" time="0.004" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_zero_packet_jev_does_not_call_provider_with_authority" time="0.003" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_targeted_discovery_requires_named_fresh_scope" time="0.003" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_packet_budget_counts_more_than_zero" time="0.004" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_expected_payload_cannot_satisfy_page_observation" time="0.004" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_short_search_has_required_outcome" time="0.000" /><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_fast_path_does_not_invoke_review_provider" time="0.004" /><testcase classname="tests.integration.test_mission_composition" name="test_rp01_production_planning_adapter" time="0.230" /><testcase classname="tests.integration.test_mission_composition" name="test_rp02_role_refusal_at_real_policy_boundary" time="0.009" /><testcase classname="tests.integration.test_mission_composition" name="test_chat_role_still_dispatches" time="0.004" /><testcase classname="tests.integration.test_mission_composition" name="test_info_role_blocks_desktop_acquisition" time="0.003" /><testcase classname="tests.integration.test_mission_composition" name="test_submission_tools_reject_wrong_role" time="0.002" /><testcase classname="tests.integration.test_mission_composition" name="test_submission_tools_accept_matching_role_with_capture" time="0.002" /><testcase classname="tests.integration.test_mission_composition" name="test_core_resources_share_one_service" time="0.004" /><testcase classname="tests.integration.test_mission_composition" name="test_deep_selected_actions_route_through_mission_authority" time="0.023" /><testcase classname="tests.integration.test_mission_composition" name="test_np01_production_executor_dependencies" time="0.003" /><testcase classname="tests.integration.test_mission_composition" name="test_np07_discovery_bootstrap" time="0.005" /><testcase classname="tests.integration.test_mission_composition" name="test_scope_for_uses_trusted_settings" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_permit_minted_and_single_use" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_replayed_or_unknown_permit_denied" time="0.002" /><testcase classname="tests.unit.test_mission_authority" name="test_changed_arguments_invalidate_permit" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_tool_outside_action_scope_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_wrong_account_and_origin_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_wrong_window_and_app_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_destructive_always_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_no_committed_intent_no_permit" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_stale_epoch_or_cancelled_intent_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_driver_generation_change_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_external_write_requires_owner_approval" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_counterfeit_model_approval_is_not_an_approval" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_expired_approval_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_budget_reservation_late_retry_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_paid_units_denied_without_allowance" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_unpriced_dollar_capped_call_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_rp05_copied_scope_hash_cannot_broaden_plan" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_rp06_empty_observed_app_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_stale_observation_denied" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_scope_sensitive_reads_are_guarded" time="0.003" /><testcase classname="tests.unit.test_mission_authority" name="test_typing_is_conservatively_classified" time="0.003" /><testcase classname="tests.unit.test_mission_evidence" name="test_safe_payload_stored_and_hashed" time="0.003" /><testcase classname="tests.unit.test_mission_evidence" name="test_secret_payload_withheld" time="0.003" /><testcase classname="tests.unit.test_mission_evidence" name="test_images_withheld_by_default" time="0.003" /><testcase classname="tests.unit.test_mission_evidence" name="test_disk_write_failure_degrades_to_withheld" time="0.003" /><testcase classname="tests.unit.test_mission_evidence" name="test_artifact_verifier_rejects_traversal" time="0.001" /><testcase classname="tests.unit.test_mission_evidence" name="test_artifact_verifier_rejects_symlink" time="0.001" /><testcase classname="tests.unit.test_mission_evidence" name="test_artifact_verifier_accepts_real_file_with_hash" time="0.001" /><testcase classname="tests.unit.test_mission_evidence" name="test_unknown_verifier_fails_closed" time="0.000" /><testcase classname="tests.unit.test_mission_evidence" name="test_page_state_verifier_and_freshness" time="0.000" /><testcase classname="tests.unit.test_mission_evidence" name="test_sanitize_and_secret_shape_helpers" time="0.000" /><testcase classname="tests.unit.test_mission_evidence" name="test_scope_defaults_refuse_unknown_identity" time="0.000" /><testcase classname="tests.unit.test_mission_evidence" name="test_evidence_json_shape_roundtrip" time="0.001" /><testcase classname="tests.unit.test_mission_evidence" name="test_retention_deletes_expired_evidence_with_tombstone" time="0.004" /><testcase classname="tests.unit.test_mission_evidence" name="test_retention_preserves_investigation_holds" time="0.004" /><testcase classname="tests.unit.test_mission_evidence" name="test_retention_removes_orphan_rows_and_files" time="0.004" /><testcase classname="tests.unit.test_mission_executor" name="test_semantic_ui_completes_with_confirmed_effect" time="0.001" /><testcase classname="tests.unit.test_mission_executor" name="test_semantic_ui_no_candidates_escalates" time="0.000" /><testcase classname="tests.unit.test_mission_executor" name="test_semantic_ui_sets_exact_payload" time="0.000" /><testcase classname="tests.unit.test_mission_executor" name="test_jev_may_only_select_observed_candidate_ids" time="0.000" /><testcase classname="tests.unit.test_mission_executor" name="test_unknown_recipe_is_needs_controller_with_bounded_exception" time="0.000" /><testcase classname="tests.unit.test_mission_executor" name="test_failing_required_check_overrides_success" time="0.001" /><testcase classname="tests.unit.test_mission_executor" name="test_passing_required_check_keeps_completion" time="0.002" /><testcase classname="tests.unit.test_mission_executor" name="test_cancelled_token_never_runs" time="0.002" /><testcase classname="tests.unit.test_mission_executor" name="test_expired_deadline_fails_fast" time="0.002" /><testcase classname="tests.unit.test_mission_executor" name="test_executor_has_no_deep_reference" time="0.001" /><testcase classname="tests.unit.test_mission_executor" name="test_semantic_ui_jev_ask_user_escalates" time="0.001" /><testcase classname="tests.unit.test_mission_executor" name="test_rp04_refused_click_never_completes" time="0.001" /><testcase classname="tests.unit.test_mission_executor" name="test_np09_zero_jev_budget_makes_no_call" time="0.001" /><testcase classname="tests.unit.test_mission_executor" name="test_precondition_failure_blocks_with_zero_effects" time="0.002" /><testcase classname="tests.unit.test_mission_executor" name="test_superseded_desktop_lease_refuses_dispatch" time="0.009"><failure message="assistant.missions.authority.AuthorityDenied: BUDGET_EXHAUSTED: packet budget has no committed execution">self = &lt;assistant.missions.authority.MissionAuthority object at 0x11264e390&gt;
+mission_id = '8ee3a51a-16b0-4364-84cb-2dad78da2d14'
+charge = BudgetCharge(resource='actions', amount=1, call_key='actions:8ee3a51a-16b0-4364-84cb-2dad78da2d14:973ed7e6-753b-4bee-85fc-87fd35e06dc9:d9b7f2d1')
+conservative_unit_cost_microunits = None
+item = BoundedWorkItem(schema_version=1, mission_id='8ee3a51a-16b0-4364-84cb-2dad78da2d14', plan_version=1, control_epoch=1, ...ass='REPEATABLE_LOCAL', deduplication_key='', escalation_conditions=[], driver_generation='', lease_fence='live-fence')
+
+    async def reserve(
+        self,
+        mission_id: str,
+        charge: BudgetCharge,
+        *,
+        conservative_unit_cost_microunits: int | None = None,
+        item: BoundedWorkItem | None = None,
+    ) -&gt; BudgetReservation:
+        """Reserve budget durably before acting.
+    
+        A dollar-capped paid call without a conservative per-unit cost bound
+        is denied outright: an unpriced call can never prove it stays under
+        the cap, and reporting the unknown bill as zero is forbidden.
+        """
+        limits = await self._mission_limits(mission_id)
+        if charge.resource == "paid_units":
+            if charge.amount &gt; limits.max_paid_units:
+                raise AuthorityDenied(
+                    "BUDGET_EXHAUSTED",
+                    "paid external actions have no allowance in this mission",
+                )
+            if limits.max_cost_microunits is not None:
+                if conservative_unit_cost_microunits is None:
+                    raise AuthorityDenied(
+                        "BUDGET_EXHAUSTED",
+                        "the call's price is unknown; a dollar-capped mission "
+                        "cannot bound it, so the call is denied",
+                    )
+                usage = await self._mission_usage(mission_id)
+                known = usage.known_cost_microunits or 0
+                projected = known + charge.amount * conservative_unit_cost_microunits
+                if projected &gt; limits.max_cost_microunits:
+                    raise AuthorityDenied(
+                        "BUDGET_EXHAUSTED",
+                        f"projected cost {projected} exceeds the mission cap "
+                        f"{limits.max_cost_microunits}",
+                    )
+        try:
+&gt;           return await self._store.reserve_budget(mission_id, charge, item=item)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/assistant/missions/authority.py:333: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/assistant/missions/store.py:1706: in reserve_budget
+    return await self._run_tx(self._reserve_budget_sync, mission_id, charge, item)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/assistant/missions/store.py:449: in _run_tx
+    return await asyncio.to_thread(fn, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/assistant/missions/store.py:1793: in _reserve_budget_sync
+    return self._tx(tx)
+           ^^^^^^^^^^^^
+src/assistant/missions/store.py:464: in _tx
+    result = fn()
+             ^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tx() -&gt; BudgetReservation:
+        row = self._conn.execute(
+            "SELECT limits_json, usage_json FROM missions WHERE mission_id=?",
+            (mission_id,),
+        ).fetchone()
+        if row is None:
+            raise MissionStoreError(f"unknown mission: {mission_id}")
+        limits = BudgetLimits.model_validate(self._usage_dict(row[0]))
+        usage = BudgetUsage.model_validate(self._usage_dict(row[1]))
+        if charge.call_key:
+            existing = self._conn.execute(
+                "SELECT reservation_id, amount, status FROM mission_budget_reservations "
+                "WHERE mission_id=? AND resource=? AND call_key=?",
+                (mission_id, charge.resource, charge.call_key),
+            ).fetchone()
+            if existing is not None:
+                return BudgetReservation(
+                    reservation_id=str(existing[0]),
+                    mission_id=mission_id,
+                    resource=charge.resource,
+                    amount=int(existing[1]),
+                    call_key=charge.call_key,
+                    created_at_ms=now,
+                    consumed=str(existing[2]) == "CONSUMED",
+                )
+        if item is not None:
+            prefix = f"{charge.resource}:{mission_id}:{item.execution_id}:"
+            if item.mission_id != mission_id or not charge.call_key.startswith(prefix):
+                raise MissionStoreError("packet budget charge identity mismatch")
+            step = self._conn.execute(
+                "SELECT s.step_json FROM mission_steps s JOIN mission_attempts a "
+                "ON a.mission_id=s.mission_id AND a.plan_version=s.plan_version "
+                "AND a.step_id=s.step_id WHERE a.execution_id=? AND a.mission_id=?",
+                (item.execution_id, mission_id),
+            ).fetchone()
+            if step is None:
+&gt;               raise UnknownExecution("packet budget has no committed execution")
+E               assistant.missions.store.UnknownExecution: packet budget has no committed execution
+
+src/assistant/missions/store.py:1749: UnknownExecution
+
+The above exception was the direct cause of the following exception:
+
+world = None
+
+    async def test_superseded_desktop_lease_refuses_dispatch(world: None) -&gt; None:
+        """C06/N09: the guard reads CURRENT queue ownership at dispatch. When
+        the recorded fence no longer matches (a stop or newer grant took the
+        desktop), the dispatch refuses — a stored fence string is not authority."""
+    
+        import tempfile
+        from pathlib import Path
+    
+        from assistant.missions.authority import MissionAuthority
+        from assistant.missions.store import MissionStore
+    
+        store = await MissionStore.connect(Path(tempfile.mkdtemp()) / "fence.db")
+        try:
+            await store.setup()
+            authority = MissionAuthority(store)
+            fences: dict[str, str] = {}
+    
+            def probe(mission_id: str) -&gt; tuple[str, int] | None:
+                fence = fences.get(mission_id)
+                return (fence, 1) if fence else None
+    
+            executor, _runtime = _executor(standard_tools(), authority=authority)
+            executor._ownership_probe = probe
+            from assistant.missions.contracts import (
+                BudgetLimits,
+                RequestEnvelope,
+                Scope,
+                new_id,
+            )
+            from tests.unit.test_mission_authority import _Intent
+    
+            request = RequestEnvelope(
+                request_id=new_id(), conversation_id="c", owner_id="owner",
+                input_origin="typed_final", input_revision=1, text="fixture",
+                submitted_at_ms=0,
+            )
+            mission = await store.claim_request(
+                request, "d" * 64, goal="fixture", scope=Scope(owner_id="owner"),
+                limits=BudgetLimits(),
+            )
+            item = _item(mission_id=mission.mission_id, lease_fence="live-fence")
+            fences[item.mission_id] = "live-fence"
+            await _Intent(store).commit(item)
+&gt;           ok = await executor._guard_dispatch(
+                item, "click", {"pid": 4101, "window_id": 771}, CancellationToken()
+            )
+
+tests/unit/test_mission_executor.py:461: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/assistant/missions/executor.py:823: in _guard_dispatch
+    reservation = await self._reserve_for(item, resource)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/assistant/missions/executor.py:578: in _reserve_for
+    return await self._authority.reserve(item.mission_id, charge, item=item)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;assistant.missions.authority.MissionAuthority object at 0x11264e390&gt;
+mission_id = '8ee3a51a-16b0-4364-84cb-2dad78da2d14'
+charge = BudgetCharge(resource='actions', amount=1, call_key='actions:8ee3a51a-16b0-4364-84cb-2dad78da2d14:973ed7e6-753b-4bee-85fc-87fd35e06dc9:d9b7f2d1')
+conservative_unit_cost_microunits = None
+item = BoundedWorkItem(schema_version=1, mission_id='8ee3a51a-16b0-4364-84cb-2dad78da2d14', plan_version=1, control_epoch=1, ...ass='REPEATABLE_LOCAL', deduplication_key='', escalation_conditions=[], driver_generation='', lease_fence='live-fence')
+
+    async def reserve(
+        self,
+        mission_id: str,
+        charge: BudgetCharge,
+        *,
+        conservative_unit_cost_microunits: int | None = None,
+        item: BoundedWorkItem | None = None,
+    ) -&gt; BudgetReservation:
+        """Reserve budget durably before acting.
+    
+        A dollar-capped paid call without a conservative per-unit cost bound
+        is denied outright: an unpriced call can never prove it stays under
+        the cap, and reporting the unknown bill as zero is forbidden.
+        """
+        limits = await self._mission_limits(mission_id)
+        if charge.resource == "paid_units":
+            if charge.amount &gt; limits.max_paid_units:
+                raise AuthorityDenied(
+                    "BUDGET_EXHAUSTED",
+                    "paid external actions have no allowance in this mission",
+                )
+            if limits.max_cost_microunits is not None:
+                if conservative_unit_cost_microunits is None:
+                    raise AuthorityDenied(
+                        "BUDGET_EXHAUSTED",
+                        "the call's price is unknown; a dollar-capped mission "
+                        "cannot bound it, so the call is denied",
+                    )
+                usage = await self._mission_usage(mission_id)
+                known = usage.known_cost_microunits or 0
+                projected = known + charge.amount * conservative_unit_cost_microunits
+                if projected &gt; limits.max_cost_microunits:
+                    raise AuthorityDenied(
+                        "BUDGET_EXHAUSTED",
+                        f"projected cost {projected} exceeds the mission cap "
+                        f"{limits.max_cost_microunits}",
+                    )
+        try:
+            return await self._store.reserve_budget(mission_id, charge, item=item)
+        except MissionStoreError as exc:
+&gt;           raise AuthorityDenied("BUDGET_EXHAUSTED", str(exc)) from exc
+E           assistant.missions.authority.AuthorityDenied: BUDGET_EXHAUSTED: packet budget has no committed execution
+
+src/assistant/missions/authority.py:335: AuthorityDenied</failure></testcase><testcase classname="tests.unit.test_mission_service" name="test_exact_action_builds_one_step_plan_with_zero_model_calls" time="0.006" /><testcase classname="tests.unit.test_mission_service" name="test_information_question_probes_nothing" time="0.004" /><testcase classname="tests.unit.test_mission_service" name="test_unfamiliar_multistep_plans_once_via_deep" time="0.008" /><testcase classname="tests.unit.test_mission_service" name="test_required_check_failure_blocks_completion" time="0.006" /><testcase classname="tests.unit.test_mission_service" name="test_recovery_only_on_structured_exception" time="0.006" /><testcase classname="tests.unit.test_mission_service" name="test_control_pause_resume_and_cancel" time="0.005" /><testcase classname="tests.unit.test_mission_service" name="test_submit_is_idempotent" time="0.004" /><testcase classname="tests.unit.test_mission_service" name="test_two_concurrent_service_runs_cancel_independently" time="0.007" /><testcase classname="tests.unit.test_mission_service" name="test_controller_role_blocks_raw_mutation_tool" time="0.000" /><testcase classname="tests.unit.test_mission_service" name="test_controller_role_context_scopes_per_invocation" time="0.000" /><testcase classname="tests.unit.test_mission_service" name="test_rp12_claims_carry_real_fences_and_generation" time="0.007" /><testcase classname="tests.unit.test_mission_service" name="test_rp11_zero_deep_budget_blocks_service_planning" time="0.003" /><testcase classname="tests.unit.test_mission_service" name="test_np02_pause_never_resets_dispatched_effect" time="0.004" /><testcase classname="tests.unit.test_mission_service" name="test_np02_resume_with_proven_no_effect_retries" time="0.056" /><testcase classname="tests.unit.test_mission_service" name="test_np04_recovery_uses_reserved_transport" time="0.005" /><testcase classname="tests.unit.test_mission_service" name="test_np05_revision_is_screened_then_planned" time="0.005" /><testcase classname="tests.unit.test_mission_service" name="test_np05_secret_revision_refused_before_persistence" time="0.004" /><testcase classname="tests.unit.test_mission_service" name="test_np10_one_planning_invocation_consumes_one_unit" time="0.003" /><testcase classname="tests.unit.test_mission_service" name="test_np08_second_step_receives_its_own_catalog" time="0.004" /><testcase classname="tests.unit.test_mission_service" name="test_actionable_proposal_without_required_checks_is_refused" time="0.003" /><testcase classname="tests.unit.test_mission_service" name="test_fast_typing_plan_is_external_write_with_payload_ref" time="0.005" /></testsuite></testsuites>

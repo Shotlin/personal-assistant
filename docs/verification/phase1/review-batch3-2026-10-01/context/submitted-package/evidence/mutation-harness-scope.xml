@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.041" timestamp="2026-10-01T02:18:38.956283+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_live_harness_offline" name="test_scope_admission_fails_on_missing_fields" time="0.001"><failure message="Failed: DID NOT RAISE AssertionError">def test_scope_admission_fails_on_missing_fields() -&gt; None:
+        """Unknown or absent required authorization fields fail BEFORE any
+        effect — the harness never guesses a scope."""
+        with pytest.raises(AssertionError, match="allowed_apps"):
+            mission_scope_from_config({})
+&gt;       with pytest.raises(AssertionError, match="account_ref"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AssertionError
+
+tests/integration/test_live_harness_offline.py:42: Failed</failure></testcase></testsuite></testsuites>

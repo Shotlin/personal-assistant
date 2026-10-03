@@ -1,0 +1,140 @@
+{
+  "repository": "Shotlin/personal-assistant",
+  "branch": "main",
+  "baseline_sha": "58dac9c88018674c2e780086953902f1ea135308",
+  "date": "2026-09-27",
+  "type": "planning-only",
+  "manifest_excludes_itself": true,
+  "files": [
+    {
+      "path": "00_READ_ME_FIRST.md",
+      "bytes": 3691,
+      "sha256": "16b6c6a3f30a53272cbaff86f69604b0e392783f5c8153200d2a31c2f9cdddc0"
+    },
+    {
+      "path": "01_CURRENT_REPOSITORY_AUDIT.md",
+      "bytes": 23424,
+      "sha256": "4b431b08cc2d5cdf35890e2a151ef26af1f1fa28d7e99cae7e8948fb84d13d8d"
+    },
+    {
+      "path": "02_GLOBAL_3_PHASE_ROADMAP.md",
+      "bytes": 4784,
+      "sha256": "25544ff6b1ba5f115ceea52c605a854b71911d998c6426fba4d5becf1a8c1ff7"
+    },
+    {
+      "path": "03_PHASE_1_TARGET_ARCHITECTURE.md",
+      "bytes": 44011,
+      "sha256": "230ad418825f155c49b020b6b7cc4e4722c234ef1d16c16c2ea0d8ac42eb1304"
+    },
+    {
+      "path": "04_PHASE_1_IMPLEMENTATION_PLAN.md",
+      "bytes": 25333,
+      "sha256": "176dca367f9ab822133f3953aa0968aa88c6f11b4ef19c18b46323058a60aa8d"
+    },
+    {
+      "path": "05_PHASE_1_IMPLEMENTATION_AGENT_PROMPT.md",
+      "bytes": 147341,
+      "sha256": "fdfcc7abac1024e25d60425fe54584f8976eea4e214c50a683ebcba5109a5910"
+    },
+    {
+      "path": "06_PHASE_1_TEST_AND_ACCEPTANCE_PLAN.md",
+      "bytes": 30392,
+      "sha256": "6da3a9081c466aa19ab63408284292b39caa8d72b1f555d93905dcff62861011"
+    },
+    {
+      "path": "07_PHASE_1_HANDOFF_TEMPLATE.md",
+      "bytes": 5231,
+      "sha256": "3bf12241a076e472ad88a2cd365ed1cf6d2413a7a3b6ee201c04c52350da57d9"
+    },
+    {
+      "path": "08_PHASE_2_REPLAN_PROMPT.md",
+      "bytes": 2596,
+      "sha256": "6bc5b5a5d8dfb74859b9c10d41a211aed38114278af1a0a679216aac83ef9227"
+    },
+    {
+      "path": "09_PHASE_3_REPLAN_PROMPT.md",
+      "bytes": 2223,
+      "sha256": "c9e5aae4185442a1571197ab3b74d9987f2d5a3031e3c7c60262c855daed9cbb"
+    },
+    {
+      "path": "10_RISKS_AND_DECISIONS.md",
+      "bytes": 13092,
+      "sha256": "ea9f9e50d125cd77d48517b35c674c4e8603ce866a696f912097d5d9758606cc"
+    },
+    {
+      "path": "evidence/BASELINE.md",
+      "bytes": 4754,
+      "sha256": "b3a7ab01ecdfb7d20133b3da70b0cb6fb68e2eda1d9d6f44916e21823e3f9cd4"
+    },
+    {
+      "path": "evidence/INPUT_HASHES.json",
+      "bytes": 710,
+      "sha256": "64c7ae762476fcffc9017ad3766849f566ca3c1d2c5a9b5ce3927cb80cb19723"
+    },
+    {
+      "path": "evidence/QUALITY_CHECK.md",
+      "bytes": 1505,
+      "sha256": "b81a7dafd519930ac4eb2626e3800eec5a6f162692bb24b575681f22c9597a41"
+    },
+    {
+      "path": "evidence/mypy.log",
+      "bytes": 11272,
+      "sha256": "a7eba2caa8d1e964d98e2af44b55357a85ddb698367ec14903b26e24c6b2d1c7"
+    },
+    {
+      "path": "evidence/python-manifest-recheck.log",
+      "bytes": 98,
+      "sha256": "866432d567eb30f716ad0380ad29e9453b6fd80645780de4fbe94565dc3eab20"
+    },
+    {
+      "path": "evidence/python-unit.log",
+      "bytes": 12947,
+      "sha256": "d846bfea7b0e5e4f721081fd8b88b2ce3acd453cb6010c066071339ab19eb1d6"
+    },
+    {
+      "path": "evidence/python-unit.xml",
+      "bytes": 61498,
+      "sha256": "121c37b734ebc757eda1a398f846a1b14033c89233d3dd721ebd470d87382a22"
+    },
+    {
+      "path": "evidence/renderer-build.log",
+      "bytes": 1496,
+      "sha256": "bedb03bdc2094b66ac72cded982da4ad181bb74e6143a9fd02f78707d5b331ab"
+    },
+    {
+      "path": "evidence/ruff.log",
+      "bytes": 26578,
+      "sha256": "632ab1315e107d2b2322701afd95b907fcf7d7636358d2caa6c93e1fb684c5a9"
+    },
+    {
+      "path": "evidence/rust-tests.log",
+      "bytes": 19760,
+      "sha256": "ac9d004621f5c149fd3f81b377978108875d3f7f2d9797bfc2eb2ec3d1de23f6"
+    },
+    {
+      "path": "evidence/tracked-files.txt",
+      "bytes": 33062,
+      "sha256": "c6834aff16c6cd351a9935c1cff0a0dce1f7ff4c1bc45b154c61368c982834dd"
+    },
+    {
+      "path": "inputs/01_JARVIS_REQUIREMENTS.md",
+      "bytes": 38240,
+      "sha256": "aec2ec9b45eb8f22943632e39dd0857f61ae57b1930f050bb9d6306e2de05b22"
+    },
+    {
+      "path": "inputs/02_ASTRA_REPOSITORY_ANALYSIS_AND_PHASE_PLANNING_PROMPT.md",
+      "bytes": 24340,
+      "sha256": "abe3a604975168b68fe5388b5828ce9a5fe0de2ebfefa28b53de647dcce6b739"
+    },
+    {
+      "path": "inputs/03_JARVIS_CONTROLLED_SELF_IMPROVEMENT_RSI.md",
+      "bytes": 43233,
+      "sha256": "3d8604c717ef883aca3e3961aad74f29f3e4388238af403dc77903b4a86ae75e"
+    },
+    {
+      "path": "inputs/04_ASTRA_ITERATIVE_JARVIS_PHASE_PLANNER_PROMPT.md",
+      "bytes": 36465,
+      "sha256": "04c7cac514dd4b6cf79ef9f4aafbce9791e408b97779dbccd8af49893b15c8e9"
+    }
+  ]
+}

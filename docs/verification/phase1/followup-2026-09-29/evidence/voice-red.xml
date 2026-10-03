@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="13" time="0.060" timestamp="2026-09-29T11:38:27.035478+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.unit.test_sani_tts_worker" name="test_ready_then_synthesize_then_finished" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_malformed_frames_are_refused" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_oversize_text_rejected" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_nan_samples_rejected" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_oversize_pcm_rejected" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_stale_generation_yields_cancelled_not_audio" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_cancel_during_synthesis_stops_chunks" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_buffer_bound_enforced" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_shutdown_control_exits" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_unspecified_engine_refuses_cleanly" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_ack_requests_finish_without_audio" time="0.002" /><testcase classname="tests.unit.test_sani_tts_worker" name="test_engine_error_identifies_queue_entry" time="0.002"><failure message="KeyError: 'utterance_id'">tts = &lt;module 'sani_tts_test' from '/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/sani/src-tauri/python/sani_tts.py'&gt;
+
+    def test_engine_error_identifies_queue_entry(tts: Any) -&gt; None:
+        events = _serve(tts, [{"type": "request", "request": _request_payload()}],
+                        engine=tts.UnspecifiedEngine())
+        error = next(e for e in events if e["event"] == "error")
+&gt;       assert error["utterance_id"] == "utt-1"
+               ^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'utterance_id'
+
+tests/unit/test_sani_tts_worker.py:196: KeyError</failure></testcase><testcase classname="tests.unit.test_sani_tts_worker" name="test_streaming_long_speech_is_not_lifetime_buffered" time="0.003"><failure message="assert not True&#10; +  where True = any(&lt;generator object test_streaming_long_speech_is_not_lifetime_buffered.&lt;locals&gt;.&lt;genexpr&gt; at 0x10c8ef030&gt;)">tts = &lt;module 'sani_tts_test' from '/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/sani/src-tauri/python/sani_tts.py'&gt;
+
+    def test_streaming_long_speech_is_not_lifetime_buffered(tts: Any) -&gt; None:
+        class LongEngine(tts.SilenceEngine):
+            def synthesize(self, text: str, utterance_id: str, generation: int):
+                for _ in range(200):
+                    yield (24000, b"\x00" * (12000 * 4))
+        events = _serve(tts, [{"type": "request", "request": _request_payload()}],
+                        engine=LongEngine())
+&gt;       assert not any(e["event"] == "error" for e in events)
+E       assert not True
+E        +  where True = any(&lt;generator object test_streaming_long_speech_is_not_lifetime_buffered.&lt;locals&gt;.&lt;genexpr&gt; at 0x10c8ef030&gt;)
+
+tests/unit/test_sani_tts_worker.py:207: AssertionError</failure></testcase></testsuite></testsuites>

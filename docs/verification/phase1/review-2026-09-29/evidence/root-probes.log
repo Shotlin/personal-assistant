@@ -1,0 +1,139 @@
+{
+  "actual_ledger_pause": {
+    "state_after_real_ledger": "INTENT_COMMITTED",
+    "old_state": "CANCELLED",
+    "second_attempt": 2,
+    "note": "synthetic action ledger; no physical effect"
+  },
+  "NP02_manually_marked": {
+    "second_attempt": null,
+    "state": "RECONCILING"
+  },
+  "NP03_mixed": {
+    "calls": [
+      "first",
+      "second"
+    ],
+    "result": "Reconciliation(execution_id='ede938d0-242a-445f-98ac-70c22d406fc5', mission_id='5b83d13d-60a1-4620-b701-e58bd2f1666b', outcome='CONFIRMED', retriable=False, reason='probe confirmed second')"
+  },
+  "normal_resume": {
+    "status": "RUNNING",
+    "scheduled": []
+  },
+  "NP09_real_authority": {
+    "packet_limit": 0,
+    "calls": 1
+  },
+  "NP04_role_tool_names": [
+    {
+      "role": "PLAN",
+      "requested": "submit_mission_plan",
+      "available": "submit_mission_plan"
+    },
+    {
+      "role": "RECOVER",
+      "requested": "submit_mission_response",
+      "available": "submit_recovery_decision"
+    },
+    {
+      "role": "REVIEW",
+      "requested": "submit_mission_response",
+      "available": "submit_final_review"
+    }
+  ],
+  "NP06_checks": {
+    "open_app": [
+      {
+        "check_id": "app-foreground-safari",
+        "verifier_id": "app_foreground",
+        "verifier_version": "1.0.0",
+        "expected": {
+          "app": "safari"
+        },
+        "target_scope_hash": "",
+        "required": true
+      }
+    ],
+    "navigate": [],
+    "search_browser": [],
+    "scroll": [
+      {
+        "check_id": "window-reobserved",
+        "verifier_id": "window_visible",
+        "verifier_version": "1.0.0",
+        "expected": {},
+        "target_scope_hash": "",
+        "required": true
+      }
+    ],
+    "type_text": [
+      {
+        "check_id": "field-carries-payload",
+        "verifier_id": "field_value",
+        "verifier_version": "1.0.0",
+        "expected": {
+          "payload_ref": "user_text_1"
+        },
+        "target_scope_hash": "",
+        "required": true
+      }
+    ],
+    "press_ordinal": [
+      {
+        "check_id": "window-reobserved",
+        "verifier_id": "window_visible",
+        "verifier_version": "1.0.0",
+        "expected": {},
+        "target_scope_hash": "",
+        "required": true
+      }
+    ]
+  },
+  "NP10_accounting": {
+    "calls": 1,
+    "usage": {
+      "reserved": {
+        "deep_calls": 0
+      },
+      "consumed": {
+        "deep_calls": 1
+      },
+      "known_input_tokens": 0,
+      "known_output_tokens": 0,
+      "known_cache_tokens": 0,
+      "known_reasoning_tokens": 0,
+      "unknown_usage_calls": 0,
+      "known_cost_microunits": null,
+      "external_wait_ms": 0,
+      "active_ms": 0
+    }
+  },
+  "plan_sink_canary": {
+    "tables_with_synthetic_secret": [
+      "mission_plans",
+      "mission_steps"
+    ]
+  },
+  "host_voice_request": [
+    {
+      "event": "ready",
+      "engine": "unspecified"
+    },
+    {
+      "event": "error",
+      "request_id": null,
+      "message": "request_id/utterance_id/message_id must be non-empty strings"
+    }
+  ],
+  "voice_error_correlation": [
+    {
+      "event": "ready",
+      "engine": "unspecified"
+    },
+    {
+      "event": "error",
+      "request_id": "req-1",
+      "message": "no speech engine is configured (audition pending)"
+    }
+  ]
+}

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from assistant.runtime.desktop_queue import DesktopQueue, QueuedDesktopSessionManager
-from assistant.runtime.session import DesktopSessionManager
+from assistant.runtime.session import DesktopLeaseBusy, DesktopSessionManager
 
 
 class _FakeDriver:
@@ -108,9 +108,15 @@ async def test_stale_core_wakes_and_must_not_take_over(manager: DesktopSessionMa
     # wakes up holding a lease that is no longer usable.
     takeover = await queue.stop_owner("stale")
     assert takeover["stopped"] is True
+    assert not queue.check_usable(handle), "the stale lease must never be usable"
+    with pytest.raises(DesktopLeaseBusy):
+        await queue.acquire("fresh-owner")
+    assert await queue.acknowledge_driver_cleanup(**{
+        key: takeover["cleanup_ticket"][key]
+        for key in ("owner", "fence", "operation_id")
+    })
     fresh = await queue.acquire("fresh-owner")
     assert fresh.generation > handle.generation
-    assert not queue.check_usable(handle), "the stale lease must never be usable"
     await queue.release("stale")  # a no-op: stale is not the current owner
     assert queue.current_owner == "fresh-owner"
     await queue.release("fresh-owner")
@@ -137,23 +143,31 @@ async def test_concurrent_sessions_serialize_through_one_manager(
 
 
 async def test_idle_stop_is_safe() -> None:
+    """D08: a stop naming nothing is a NO-OP — it must not increment the
+    shared generation. The old oracle (generation >= 2) pinned the bug
+    where a no-op stop invalidated an unrelated valid lease."""
     queue = DesktopQueue(timeout_seconds=2)
     report = await queue.stop_owner(None)
     assert report == {"stopped": False, "owner": None, "certain": True}
+    assert queue.generation == 0, "a no-op stop must not move the generation"
     _handle = await queue.acquire("after")
     await queue.release("after")
-    assert queue.generation >= 2
+    assert queue.generation == 1, "only the grant itself bumps the generation"
 
 
 async def test_no_second_owner_after_emergency_stop(manager: DesktopSessionManager) -> None:
-    """After an emergency stop, pending waiters may grant but must observe
-    the new generation and re-check before dispatching."""
+    """An emergency stop blocks queued work until physical cleanup is acked."""
     queue = DesktopQueue(timeout_seconds=5)
     generation_before = queue.generation
     handle = await queue.acquire("first")
     waiter = asyncio.create_task(queue.acquire("second"))
     await asyncio.sleep(0.02)
-    await queue.stop_owner("first")
+    stopped = await queue.stop_owner("first")
+    assert not waiter.done(), "a successor cannot run before cleanup acknowledgement"
+    assert await queue.acknowledge_driver_cleanup(**{
+        key: stopped["cleanup_ticket"][key]
+        for key in ("owner", "fence", "operation_id")
+    })
     new_handle = await asyncio.wait_for(waiter, timeout=2)
     assert new_handle.generation > generation_before
     assert handle.generation < new_handle.generation

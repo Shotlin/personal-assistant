@@ -1,0 +1,13 @@
+
+> sani@0.1.0 build
+> tsc && vite build
+
+vite v5.4.21 building for production...
+✓ 0 modules transformed.
+x Build failed in 6ms
+error during build:
+Could not resolve entry module "app.html".
+    at getRollupError (file:///Users/sayan/Documents/personal-assistant/sani/node_modules/rollup/dist/es/shared/parseAst.js:319:41)
+    at error (file:///Users/sayan/Documents/personal-assistant/sani/node_modules/rollup/dist/es/shared/parseAst.js:315:42)
+    at ModuleLoader.loadEntryModule (file:///Users/sayan/Documents/personal-assistant/sani/node_modules/rollup/dist/es/shared/node-entry.js:22478:20)
+    at async Promise.all (index 0)

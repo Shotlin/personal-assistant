@@ -60,6 +60,15 @@ RECIPE_TOOL_CATALOG: dict[str, list[str]] = {
     "scroll": ["list_apps", "get_window_state", "scroll"],
     "type_text": ["list_apps", "get_window_state", "click", "type_text", "set_value"],
     "press_ordinal": ["list_apps", "get_window_state", "press_key", "click"],
+    "describe_screen": ["list_apps", "list_windows", "get_window_state"],
+    "press_item": ["list_apps", "list_windows", "get_window_state", "click"],
+    "click_named": ["list_apps", "list_windows", "get_window_state", "click"],
+    "click_in_utterance": ["list_apps", "list_windows", "get_window_state", "click"],
+    "step_item": ["list_apps", "list_windows", "get_window_state", "click", "scroll"],
+    "learn_screen": ["list_apps", "list_windows", "get_window_state"],
+    "download_images": ["list_apps", "list_windows", "get_window_state", "click"],
+    "fill_field": ["list_apps", "list_windows", "get_window_state", "click", "set_value",
+                   "type_text", "press_key"],
     "semantic_ui": ["list_apps", "list_windows", "get_window_state", "click", "type_text",
                      "set_value", "press_key", "scroll", "bring_to_front"],
 }
@@ -90,6 +99,16 @@ class MissionPlanError(MissionStoreError):
     """A Deep proposal failed validation; no partial plan is committed."""
 
 
+class ExternalWaitRequested(RuntimeError):
+    """D14: a provider rate-limited the invocation; the mission owes a
+    durable external wait instead of a dead pause."""
+
+    def __init__(self, retry_after_ms: int, reason: str = "") -> None:
+        super().__init__(reason or f"external wait requested: {retry_after_ms}ms")
+        self.retry_after_ms = max(0, min(int(retry_after_ms), 3_600_000))
+        self.reason = reason[:400]
+
+
 class MissionService:
     """Owns mission state transitions, budgets, claims and dispatch."""
 
@@ -105,6 +124,7 @@ class MissionService:
         owner_id: str = "sani-local",
         host_generation: str = "",
         desktop_queue: Any = None,
+        cleanup_driver_input: Any = None,
         transport_factory: Any = None,
     ) -> None:
         self._settings = settings
@@ -140,8 +160,17 @@ class MissionService:
         from assistant.runtime.desktop_queue import DesktopQueue
 
         self._desktop_queue = desktop_queue or DesktopQueue(timeout_seconds=120)
+        # D19: this is supplied only by a host/driver bridge that can prove
+        # a release of held physical input.  None means "unknown", which
+        # intentionally leaves the queue interlocked after a stop.
+        self._cleanup_driver_input = cleanup_driver_input
         self._host_generation = host_generation or f"core-{new_id()[:8]}"
         self._run_tokens: dict[str, CancellationToken] = {}
+        # D02: wait timers armed in THIS process, keyed by wait id — a wait
+        # is armed at most once per process, and a restart re-arms each open
+        # wait exactly once through reconcile_startup.
+        self._armed_waits: set[str] = set()
+        self._retention_task: Any = None
 
     # -- submit ------------------------------------------------------------------
 
@@ -174,6 +203,11 @@ class MissionService:
                 invoke.bind(mission_id=mission.mission_id, plan_version=1)
             try:
                 proposal = await self._plan(request, mission, invoke=invoke, on_event=on_event)
+            except ExternalWaitRequested as wait:
+                # PLAN is a real controller role.  A provider rate limit here
+                # must have the same durable/restart-safe lifecycle as a
+                # recovery wait, not leak out while the mission says PLANNED.
+                return await self._enter_controller_wait(mission, "PLAN", wait)
             except MissionPlanError as exc:
                 # A plan that cannot be produced (budget exhausted, invalid
                 # submission, unsupported scope) leaves an honest blocker —
@@ -203,6 +237,11 @@ class MissionService:
     ) -> PlanProposal:
         """Deterministic fast plan for exact commands; Deep for everything else."""
         command = parse(request.text)
+        if command is not None and command.recipe in {"compose_fill", "fill_field"}:
+            # These carry free text and (for compose) need a model to write it.
+            # Mission mode keeps dictated text by reference and digest, so it
+            # plans them through the Controller instead of the one-step fast path.
+            command = None
         if command is not None:
             # One-step fast mission, zero Deep calls, zero JEV calls (§2).
             # R06/F05: a fast action still owes INDEPENDENT recipe-appropriate
@@ -342,7 +381,8 @@ class MissionService:
             mission = await self._store.get_mission(mission_id)
             assert mission is not None
             if mission.status in {"COMPLETED", "FAILED", "CANCELLED", "PAUSED",
-                                  "BLOCKED", "NEEDS_APPROVAL", "VERIFYING"}:
+                                  "BLOCKED", "NEEDS_APPROVAL", "VERIFYING",
+                                  "WAITING_EXTERNAL"}:
                 break
             # R05/F06 (RP12): the desktop lease is acquired BEFORE the claim
             # and the claim records its real fence + generation, so two
@@ -368,7 +408,10 @@ class MissionService:
                 )
                 outcome = await self._store.apply_result(result)
             finally:
-                await self._desktop_queue.release(f"mission:{mission_id}")
+                # D19: cleanup carries the EXACT acquired fence — an old
+                # run's cleanup can never release a same-run newer lease.
+                await self._desktop_queue.release(f"mission:{mission_id}",
+                                                  fence=lease.fence)
             if outcome == "STALE":
                 break
             if result.status in {"NEEDS_CONTROLLER", "NEEDS_HUMAN"}:
@@ -387,12 +430,89 @@ class MissionService:
         return mission
 
     async def _observe(self, mission: MissionRecord) -> None:
-        """Run the read-only Observer over this mission's committed events."""
+        """Run the read-only Observer over this mission's committed events.
+
+        D07: retention also runs here, in the NORMAL lifecycle — expired
+        evidence rows and files go (holds respected), derived observer
+        copies expire — never as a manual SQL sweep.
+        """
+        try:
+            now = int(time.time() * 1000)
+            # D16: durable holds are honored — enforce_retention reads the
+            # mission_retention_holds table itself; no caller-side hold set.
+            sweep = await self._store.enforce_retention(now)
+            await self._process_file_deletions(sweep.get("deleted_paths") or [])
+            self._observer.prune_expired(now, 30 * 24 * 60 * 60 * 1000)
+        except Exception as exc:  # noqa: BLE001 -- retention never blocks execution
+            logger.warning("mission_retention_lifecycle_failed: %s", exc)
         try:
             events = await self._store.get_events(mission.mission_id)
             await self._observer.analyze(events)
         except Exception as exc:  # noqa: BLE001 -- observation never blocks execution
             logger.warning("mission_observer_failed: %s", exc)
+
+    async def acknowledge_human_takeover(self, mission_id: str) -> dict[str, Any]:
+        """D19: the owner confirms a physical takeover of the desktop.
+
+        Ends THIS mission's lease (fence dead), pauses the mission with a
+        USER_TAKEOVER reason, and leaves the queue usable for the next
+        waiter. Local certainty is lease certainty — whether held PHYSICAL
+        input was released stays a driver/live question.
+        """
+        ack = self._desktop_queue.confirm_takeover(f"mission:{mission_id}")
+        if ack.get("acknowledged"):
+            record = await self._store.get_mission(mission_id)
+            if record is not None and record.status == "RUNNING":
+                await self._store.control(MissionControl(
+                    control_id=new_id(), mission_id=mission_id,
+                    expected_plan_version=record.plan_version,
+                    expected_control_epoch=record.control_epoch,
+                    kind="PAUSE", reason="owner takeover acknowledged"))
+        return ack
+
+    async def acknowledge_driver_cleanup(
+        self, *, mission_id: str, fence: str, operation_id: str
+    ) -> bool:
+        """Accept only an exact host/driver cleanup acknowledgement."""
+        return await self._desktop_queue.acknowledge_driver_cleanup(
+            owner=f"mission:{mission_id}", fence=fence, operation_id=operation_id
+        )
+
+    async def purge_mission_derivatives(self, mission_id: str) -> dict[str, Any]:
+        """D07/D12: OWNER deletion of ONE mission's derivative data.
+
+        Only THIS mission's evidence rows are tombstoned and only its files
+        unlinked — another mission's live evidence is never selected (the
+        batch-2 probe deleted a bystander mission's files). Holds win: a
+        held mission is reported, not purged. Idempotent: a second purge
+        finds nothing live. Derived observer recommendations are removed;
+        the retention log keeps the audit tombstone.
+        """
+        now = int(time.time() * 1000)
+        holds = await self._store.active_retention_holds()
+        if mission_id in holds:
+            return {"purged": False, "reason": "mission is under a retention hold",
+                    "evidence_files_deleted": 0, "recommendations_deleted": []}
+        paths = await self._store.mark_mission_evidence_deleted(mission_id)
+        deleted = await self._process_file_deletions(paths)
+        removed_recommendations = self._observer.delete_for_mission(mission_id, now_ms=now)
+        await self._store.record_deletion_tombstone(mission_id, deleted, removed_recommendations)
+        return {
+            "purged": True,
+            "evidence_files_deleted": deleted,
+            "recommendations_deleted": removed_recommendations,
+        }
+
+    async def _process_file_deletions(self, paths: list[str]) -> int:
+        """Drain the durable evidence-unlink queue without losing failures."""
+        pending = await self._store.pending_file_deletions()
+        candidates = list(dict.fromkeys([*paths, *pending]))
+        if not candidates or self._evidence is None:
+            return 0
+        report = self._evidence.sweep_deleted_files_report(candidates)
+        await self._store.acknowledge_file_deletions(report["deleted"])
+        await self._store.note_file_deletion_failures(report["failed"])
+        return len(report["deleted"])
 
     def _ownership_probe(self, mission_id: str) -> tuple[str, int] | None:
         """The CURRENT desktop-queue ownership for one mission (C06/N09)."""
@@ -439,6 +559,12 @@ class MissionService:
         mission = await self._store.get_mission(mission_id)
         assert mission is not None
         packet = exception_packet_for(item, result)
+        # D02: an escalation that carries a bounded retry-after becomes a
+        # DURABLE external wait — reason, checkpoint, retry-after and
+        # deadline are persisted, a timer resumes the mission once, and a
+        # restart re-arms it exactly once. No busy polling, no lost wait.
+        if result.status == "NEEDS_CONTROLLER" and result.retry_after_ms is not None:
+            return await self._enter_external_wait(mission_id, item, result)
         if result.status == "NEEDS_HUMAN":
             if on_event is not None:
                 await on_event("agent.progress", {"message": "Needs your approval to continue"})
@@ -461,6 +587,13 @@ class MissionService:
                 packet=packet,
                 on_event=on_event,
             )
+        except ExternalWaitRequested as wait:
+            # D14: a rate-limited RECOVERY enters the established durable
+            # wait flow on this very item — never a replayable pause.
+            retried = result.model_copy(update={
+                "retry_after_ms": wait.retry_after_ms,
+            })
+            return await self._enter_external_wait(mission_id, item, retried)
         except Exception as exc:  # noqa: BLE001 -- a failed recovery is an owner stop
             logger.warning("mission_recovery_failed: %s", exc)
             await self._store.control(MissionControl(
@@ -491,6 +624,89 @@ class MissionService:
             pass
         return await self._store.get_mission(mission_id)  # type: ignore[return-value]
 
+    async def _enter_external_wait(
+        self, mission_id: str, item: Any, result: StepResult
+    ) -> MissionRecord:
+        """Record a durable external wait for one escalated step (D02)."""
+        retry_after_ms = int(result.retry_after_ms or 0)
+        now_ms = int(time.time() * 1000)
+        # The deadline bounds how long the wait may still be released: the
+        # retry-after itself plus one bounded grace window for the resume
+        # task to actually run.
+        wait_id = await self._store.record_external_wait(
+            mission_id, item.plan_version, item.step_id,
+            reason=f"{result.failure_category}: {result.uncertainty[:200]}",
+            checkpoint={
+                "step_id": item.step_id,
+                "plan_version": item.plan_version,
+                "attempt": item.attempt,
+                "resume_cursor": item.step_id,
+            },
+            retry_after_ms=retry_after_ms,
+            deadline_ms=now_ms + retry_after_ms + 60_000,
+        )
+        self._schedule_wait_resume(mission_id, wait_id, retry_after_ms)
+        return await self._store.get_mission(mission_id)  # type: ignore[return-value]
+
+    async def _enter_controller_wait(
+        self, mission: MissionRecord, role: Literal["PLAN", "REVIEW"], wait: ExternalWaitRequested
+    ) -> MissionRecord:
+        """Persist a rate limit raised before a step exists or during review."""
+        retry_after_ms = wait.retry_after_ms
+        now_ms = int(time.time() * 1000)
+        wait_id = await self._store.record_external_wait(
+            mission.mission_id,
+            mission.plan_version,
+            f"__controller_{role.lower()}__",
+            reason=wait.reason or f"provider rate limited {role}",
+            checkpoint={"resume_kind": role, "plan_version": mission.plan_version,
+                        "control_epoch": mission.control_epoch},
+            retry_after_ms=retry_after_ms,
+            deadline_ms=now_ms + retry_after_ms + 60_000,
+            control_epoch=mission.control_epoch,
+        )
+        self._schedule_wait_resume(mission.mission_id, wait_id, retry_after_ms)
+        return await self._store.get_mission(mission.mission_id)  # type: ignore[return-value]
+
+    def _schedule_wait_resume(self, mission_id: str, wait_id: str, delay_ms: int) -> None:
+        """Arm the one bounded timer for a durable wait (no busy polling)."""
+        import asyncio
+
+        self._armed_waits.add(wait_id)
+
+        async def _fire() -> None:
+            await asyncio.sleep(max(0.0, delay_ms / 1000))
+            self._armed_waits.discard(wait_id)
+            try:
+                mission = await self._store.get_mission(mission_id)
+                if mission is None or mission.status != "WAITING_EXTERNAL":
+                    return  # paused, cancelled, or already released meanwhile
+                waits = [w for w in await self._store.open_waits(mission_id)
+                         if w["wait_id"] == wait_id]
+                if not waits:
+                    return
+                if int(time.time() * 1000) >= int(waits[0]["deadline_ms"]):
+                    await self._store.mark_mission_blocked(
+                        mission_id, "external wait passed its deadline"
+                    )
+                    return
+                checkpoint = waits[0]["checkpoint"]
+                released = await self._store.release_wait(wait_id)
+                if released is not None and released.status == "RUNNING":
+                    self._schedule_waited_resume(mission_id, checkpoint)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 -- a failed timer reports honestly
+                logger.warning("mission_wait_resume_failed: %s", exc)
+                with contextlib.suppress(Exception):
+                    await self._store.mark_mission_blocked(
+                        mission_id, f"wait resume failed: {str(exc)[:200]}"
+                    )
+
+        asyncio.get_running_loop().create_task(
+            _fire(), name=f"mission-wait-{wait_id[:8]}"
+        )
+
     async def _controller_invoke(
         self,
         kind: str,
@@ -512,8 +728,8 @@ class MissionService:
         """
         call_key = f"{kind}-v{mission.plan_version}:{new_id()[:8]}"
         reservation = await self._reserve_deep_call(mission, call_key)
-        transport = self._transport_for(mission, on_event=on_event)
         try:
+            transport = self._transport_for(mission, on_event=on_event)
             if kind == "plan":
                 assert request is not None
                 result = await self._controller.plan(
@@ -590,14 +806,17 @@ class MissionService:
             final_status = "FAILED"
         else:
             final_status = "BLOCKED"
-        final_status = await self._final_review(mission, final_status)
+        try:
+            final_status = await self._final_review(mission, final_status)
+        except ExternalWaitRequested as wait:
+            return await self._enter_controller_wait(mission, "REVIEW", wait)
         return await self._store.finalize_mission(
             mission.mission_id, mission.control_epoch, final_status
         )
 
     async def _final_review(self, mission: MissionRecord, final_status: str) -> str:
         """The advisory REVIEW pass, recorded but never decisive."""
-        if not mission.steps:
+        if not mission.steps or mission.budget_usage.total("deep_calls") == 0:
             return final_status
         criteria_checks = await self._store.get_check_results(
             mission.mission_id, mission.plan_version
@@ -609,6 +828,8 @@ class MissionService:
                 snapshot=_snapshot_of(mission),
                 checks=list(criteria_checks.values()),
             )
+        except ExternalWaitRequested:
+            raise
         except Exception as exc:  # noqa: BLE001 -- advisory review never blocks the gate
             logger.warning("mission_final_review_unavailable: %s", exc)
             return final_status
@@ -631,6 +852,15 @@ class MissionService:
         token: CancellationToken | None = self._run_tokens.get(command.mission_id)
         if token is not None and command.kind in {"PAUSE", "CANCEL", "REVISE"}:
             token.cancel()
+        if command.kind in {"PAUSE", "CANCEL", "REVISE"}:
+            # The durable control state stops the executor token; this
+            # separate queue stop handles any already-held desktop input.
+            # A missing/failed host acknowledgement deliberately blocks a
+            # successor instead of claiming a release we cannot prove.
+            await self._desktop_queue.stop_owner(
+                f"mission:{command.mission_id}",
+                release_input=self._cleanup_driver_input,
+            )
         if command.kind == "REVISE" and command.revision_request:
             mission = await self._replan(
                 mission, revision=command.revision_request, reason=command.reason
@@ -648,7 +878,10 @@ class MissionService:
                 released = await self._store.release_approved_blocked_steps(
                     command.mission_id, mission.plan_version
                 )
-                if released:
+                states = await self._store.get_step_states(
+                    command.mission_id, mission.plan_version
+                )
+                if released or "PENDING" in states.values():
                     self._schedule_resume(command.mission_id)
         return mission
 
@@ -659,7 +892,9 @@ class MissionService:
         their ids; this settles each one honestly (steps released only on
         proven NO_EFFECT, missions BLOCKED on confirmed/unknown effects).
         Attempts left RECONCILING by a pause or an earlier crash settle here
-        too. Startup never replays GUI work.
+        too. Startup never replays GUI work. D02: open durable external
+        waits are re-armed exactly once each, AFTER reconciliation — a wait
+        on a mission whose uncertainty resolved to BLOCKED never fires.
         """
         mission_ids: set[str] = set()
         for execution_id in execution_ids:
@@ -672,6 +907,47 @@ class MissionService:
                 await self._reconcile_uncertain(mission_id)
             except Exception as exc:  # noqa: BLE001 -- one bad attempt must not wedge startup
                 logger.warning("startup_reconciliation_failed mission=%s: %s", mission_id, exc)
+        # D16: idle retention runs at startup too — expiry is enforced even
+        # when no mission is observed, always honoring durable holds.
+        try:
+            now = int(time.time() * 1000)
+            sweep = await self._store.enforce_retention(now)
+            await self._process_file_deletions(sweep.get("deleted_paths") or [])
+        except Exception as exc:  # noqa: BLE001 -- retention never blocks startup
+            logger.warning("startup_retention_failed: %s", exc)
+        for wait in await self._store.open_waits():
+            if wait["wait_id"] in self._armed_waits:
+                continue
+            mission = await self._store.get_mission(str(wait["mission_id"]))
+            if mission is None or mission.status != "WAITING_EXTERNAL":
+                continue
+            elapsed = max(0, int(time.time() * 1000) - int(wait["created_at_ms"]))
+            delay = max(0, int(wait["retry_after_ms"]) - elapsed)
+            self._schedule_wait_resume(
+                str(wait["mission_id"]), str(wait["wait_id"]), delay
+            )
+        self._arm_idle_retention()
+
+    def _arm_idle_retention(self) -> None:
+        """Keep expiry active while the host stays open but no mission runs."""
+        if self._retention_task is not None and not self._retention_task.done():
+            return
+        import asyncio
+
+        async def _sweep() -> None:
+            try:
+                while True:
+                    await asyncio.sleep(60)
+                    sweep = await self._store.enforce_retention(int(time.time() * 1000))
+                    await self._process_file_deletions(sweep.get("deleted_paths") or [])
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("idle_retention_failed: %s", exc)
+
+        self._retention_task = asyncio.get_running_loop().create_task(
+            _sweep(), name="mission-idle-retention"
+        )
 
     async def _reconcile_uncertain(
         self, mission_id: str, *, probe: Any = None
@@ -739,6 +1015,73 @@ class MissionService:
             _resume(), name=f"mission-resume-{mission_id[:8]}"
         )
 
+    def _schedule_waited_resume(self, mission_id: str, checkpoint: dict[str, Any]) -> None:
+        """Resume the exact controller phase recorded in the durable wait."""
+        kind = str(checkpoint.get("resume_kind", "STEP"))
+        if kind == "STEP":
+            self._schedule_resume(mission_id)
+            return
+        import asyncio
+
+        token = CancellationToken()
+        self._run_tokens[mission_id] = token
+
+        async def _resume_controller() -> None:
+            try:
+                mission = await self._store.get_mission(mission_id)
+                if mission is None or mission.status != "RUNNING":
+                    return
+                if kind == "PLAN":
+                    request = RequestEnvelope(
+                        request_id=mission.request_id,
+                        conversation_id=mission.conversation_id,
+                        owner_id=mission.owner_id,
+                        input_origin="typed_final", input_revision=1,
+                        text=mission.original_goal, submitted_at_ms=int(time.time() * 1000),
+                    )
+                    try:
+                        proposal = await self._plan(
+                            request, mission, invoke=self._transport_for(mission)
+                        )
+                    except ExternalWaitRequested as wait:
+                        await self._enter_controller_wait(mission, "PLAN", wait)
+                        return
+                    except MissionPlanError as exc:
+                        await self._store.record_plan_refusal(
+                            mission_id, mission.control_epoch, str(exc)[:400]
+                        )
+                        return
+                    mission = await self._store.commit_plan(
+                        mission_id, mission.plan_version, proposal.steps,
+                        proposal.success_criteria, reason=proposal.explanation[:1000],
+                        creator="mission_service",
+                    )
+                    await self.run_ready(mission_id, cancel=token)
+                elif kind == "REVIEW":
+                    verifying = await self._store.mark_verifying(
+                        mission_id, mission.control_epoch
+                    )
+                    await self._finalize(verifying)
+                else:
+                    await self._store.mark_mission_blocked(
+                        mission_id, f"unknown durable wait resume kind: {kind[:64]}"
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("mission_controller_wait_resume_failed: %s", exc)
+                with contextlib.suppress(Exception):
+                    await self._store.mark_mission_blocked(
+                        mission_id, f"wait resume failed: {str(exc)[:200]}"
+                    )
+            finally:
+                if self._run_tokens.get(mission_id) is token:
+                    self._run_tokens.pop(mission_id, None)
+
+        asyncio.get_running_loop().create_task(
+            _resume_controller(), name=f"mission-controller-wait-{mission_id[:8]}"
+        )
+
     async def _replan(self, mission: MissionRecord, *, revision: str, reason: str) -> MissionRecord:
         """A revision creates a NEW versioned plan from the Controller.
 
@@ -747,7 +1090,9 @@ class MissionService:
         and the new plan is validated before it can run (an invalid revision
         leaves the previous state untouched and the refusal recorded).
         """
-        await self._reconcile_uncertain(mission.mission_id)
+        reconciled = await self._reconcile_uncertain(mission.mission_id)
+        if reconciled.status == "BLOCKED":
+            return reconciled
         refreshed = await self._store.get_mission(mission.mission_id)
         assert refreshed is not None
         mission = refreshed
@@ -882,15 +1227,39 @@ def _fast_checks_for(recipe_id: str, recipe_args: dict[str, str]) -> list[CheckS
             return [_check("page-shows-destination", "page_state", {"markers": markers[:4]})]
     if recipe_id == "search_browser" and recipe_args.get("query"):
         query = str(recipe_args["query"]).lower()
-        markers = [w for w in query.split() if len(w) > 2][:4]
+        markers = [w for w in query.split() if w][:4]
         if markers:
             return [_check("page-shows-query", "page_state", {"markers": markers})]
     if recipe_id == "type_text":
         # The payload itself never enters the check spec: the verifier
         # compares the observed field value against the vault-resolved text.
         return [_check("field-carries-payload", "field_value", {"payload_ref": "user_text_1"})]
-    if recipe_id in {"scroll", "press_ordinal"}:
-        return [_check("window-reobserved", "window_visible", {})]
+    if recipe_id == "scroll" and recipe_args.get("direction"):
+        # D06: scroll owes an exact before/after offset diff — a re-observed
+        # window proves nothing. The expected delta comes from the command.
+        try:
+            amount = max(1, int(recipe_args.get("amount", 1)))
+        except (TypeError, ValueError):
+            amount = 1
+        return [_check(
+            f"scroll-moved-{str(recipe_args['direction'])[:8]}",
+            "scroll_effect",
+            {"direction": str(recipe_args["direction"]), "min_delta": amount},
+        )]
+    if recipe_id == "press_ordinal":
+        # D15: the check binds the RESOLVED ordinal control identity (kind
+        # + 1-based index), so an unrelated control's focus change can
+        # never verify the press.
+        kind = str(recipe_args.get("kind") or "")[:16]
+        try:
+            index = int(recipe_args.get("index", 0))
+        except (TypeError, ValueError):
+            index = 0
+        return [_check(
+            f"press-effective-{kind or 'control'}-{index or '?'}",
+            "press_effect",
+            {"ordinal_index": index, "role_kind": kind},
+        )]
     return []
 
 

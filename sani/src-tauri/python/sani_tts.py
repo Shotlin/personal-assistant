@@ -28,12 +28,20 @@ text output keeps working, voice acceptance stays BLOCKED (never faked).
 
 from __future__ import annotations
 
+import array
 import base64
 import json
 import math
 import os
+import queue as _queue
+import re
 import struct
+import subprocess
 import sys
+import tempfile
+import threading
+import time
+import wave
 from dataclasses import dataclass
 from typing import Any, Iterator
 
@@ -174,7 +182,10 @@ class EngineAdapter:
         raise NotImplementedError("engine synthesis is implemented by the selected adapter")
 
     def cancel(self, generation: int) -> None:
-        raise NotImplementedError("engine cancellation is implemented by the selected adapter")
+        """Best-effort cancellation hook. A default no-op so a control
+        cancel can never crash a worker whose engine has no engine-side
+        cancellation (D09: cancel must be safe for every adapter)."""
+        return None
 
     def close(self) -> None:
         raise NotImplementedError
@@ -222,15 +233,115 @@ class SilenceEngine(EngineAdapter):
         return None
 
 
+#: Spoken replies stay short: the full answer is on screen, the voice gives
+#: the gist. Cut at a sentence boundary when one exists.
+SPEECH_MAX_CHARS = 500
+
+
+def speakable(text: str) -> str:
+    """Plain spoken text: no markdown, URLs, or code noise, bounded length."""
+    cleaned = re.sub(r"```.*?```", " ", text, flags=re.S)
+    cleaned = re.sub(r"`([^`]*)`", r"\1", cleaned)
+    cleaned = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", cleaned)
+    cleaned = re.sub(r"https?://\S+", " link ", cleaned)
+    cleaned = re.sub(r"[*_#>|~]+", " ", cleaned)
+    cleaned = re.sub(r"^\s*[-\u2022]\s+", "", cleaned, flags=re.M)
+    cleaned = " ".join(cleaned.split())
+    if len(cleaned) <= SPEECH_MAX_CHARS:
+        return cleaned
+    head = cleaned[:SPEECH_MAX_CHARS]
+    cut = max(head.rfind(". "), head.rfind("? "), head.rfind("! "))
+    return head[: cut + 1] if cut > 80 else head
+
+
+class MacSayEngine(EngineAdapter):
+    """Local speech through macOS ``say`` (no network, no assets, no keys).
+
+    ``say`` renders the utterance to a temporary 24 kHz mono WAV; the worker
+    streams it as bounded f32 chunks. The file never leaves the temp dir and
+    is removed immediately after reading.
+    """
+
+    sample_rate = 24000
+    CHUNK_SECONDS = 0.5
+
+    def __init__(self) -> None:
+        self.cancelled: set[int] = set()
+        self._proc: subprocess.Popen[bytes] | None = None
+
+    def load(self, asset_manifest: dict[str, Any]) -> None:
+        return None
+
+    def synthesize(self, text: str, utterance_id: str, generation: int) -> Iterator[tuple[int, bytes]]:
+        spoken = speakable(text)
+        if not spoken:
+            return
+        fd, path = tempfile.mkstemp(suffix=".wav", prefix="sani-say-")
+        os.close(fd)
+        try:
+            self._proc = subprocess.Popen(
+                ["/usr/bin/say", "-o", path, f"--data-format=LEI16@{self.sample_rate}", "--", spoken],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            if self._proc.wait(timeout=30) != 0:
+                raise RuntimeError("macOS speech synthesis failed")
+            if generation in self.cancelled:
+                return
+            with wave.open(path, "rb") as wav:
+                if wav.getsampwidth() != 2 or wav.getnchannels() != 1:
+                    raise RuntimeError("unexpected speech format")
+                rate = wav.getframerate()
+                step = int(rate * self.CHUNK_SECONDS)
+                while True:
+                    frames = wav.readframes(step)
+                    if not frames:
+                        return
+                    ints = array.array("h")
+                    ints.frombytes(frames[: len(frames) // 2 * 2])
+                    if sys.byteorder == "big":
+                        ints.byteswap()
+                    floats = struct.pack(f"<{len(ints)}f", *(v / 32768.0 for v in ints))
+                    yield (rate, floats)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeError(f"macOS speech unavailable: {exc}") from exc
+        finally:
+            self._proc = None
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+    def cancel(self, generation: int) -> None:
+        self.cancelled.add(generation)
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+
+    def close(self) -> None:
+        return None
+
+
 def build_engine() -> EngineAdapter:
     """The engine is fixed by environment; no runtime engine switching."""
     if ENGINE_NAME == "silence":
         return SilenceEngine()
+    if ENGINE_NAME == "macos-say":
+        return MacSayEngine()
     return UnspecifiedEngine()
 
 
 class Worker:
-    """Framed protocol loop over stdin/stdout; synthesis runs inline per chunk."""
+    """Framed protocol loop over stdin/stdout.
+
+    D09: synthesis runs on a DEDICATED thread consuming an internal FIFO,
+    while the serve loop keeps reading frames. A cancel/stop control
+    arriving DURING active synthesis is processed immediately — the epoch
+    bumps, the engine is told to cancel, and the synthesis thread abandons
+    the stale utterance at its next chunk boundary. Without this, input
+    controls were unreadable for the whole synthesis.
+    """
+
+    MAX_PENDING_REQUESTS = 4
 
     def __init__(self, reader: Any, writer: Any, engine: EngineAdapter | None = None) -> None:
         self._reader = reader
@@ -239,44 +350,109 @@ class Worker:
         self._generation = 0
         self._shutdown = False
         self._buffered_seconds = 0.0
+        self._requests: "_queue.Queue[Any]" = _queue.Queue(
+            maxsize=self.MAX_PENDING_REQUESTS
+        )
+        self._write_lock = threading.Lock()
+        self._synth_thread: threading.Thread | None = None
 
-    def _write(self, payload: dict[str, Any]) -> None:
+    def _write(self, payload: dict[str, Any], *, droppable: bool = False) -> None:
+        """One framed write, bounded even when the output pipe blocks.
+
+        D18: a PCM chunk is droppable — a blocked output must never stop
+        the control path from being read or answered (generation fencing
+        discards the stale audio anyway). Control acknowledgements retry
+        with a bounded timeout so a full stop still terminates.
+        """
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         if len(body) > FRAME_MAX_BYTES:
             return
-        self._writer.write(len(body).to_bytes(4, "big") + body)
-        self._writer.flush()
+        deadline = time.monotonic() + 2.0
+        while True:
+            if not self._write_lock.acquire(timeout=0.25):
+                if (droppable and self._shutdown) or time.monotonic() > deadline:
+                    return
+                continue
+            try:
+                self._writer.write(len(body).to_bytes(4, "big") + body)
+                self._writer.flush()
+                return
+            finally:
+                self._write_lock.release()
 
     def _event(self, event: str, **fields: Any) -> None:
         if event not in EVENT_KINDS:
             raise TtsProtocolError(f"unknown event kind {event!r}")
         self._write({"type": "event", "event": {"event": event, **fields}})
 
-    def _refuse(self, request_id: Any, message: str) -> None:
-        self._event("error", request_id=request_id, message=message[:300])
+    def _event_droppable(self, event: str, **fields: Any) -> None:
+        """A PCM chunk frame: bounded write, droppable on shutdown (D18)."""
+        if event not in EVENT_KINDS:
+            raise TtsProtocolError(f"unknown event kind {event!r}")
+        self._write({"type": "event", "event": {"event": event, **fields}},
+                    droppable=True)
+
+    def _refuse(self, request_id: Any, message: str, *,
+                utterance_id: str | None = None, generation: int | None = None) -> None:
+        self._event("error", request_id=request_id, utterance_id=utterance_id,
+                    generation=generation, message=message[:300])
 
     def serve(self) -> None:
         self._event("ready", engine=ENGINE_NAME)
-        while not self._shutdown:
-            header = self._reader.read(4)
-            if not header or len(header) < 4:
-                break
-            length = int.from_bytes(header, "big")
-            if length > FRAME_MAX_BYTES:
-                break
-            body = self._reader.read(length)
-            if len(body) < length:
-                break
-            try:
-                frame = json.loads(body.decode("utf-8"))
-                if not isinstance(frame, dict):
-                    raise TtsProtocolError("frame must be a JSON object")
-                self._handle(frame)
-            except TtsProtocolError as exc:
-                self._refuse(None, str(exc))
-            except Exception as exc:  # noqa: BLE001
-                self._refuse(None, f"worker error: {exc}")
-                break
+        self._synth_thread = threading.Thread(
+            target=self._synth_loop, name="sani-tts-synthesis", daemon=True
+        )
+        self._synth_thread.start()
+        try:
+            while not self._shutdown:
+                header = self._reader.read(4)
+                if not header or len(header) < 4:
+                    break
+                length = int.from_bytes(header, "big")
+                if length > FRAME_MAX_BYTES:
+                    break
+                body = self._reader.read(length)
+                if len(body) < length:
+                    break
+                try:
+                    frame = json.loads(body.decode("utf-8"))
+                    if not isinstance(frame, dict):
+                        raise TtsProtocolError("frame must be a JSON object")
+                    self._handle(frame)
+                except TtsProtocolError as exc:
+                    self._refuse(None, str(exc))
+                except Exception as exc:  # noqa: BLE001
+                    self._refuse(None, f"worker error: {exc}")
+                    break
+        finally:
+            # D18: the sentinel never blocks forever on a FULL FIFO. On an
+            # explicit shutdown control the queued work is discarded (the
+            # in-flight generation aborts; the bounded join terminates).
+            # On plain EOF the loop drains its queue first — the sentinel
+            # waits for space, which the synth thread provides as it
+            # consumes.
+            if self._shutdown:
+                deadline = time.monotonic() + 1.0
+                while True:
+                    try:
+                        self._requests.put(None, timeout=0.1)
+                        break
+                    except _queue.Full:
+                        if time.monotonic() >= deadline:
+                            break
+                if self._synth_thread is not None:
+                    self._synth_thread.join(timeout=2.0)
+            else:
+                deadline = time.monotonic() + 10.0
+                while True:
+                    try:
+                        self._requests.put(None, timeout=0.2)
+                        break
+                    except _queue.Full:
+                        if time.monotonic() >= deadline:
+                            break
+                if self._synth_thread is not None:
+                    self._synth_thread.join(timeout=15.0)
 
     def _handle(self, frame: dict[str, Any]) -> None:
         frame_type = frame.get("type")
@@ -295,9 +471,27 @@ class Worker:
             self._event("finished", utterance_id=request.utterance_id, generation=request.generation)
             return
         if self._engine is None or isinstance(self._engine, UnspecifiedEngine):
-            self._refuse(request.request_id, "no speech engine is configured (audition pending)")
+            self._refuse(request.request_id, "no speech engine is configured (audition pending)",
+                         utterance_id=request.utterance_id, generation=request.generation)
             return
-        self._synthesize_request(request)
+        try:
+            self._requests.put_nowait(request)
+        except _queue.Full:
+            self._refuse(request.request_id,
+                         "synthesis queue is full; the text path stays available",
+                         utterance_id=request.utterance_id, generation=request.generation)
+
+    def _synth_loop(self) -> None:
+        while True:
+            try:
+                request = self._requests.get(timeout=0.2)
+            except _queue.Empty:
+                if self._shutdown:
+                    return
+                continue
+            if request is None or self._shutdown:
+                return
+            self._synthesize_request(request)
 
     def _handle_control(self, frame: dict[str, Any]) -> None:
         action = frame.get("action")
@@ -309,9 +503,16 @@ class Worker:
             if not isinstance(generation, int) or isinstance(generation, bool):
                 raise TtsProtocolError("cancel requires an integer generation")
             # Cancellation bumps the epoch: anything older yields no audio.
+            # The engine hook and the event fire HERE, on the read thread —
+            # never behind the synthesis that is currently running (D09).
             if generation > self._generation:
                 self._generation = generation
-            self._engine.cancel(generation)
+            try:
+                self._engine.cancel(generation)
+            except Exception:  # noqa: BLE001 -- a broken engine cancel is
+                # contained: the epoch is already bumped and the audio is
+                # fenced; the acknowledgement still goes out (D18).
+                pass
             self._event("cancelled", generation=generation)
             return
         raise TtsProtocolError(f"unknown control action {action!r}")
@@ -322,19 +523,24 @@ class Worker:
             for sample_rate, pcm in self._engine.synthesize(
                 request.text, request.utterance_id, request.generation
             ):
-                if request.generation < self._generation:
+                if request.generation < self._generation or self._shutdown:
                     self._event(
                         "cancelled",
                         utterance_id=request.utterance_id,
                         generation=request.generation,
                     )
                     return
-                self._buffered_seconds += len(pcm) / 4 / sample_rate
-                if self._buffered_seconds > MAX_BUFFERED_SECONDS:
-                    self._refuse(request.request_id, "decoder buffer bound exceeded")
-                    return
+                # A framed write is synchronous: pipe backpressure bounds
+                # pending output. Count this chunk, not lifetime synthesis.
+                if sample_rate <= 0 or len(pcm) / 4 / sample_rate > MAX_BUFFERED_SECONDS:
+                    raise RuntimeError("decoder buffer bound exceeded")
                 encoded = base64.b64encode(pcm).decode("ascii")
-                self._event(
+                PcmChunk.validate({
+                    "utterance_id": request.utterance_id, "generation": request.generation,
+                    "sequence": sequence, "sample_rate": sample_rate, "channels": 1,
+                    "format": "f32le", "pcm_base64": encoded, "final": False,
+                })
+                self._event_droppable(
                     "chunk",
                     utterance_id=request.utterance_id,
                     generation=request.generation,
@@ -346,14 +552,18 @@ class Worker:
                     final=False,
                 )
                 sequence += 1
-        except RuntimeError as exc:
-            self._refuse(request.request_id, str(exc))
+        except (RuntimeError, TtsProtocolError) as exc:
+            self._refuse(request.request_id, str(exc), utterance_id=request.utterance_id,
+                         generation=request.generation)
             return
-        # The adapter records cancelled generations (cancel() is part of the
-        # interface), so an early generator end after a cancel is reported as
-        # cancelled -- never as a finished utterance.
+        # A cancelled utterance is never reported as finished: an epoch bump
+        # (control cancel) or the adapter's own cancelled record both end
+        # this utterance as cancelled (D09).
         cancelled = getattr(self._engine, "cancelled", ())
-        if request.generation in (cancelled if isinstance(cancelled, (set, frozenset, list)) else ()):
+        engine_cancelled = request.generation in (
+            cancelled if isinstance(cancelled, (set, frozenset, list)) else ()
+        )
+        if engine_cancelled or request.generation < self._generation:
             self._event(
                 "cancelled", utterance_id=request.utterance_id, generation=request.generation
             )

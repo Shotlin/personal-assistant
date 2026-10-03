@@ -1,0 +1,472 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.26
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.5
+   Compiling memchr v2.8.3
+   Compiling serde_core v1.0.229
+   Compiling find-msvc-tools v0.1.13
+   Compiling shlex v2.0.1
+   Compiling itoa v1.0.18
+   Compiling writeable v0.6.4
+   Compiling cc v1.4.7
+   Compiling litemap v0.8.3
+   Compiling utf8_iter v1.0.4
+   Compiling siphasher v1.0.3
+   Compiling icu_properties_data v2.3.0
+   Compiling icu_normalizer_data v2.3.0
+   Compiling phf_shared v0.13.1
+   Compiling fastrand v2.5.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling phf_generator v0.13.1
+   Compiling zmij v1.0.23
+   Compiling bytes v1.12.1
+   Compiling aho-corasick v1.1.5
+   Compiling smallvec v1.16.1
+   Compiling serde v1.0.229
+   Compiling regex-syntax v0.8.11
+   Compiling regex-automata v0.4.18
+   Compiling regex v1.13.1
+   Compiling glob v0.3.4
+   Compiling getrandom v0.4.3
+   Compiling http v1.5.0
+   Compiling parking_lot_core v0.9.12
+   Compiling winnow v1.0.4
+   Compiling thiserror v2.0.20
+   Compiling time-core v0.1.9
+   Compiling num-conv v0.2.2
+   Compiling toml_parser v1.1.3+spec-1.1.0
+   Compiling phf_codegen v0.13.1
+   Compiling toml_writer v1.1.2+spec-1.1.0
+   Compiling typeid v1.0.3
+   Compiling deranged v0.5.8
+   Compiling bitflags v2.13.2
+   Compiling syn v3.0.6
+   Compiling syn v2.0.119
+   Compiling strsim v0.11.1
+   Compiling powerfmt v0.2.0
+   Compiling serde_json v1.0.151
+   Compiling ident_case v1.0.1
+   Compiling scopeguard v1.2.0
+   Compiling thiserror v1.0.69
+   Compiling erased-serde v0.4.10
+   Compiling version_check v0.9.5
+   Compiling rustc-hash v2.1.3
+   Compiling byteorder v1.5.0
+   Compiling synstructure v0.14.0
+   Compiling darling_core v0.24.1
+   Compiling phf_macros v0.13.1
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.3
+   Compiling serde_derive v1.0.229
+   Compiling zerofrom v0.1.8
+   Compiling zerovec-derive v0.11.6
+   Compiling displaydoc v0.2.7
+   Compiling thiserror-impl v2.0.20
+   Compiling darling_macro v0.24.1
+   Compiling thiserror-impl v1.0.69
+   Compiling lock_api v0.4.14
+   Compiling unic-char-range v0.9.0
+   Compiling fnv v1.0.7
+   Compiling unic-common v0.9.0
+   Compiling new_debug_unreachable v1.0.6
+   Compiling objc2-encode v4.1.0
+   Compiling unic-ucd-version v0.9.0
+   Compiling unic-char-property v0.9.0
+   Compiling darling v0.24.1
+   Compiling phf v0.13.1
+   Compiling string_cache_codegen v0.6.1
+   Compiling objc2-exception-helper v0.1.1
+   Compiling precomputed-hash v0.1.1
+   Compiling hashbrown v0.17.1
+   Compiling equivalent v1.0.2
+   Compiling alloc-no-stdlib v2.0.4
+   Compiling alloc-stdlib v0.2.4
+   Compiling indexmap v2.14.2
+   Compiling web_atoms v0.2.6
+   Compiling parking_lot v0.12.5
+   Compiling unic-ucd-ident v0.9.0
+   Compiling serde_spanned v1.1.1
+   Compiling quick-xml v0.42.0
+   Compiling base64 v0.23.1
+   Compiling anyhow v1.0.104
+   Compiling string_cache v0.9.0
+   Compiling yoke v0.8.3
+   Compiling brotli-decompressor v5.0.3
+   Compiling semver v1.0.28
+   Compiling dunce v1.0.5
+   Compiling same-file v1.0.6
+   Compiling objc2 v0.6.4
+   Compiling log v0.4.34
+   Compiling once_cell v1.21.4
+   Compiling serde_with_macros v3.23.0
+   Compiling percent-encoding v2.3.2
+   Compiling dtoa v1.0.11
+   Compiling ctor-proc-macro v0.0.7
+   Compiling autocfg v1.5.1
+   Compiling ctor v0.8.0
+   Compiling indexmap v1.9.3
+   Compiling dtoa-short v0.3.5
+   Compiling form_urlencoded v1.2.2
+   Compiling brotli v8.0.4
+   Compiling walkdir v2.5.0
+   Compiling tendril v0.5.1
+   Compiling uuid v1.26.1
+   Compiling cssparser-macros v0.6.1
+   Compiling derive_more-impl v2.1.1
+   Compiling selectors v0.36.1
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling camino v1.2.6
+   Compiling derive_more v2.1.1
+   Compiling toml v1.1.6+spec-1.1.0
+   Compiling cssparser v0.36.0
+   Compiling markup5ever v0.38.0
+   Compiling zerovec v0.11.8
+   Compiling zerotrie v0.2.5
+   Compiling swift-rs v1.0.8
+   Compiling serde_derive_internals v0.29.1
+   Compiling servo_arc v0.4.3
+   Compiling hashbrown v0.12.3
+   Compiling schemars v0.8.22
+   Compiling bit-vec v0.8.0
+   Compiling bit-set v0.8.0
+   Compiling schemars_derive v0.8.22
+   Compiling html5ever v0.38.0
+   Compiling cfb v0.7.3
+   Compiling cargo-platform v0.1.9
+   Compiling jsonptr v0.6.3
+   Compiling time v0.3.55
+   Compiling foldhash v0.2.0
+   Compiling dyn-clone v1.0.20
+   Compiling base64 v0.21.7
+   Compiling serde-untagged v0.1.9
+   Compiling json-patch v3.0.1
+   Compiling cargo_metadata v0.19.2
+   Compiling dom_query v0.27.0
+   Compiling plist v1.10.1
+   Compiling infer v0.19.0
+   Compiling serde_with v3.23.0
+   Compiling objc2-core-foundation v0.3.2
+   Compiling block2 v0.6.2
+   Compiling pin-project-lite v0.2.17
+   Compiling simd-adler32 v0.3.10
+   Compiling option-ext v0.2.0
+   Compiling dirs-sys v0.5.0
+   Compiling errno v0.3.14
+   Compiling adler2 v2.0.1
+   Compiling crc32fast v1.5.2
+   Compiling signal-hook-registry v1.4.8
+   Compiling dirs v6.0.0
+   Compiling rustc_version v0.4.1
+   Compiling tokio-macros v2.7.2
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling socket2 v0.6.5
+   Compiling objc2-foundation v0.3.2
+   Compiling mio v1.2.3
+   Compiling winnow v0.7.15
+   Compiling tinystr v0.8.4
+   Compiling potential_utf v0.1.6
+   Compiling icu_locale_core v2.3.0
+   Compiling icu_collections v2.3.0
+   Compiling tokio v1.53.1
+   Compiling icu_provider v2.3.1
+   Compiling icu_normalizer v2.3.0
+   Compiling icu_properties v2.3.0
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling embed-resource v3.0.11
+   Compiling miniz_oxide v0.9.1
+   Compiling generic-array v0.14.7
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling heck v0.5.0
+   Compiling crossbeam-utils v0.8.23
+   Compiling futures-core v0.3.34
+   Compiling url v2.5.8
+   Compiling flate2 v1.1.10
+   Compiling urlpattern v0.3.0
+   Compiling cargo_toml v0.22.3
+   Compiling tauri-winres v0.3.6
+   Compiling objc2-app-kit v0.3.2
+   Compiling miniz_oxide v0.8.9
+   Compiling fdeflate v0.3.7
+   Compiling time-macros v0.2.32
+   Compiling typenum v1.20.1
+   Compiling core-foundation-sys v0.8.7
+   Compiling dpi v0.1.2
+   Compiling clang-sys v1.9.1
+   Compiling bitflags v1.3.2
+   Compiling raw-window-handle v0.6.2
+   Compiling crossbeam-channel v0.5.17
+   Compiling cookie v0.18.2
+   Compiling ring v0.17.14
+   Compiling base64 v0.22.1
+   Compiling minimal-lexical v0.2.1
+   Compiling nom v7.1.3
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling core-foundation v0.10.1
+   Compiling tauri-utils v2.9.3
+   Compiling foreign-types-macros v0.2.4
+   Compiling libloading v0.8.9
+   Compiling zeroize v1.9.0
+   Compiling unicode-segmentation v1.13.3
+   Compiling foreign-types-shared v0.3.1
+   Compiling bindgen v0.72.1
+   Compiling either v1.18.0
+   Compiling foreign-types v0.5.0
+   Compiling itertools v0.13.0
+   Compiling keyboard-types v0.7.0
+   Compiling objc2-web-kit v0.3.2
+   Compiling rustls-pki-types v1.15.1
+   Compiling cexpr v0.6.0
+   Compiling core-graphics-types v0.2.0
+   Compiling digest v0.10.7
+   Compiling png v0.17.16
+   Compiling futures-macro v0.3.34
+   Compiling http-body v1.1.0
+   Compiling cpufeatures v0.2.17
+   Compiling getrandom v0.2.17
+   Compiling wry v0.55.1
+   Compiling untrusted v0.9.0
+   Compiling objc-sys v0.3.5
+   Compiling slab v0.4.12
+   Compiling httparse v1.10.1
+   Compiling zerocopy v0.8.57
+   Compiling futures-task v0.3.34
+   Compiling tauri-runtime v2.11.3
+   Compiling shlex v1.3.0
+   Compiling futures-util v0.3.34
+   Compiling ico v0.5.0
+   Compiling sha2 v0.10.9
+   Compiling core-graphics v0.25.0
+   Compiling tauri-build v2.6.3
+   Compiling tauri-plugin v2.6.3
+   Compiling png v0.18.1
+   Compiling dispatch2 v0.3.1
+   Compiling ahash v0.8.12
+   Compiling tower-service v0.3.3
+   Compiling try-lock v0.2.5
+   Compiling getrandom v0.3.4
+   Compiling rustls v0.23.45
+   Compiling tauri-runtime-wry v2.11.4
+   Compiling muda v0.19.3
+   Compiling want v0.3.1
+   Compiling tao v0.35.3
+   Compiling tauri-codegen v2.6.3
+   Compiling coreaudio-sys v0.2.18
+   Compiling rustls-webpki v0.103.15
+   Compiling futures-channel v0.3.34
+   Compiling objc2-core-graphics v0.3.2
+   Compiling tracing-core v0.1.36
+   Compiling serialize-to-javascript-impl v0.1.2
+   Compiling vcpkg v0.2.15
+   Compiling subtle v2.6.1
+   Compiling pkg-config v0.3.34
+   Compiling atomic-waker v1.1.2
+   Compiling serialize-to-javascript v0.1.2
+   Compiling tracing v0.1.44
+   Compiling hyper v1.11.1
+   Compiling tray-icon v0.24.2
+   Compiling libsqlite3-sys v0.30.1
+   Compiling objc2 v0.5.2
+   Compiling window-vibrancy v0.6.0
+   Compiling sync_wrapper v1.0.2
+   Compiling serde_repr v0.1.21
+   Compiling dirs-sys v0.3.7
+   Compiling tower-layer v0.3.3
+   Compiling ipnet v2.12.2
+   Compiling utf8parse v0.2.2
+   Compiling embed_plist v1.2.2
+   Compiling mime v0.3.17
+   Compiling anstyle-parse v1.0.0
+   Compiling hashbrown v0.14.5
+   Compiling hyper-util v0.1.20
+   Compiling objc2-foundation v0.2.2
+   Compiling tower v0.5.3
+   Compiling dirs v4.0.0
+   Compiling webpki-roots v1.0.9
+   Compiling ryu v1.0.23
+   Compiling futures-sink v0.3.34
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling jiff-core v0.1.1
+   Compiling cpal v0.15.3
+   Compiling tauri v2.11.6
+   Compiling tauri-macros v2.6.3
+   Compiling tauri-plugin-autostart v2.5.1
+   Compiling tauri-plugin-global-shortcut v2.3.2
+   Compiling anstyle v1.0.14
+   Compiling colorchoice v1.0.5
+   Compiling anstyle-query v1.1.5
+   Compiling anstream v1.0.0
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.10
+   Compiling objc2-app-kit v0.2.2
+   Compiling jiff v0.2.37
+   Compiling sani v0.1.0 (/private/tmp/jarvis-audit-58dac9c/sani/src-tauri)
+   Compiling tower-http v0.6.11
+   Compiling tokio-util v0.7.19
+   Compiling serde_urlencoded v0.7.1
+   Compiling hashlink v0.9.1
+   Compiling auto-launch v0.5.0
+   Compiling http-body-util v0.1.5
+   Compiling global-hotkey v0.8.0
+   Compiling env_filter v2.0.0
+   Compiling mach2 v0.4.3
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling fallible-iterator v0.3.0
+   Compiling dasp_sample v0.11.0
+   Compiling reqwest v0.12.28
+   Compiling rusqlite v0.32.1
+   Compiling env_logger v0.11.11
+   Compiling window-vibrancy v0.5.3
+   Compiling coreaudio-rs v0.11.3
+warning: type `RunGuard` is more private than the item `SaniState::run`
+  --> src/app_state.rs:60:5
+   |
+60 |     pub(crate) run: Mutex<Option<RunGuard>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `SaniState::run` is reachable at visibility `pub(crate)`
+   |
+note: but type `RunGuard` is only usable at visibility `pub(self)`
+  --> src/app_state.rs:50:1
+   |
+50 | struct RunGuard {
+   | ^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: fields `sample_rate` and `stop` are never read
+  --> src/audio.rs:30:9
+   |
+28 | pub struct AudioHandle {
+   |            ----------- fields in this struct
+29 |     pub device_name: String,
+30 |     pub sample_rate: u32,
+   |         ^^^^^^^^^^^
+...
+36 |     pub stop: Arc<AtomicBool>,
+   |         ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `hide_main` is never used
+   --> src/windows.rs:518:8
+    |
+518 | pub fn hide_main(app: &AppHandle) {
+    |        ^^^^^^^^^
+
+warning: function `show_overlays` is never used
+   --> src/windows.rs:979:8
+    |
+979 | pub fn show_overlays(app: &AppHandle) {
+    |        ^^^^^^^^^^^^^
+
+warning: `sani` (bin "sani" test) generated 4 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 51.19s
+     Running unittests src/main.rs (/private/tmp/jarvis-cargo-58dac9c/debug/deps/sani-3c93e34a45870196)
+
+running 90 tests
+test app_state::admission_tests::text_admission_only_accepts_idle_state ... ok
+test app_state::admission_tests::second_text_turn_is_rejected_after_the_first_claims_working ... ok
+test macos_work_area::tests::visible_frame_preserves_a_left_dock_inset ... ok
+test macos_work_area::tests::visible_frame_preserves_a_right_dock_inset ... ok
+test onboarding::control_tests::only_a_denial_the_driver_itself_answered_reads_as_not_authorized ... ok
+test onboarding::control_tests::a_policy_lockout_is_its_own_state_never_a_permission_one ... ok
+test onboarding::control_tests::priority_runs_from_the_outermost_cause_inward ... ok
+test onboarding::control_tests::a_granted_mac_with_a_live_daemon_is_never_reported_as_unauthorized ... ok
+test onboarding::control_tests::each_state_has_one_distinct_pair_of_words ... ok
+test onboarding::control_tests::waiting_for_a_grant_is_never_called_a_denial ... ok
+test overlay_geometry::tests::committing_an_unusable_frame_stores_the_default ... ok
+test overlay_geometry::tests::bottom_dock_inset_keeps_frames_out_of_the_dock ... ok
+test overlay_geometry::tests::committing_keeps_logical_size_but_enforces_supported_limits ... ok
+test overlay_geometry::tests::defaults_reproduce_the_phase_one_placement ... ok
+test overlay_geometry::tests::disconnected_affinity_falls_back_to_main_then_primary ... ok
+test overlay_geometry::tests::frames_never_exceed_a_small_work_area ... ok
+test overlay_geometry::tests::invalid_frames_fall_back_to_defaults ... ok
+test overlay_geometry::tests::left_dock_inset_keeps_frames_out_of_the_dock ... ok
+test overlay_geometry::tests::logical_frames_are_independent_of_the_backing_scale_factor ... ok
+test overlay_geometry::tests::missing_affinity_uses_main_display_and_clamps ... ok
+test overlay_geometry::tests::no_displays_at_all_still_yields_a_safe_frame ... ok
+test overlay_geometry::tests::panel_keeps_logical_width_on_larger_work_area ... ok
+test overlay_geometry::tests::pill_height_is_always_the_supported_fixed_height ... ok
+test overlay_geometry::tests::right_dock_inset_keeps_frames_out_of_the_dock ... ok
+test overlay_geometry::tests::saved_affinity_wins_over_the_main_window_display ... ok
+test overlay_geometry::tests::undersized_frames_are_raised_to_the_supported_minimum ... ok
+test runtime::tests::explicit_agent_modes_select_the_matching_registry_entry ... ok
+test sani_core::tests::a_detached_daemon_is_found_and_reclaimed_from_its_socket ... ignored, starts and stops a real throwaway CUA daemon on a temp socket
+test runtime::tests::only_registry_ids_are_selectable ... ok
+test runtime::tests::legacy_auto_and_unknown_ids_do_not_silently_route_to_another_agent ... ok
+test sani_core::tests::bounded_launch_keeps_the_reviewed_manifest_and_its_approval_flag ... ok
+test sani_core::tests::cold_registry_handshake_has_a_bounded_boot_budget ... ok
+test sani_core::tests::an_orphaned_driver_on_the_same_socket_is_detected_as_foreign ... ok
+test sani_core::tests::a_daemon_on_another_socket_is_left_alone ... ok
+test sani_core::tests::embedded_driver_recovery_requires_a_live_child_and_live_socket ... ok
+test sani_core::tests::finds_the_real_orphaned_driver_running_on_this_mac ... ignored, reads the live process table: asserts Sani can find its own orphan
+test sani_core::tests::permission_probe_keeps_a_policy_lockout_apart_from_a_denial ... ok
+test sani_core::tests::encode_frame_prefixes_big_endian_length ... ok
+test sani_core::tests::process_rows_parse_pid_ppid_and_the_full_argument_line ... ok
+test sani_core::tests::recovery_inside_the_cooldown_is_refused_so_no_herd_starts ... ok
+test sani_core::tests::read_frame_rejects_non_json_body ... ok
+test sani_core::tests::read_frame_rejects_truncated_header ... ok
+test sani_core::tests::read_frame_roundtrips_then_reports_eof ... ok
+test sani_core::tests::read_frame_rejects_truncated_body ... ok
+test sani_core::tests::read_frame_rejects_oversize_length ... ok
+test sani_core::tests::request_maps_error_response_to_err ... ok
+test sani_core::tests::request_roundtrips_against_fake_peer ... ok
+test sani_core::tests::request_drops_interleaved_event_frames ... ok
+test sani_core::tests::standard_launch_asks_for_no_manifest_at_all ... ok
+test sani_core::tests::request_reports_eof_when_sidecar_exits ... ok
+test sani_core::tests::run_stream_forwards_events_and_returns_final_result ... ok
+test sani_core::tests::the_reported_mode_is_read_from_the_daemon_not_from_the_setting ... ok
+test sani_core::tests::the_sidecars_own_mcp_client_is_never_mistaken_for_a_daemon ... ok
+test sani_core::tests::the_watchdog_recovers_a_dead_driver_but_never_interferes_with_a_live_turn ... ok
+test sani_core::tests::unavailable_or_empty_registry_gets_exactly_one_recovery_attempt ... ok
+test settings::tests::computer_control_starts_in_standard_mode_and_keeps_the_rollback ... ok
+test settings::tests::empty_agent_mode_is_migrated_to_velo ... ok
+test settings::tests::maximized_transition_keeps_last_normal_bounds ... ok
+test sani_core::tests::run_stream_sends_cancel_and_keeps_reading_until_the_final_response ... ok
+test settings::tests::missing_agent_mode_defaults_to_velo_without_rewriting_explicit_modes ... ok
+test settings::tests::old_settings_without_overlay_layout_still_load ... ok
+test settings::tests::older_settings_without_main_window_load_normally ... ok
+test settings::tests::overlay_layout_defaults_survive_a_partial_document ... ok
+test sani_core::tests::embedded_driver_socket_must_accept_connections_before_ready ... FAILED
+test settings::tests::overlay_layout_round_trips_through_json ... ok
+test settings::tests::saving_overlay_layout_never_changes_main_window ... ok
+test setup::tests::all_complete_reaches_one_hundred ... ok
+test setup::tests::migrate_preserves_completed_and_adds_new ... ok
+test setup::tests::keys_are_unique_and_round_trip ... ok
+test sani_core::tests::run_stream_times_out_at_deadline ... ok
+test setup::tests::fresh_state_is_zero_percent ... ok
+test setup::tests::weights_sum_to_one_hundred ... ok
+test setup::tests::skipped_counts_as_done ... ok
+test speech::tests::accepts_the_sidecars_catalog_shape ... ok
+test speech::tests::model_mutation_is_rejected_during_any_voice_capture_stage ... ok
+test speech::tests::owned_cache_path_rejects_path_traversal ... ok
+test speech::tests::rejects_a_catalog_whose_default_is_not_supported ... ok
+test speech::tests::stale_worker_contract_has_a_specific_repairable_error ... ok
+test speech::tests::the_ready_line_the_sidecar_actually_sends_deserialises ... ok
+test system_permissions::tests::granted_or_unknown_counts_as_usable ... ok
+test system_permissions::tests::statuses_serialize_snake_case ... ok
+test window_geometry::tests::malformed_or_offscreen_normal_bounds_are_clamped_not_reused ... ok
+test window_geometry::tests::missing_external_display_uses_primary_visible_area ... ok
+test window_geometry::tests::restore_retains_maximized_flag_but_resolves_normal_bounds_first ... ok
+test windows::tests::an_overlay_opened_outside_preview_is_never_hidden_again ... ok
+test windows::tests::cancel_restores_committed_layout_and_prior_visibility ... ok
+test windows::tests::close_main_is_hide_not_quit_policy ... ok
+test windows::tests::normal_bounds_are_not_captured_while_maximized ... ok
+test windows::tests::save_commits_the_new_layout_and_restores_prior_visibility ... ok
+test sani_core::tests::stopping_the_daemon_reaps_the_child_and_clears_the_endpoint ... ok
+
+failures:
+
+---- sani_core::tests::embedded_driver_socket_must_accept_connections_before_ready stdout ----
+
+thread 'sani_core::tests::embedded_driver_socket_must_accept_connections_before_ready' (1013040) panicked at src/sani_core.rs:2186:50:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    sani_core::tests::embedded_driver_socket_must_accept_connections_before_ready
+
+test result: FAILED. 87 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--bin sani`

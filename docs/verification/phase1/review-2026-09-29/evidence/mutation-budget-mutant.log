@@ -1,0 +1,29 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________ test_budget_reservation_idempotent_and_capped _________________
+
+store = <assistant.missions.store.MissionStore object at 0x10ae80c20>
+
+    async def test_budget_reservation_idempotent_and_capped(store: MissionStore) -> None:
+        request = _request()
+        mission = await store.claim_request(
+            request, _digest(request), goal=request.text, scope=Scope(owner_id="owner"),
+            limits=BudgetLimits(max_jev_calls=2),
+        )
+        first = await store.reserve_budget(
+            mission.mission_id, BudgetCharge(resource="jev_calls", amount=1, call_key="call-a")
+        )
+        again = await store.reserve_budget(
+            mission.mission_id, BudgetCharge(resource="jev_calls", amount=1, call_key="call-a")
+        )
+        assert first.reservation_id == again.reservation_id, "same call key is idempotent"
+        await store.reserve_budget(
+            mission.mission_id, BudgetCharge(resource="jev_calls", amount=1, call_key="call-b")
+        )
+>       with pytest.raises(MissionStoreError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE MissionStoreError
+
+tests/unit/test_mission_store.py:413: Failed
+=========================== short test summary info ============================
+FAILED tests/unit/test_mission_store.py::test_budget_reservation_idempotent_and_capped

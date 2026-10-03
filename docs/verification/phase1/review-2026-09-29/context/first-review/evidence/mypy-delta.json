@@ -1,0 +1,22 @@
+{
+  "added_count": 28,
+  "removed_count": 0,
+  "added": {
+    "tests/unit/test_sani_core_registry.py: error: Argument 1 to \"register\" of \"AgentRegistry\" has incompatible type \"_StubAgent\"; expected \"AgentProtocol\"  [arg-type]": 5,
+    "tests/unit/test_sani_core_app.py: error: Argument 1 to \"register\" of \"AgentRegistry\" has incompatible type \"_FakeAgent\"; expected \"AgentProtocol\"  [arg-type]": 7,
+    "tests/unit/test_sani_core_app.py: error: Argument 1 to \"register\" of \"AgentRegistry\" has incompatible type \"_GatedAgent\"; expected \"AgentProtocol\"  [arg-type]": 2,
+    "tests/unit/test_sani_core_app.py: error: Argument 1 to \"register\" of \"AgentRegistry\" has incompatible type \"_SlowCancellableAgent\"; expected \"AgentProtocol\"  [arg-type]": 1,
+    "tests/unit/test_sani_core_app.py: error: Argument 1 to \"register\" of \"AgentRegistry\" has incompatible type \"_ExplodingAgent\"; expected \"AgentProtocol\"  [arg-type]": 1,
+    "tests/unit/test_sani_core_app.py: error: Argument 1 to \"register\" of \"AgentRegistry\" has incompatible type \"_StallingAgent\"; expected \"AgentProtocol\"  [arg-type]": 1,
+    "tests/unit/test_mission_budgets.py: error: The return type of an async generator function should be \"AsyncGenerator\" or one of its supertypes  [misc]": 1,
+    "tests/unit/test_mission_authority.py: error: The return type of an async generator function should be \"AsyncGenerator\" or one of its supertypes  [misc]": 1,
+    "tests/unit/test_mission_store.py: error: The return type of an async generator function should be \"AsyncGenerator\" or one of its supertypes  [misc]": 2,
+    "tests/integration/test_mission_observability.py: error: The return type of an async generator function should be \"AsyncGenerator\" or one of its supertypes  [misc]": 1,
+    "tests/integration/test_mission_observability.py: error: Need type annotation for \"llm_output\" (hint: \"llm_output: dict[<type>, <type>] = ...\")  [var-annotated]": 1,
+    "tests/integration/test_mission_observability.py: error: Need type annotation for \"generations\" (hint: \"generations: list[<type>] = ...\")  [var-annotated]": 1,
+    "tests/unit/test_mission_evidence.py: error: The return type of an async generator function should be \"AsyncGenerator\" or one of its supertypes  [misc]": 1,
+    "tests/unit/test_mission_executor.py: error: The return type of a generator function should be \"Generator\" or one of its supertypes  [misc]": 1,
+    "tests/integration/test_mission_core.py: error: Argument 2 to \"serve\" of \"SaniCoreApp\" has incompatible type \"_PipeWriter\"; expected \"StreamWriter\"  [arg-type]": 1,
+    "tests/integration/test_mission_ipc.py: error: Argument 1 to \"_dispatch\" of \"SaniCoreApp\" has incompatible type \"_BareSession\"; expected \"_Session\"  [arg-type]": 1
+  }
+}

@@ -1,0 +1,29 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_limit_two_blocks_third_request_before_dispatch ______________
+
+store = <assistant.missions.store.MissionStore object at 0x109574440>
+
+    async def test_limit_two_blocks_third_request_before_dispatch(
+        store: MissionStore,
+    ) -> None:
+        """The reviewer's probe: limit 2 must not allow 5 responses. The third
+        request is refused BEFORE the client is invoked."""
+        mission = await _mission(store, max_requests=2)
+        controller = ProviderAdmissionController()
+        controller.bind_store(store)
+        inner = _CountingFake(responses=[f"r{i}" for i in range(5)])
+        model = wrap_chat_model(inner, controller)
+        scope = await controller.open_scope(mission.mission_id, 1, "fixture")
+        controller.push_scope(scope)
+        try:
+            for _ in range(2):
+                await model.ainvoke(_messages())
+>           with pytest.raises(ProviderRequestDenied):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE ProviderRequestDenied
+
+tests/integration/test_provider_admission.py:121: Failed
+=========================== short test summary info ============================
+FAILED tests/integration/test_provider_admission.py::test_limit_two_blocks_third_request_before_dispatch
+1 failed in 0.95s

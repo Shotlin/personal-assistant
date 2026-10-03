@@ -1,0 +1,25 @@
+Traceback (most recent call last):
+  File "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-batch2-2026-09-30/evidence/probes.py", line 82, in <module>
+    asyncio.run(main())
+  File "/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-batch2-2026-09-30/evidence/probes.py", line 27, in main
+    m=await mission(store)
+      ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sayan/Documents/personal-assistant/docs/verification/phase1/review-batch2-2026-09-30/evidence/probes.py", line 21, in mission
+    return await store.commit_plan(m.mission_id,0,[StepSpec(step_id='s'+str(n),ordinal=n,objective='fixture',recipe_id='semantic_ui',scope=scope,budget=BudgetLimits(),effect_class='EXTERNAL_WRITE',depends_on=['s'+str(n-1)] if n>1 else []) for n in range(1,steps+1)],[])
+                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sayan/Documents/personal-assistant/.venv/lib/python3.12/site-packages/pydantic/main.py", line 250, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for StepSpec
+depends_on
+  Extra inputs are not permitted [type=extra_forbidden, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden

@@ -1,0 +1,58 @@
+{
+  "final-unit": {
+    "tests": 616,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "final-integration": {
+    "tests": 73,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "final-performance": {
+    "tests": 7,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "final-corrective-recheck": {
+    "tests": 60,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "final-unmutated-boundaries": {
+    "tests": 15,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "offline-full": {
+    "tests": 776,
+    "failures": 9,
+    "errors": 66,
+    "skipped": 1
+  },
+  "final-rust": {
+    "passed": 116,
+    "failed": 0,
+    "ignored": 2
+  },
+  "final-renderer": {
+    "exit_code": 0
+  },
+  "static": {
+    "mypy_errors": 91,
+    "ruff_src_tests": 42,
+    "normalized_diagnostic_multisets_unchanged": true,
+    "mypy_clean": false,
+    "ruff_clean": false
+  },
+  "mutations": {
+    "guards_tested": 3,
+    "meaningful_assertion_failures": 3,
+    "copies_only": true
+  }
+}

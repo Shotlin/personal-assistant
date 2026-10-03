@@ -1,0 +1,58 @@
+{
+  "sdk_internal_retries": {
+    "limit": 1,
+    "mock_http_requests": 3,
+    "admitted": 1,
+    "rows": [
+      [
+        "COMPLETED",
+        null,
+        null
+      ]
+    ],
+    "response_usage": {
+      "input_tokens": 3,
+      "output_tokens": 2,
+      "total_tokens": 5
+    }
+  },
+  "renderer_approval_target": {
+    "pending_target": "win-7",
+    "renderer_target_sent": null,
+    "released_steps": 0
+  },
+  "single_capture_field": {
+    "passed": true,
+    "reason": "the resolved payload is in the focused field"
+  },
+  "focus_without_activation": {
+    "passed": true,
+    "reason": "the resolved button #1 ('b') gained focused"
+  },
+  "wait_secret_key": {
+    "synthetic_canary_in_row": true
+  },
+  "metadata_orphans": {
+    "mission_purged": true,
+    "ledger_rows": 1,
+    "evidence_file_left": true,
+    "evidence_rows": 0
+  },
+  "plan_rate_limit": {
+    "exception": "ExternalWaitRequested",
+    "status": "PLANNED",
+    "wait_count": 0
+  },
+  "harness_transport": {
+    "transport_factory_wired": false,
+    "scope_has_windows": false
+  },
+  "harness_error_false_positive": {
+    "status": "unknown",
+    "completed": false
+  },
+  "blocked_writer": {
+    "finished_after_2_2_seconds": false,
+    "inside_write": true
+  }
+}

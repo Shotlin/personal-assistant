@@ -1,0 +1,22 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_unknown_origin_cannot_read_protected_content _______________
+
+store = <assistant.missions.store.MissionStore object at 0x1106d2d50>
+
+    async def test_unknown_origin_cannot_read_protected_content(store: MissionStore) -> None:
+        """A READ_ONLY content read with an unknown origin is refused when the
+        mission scope configures allowed origins — reading is not a wildcard."""
+        from assistant.missions.authority import AuthorityDenied
+    
+        scope = _scope(origins=["https://trusted.example"])
+        _mission, item = await _claimed(store, scope)
+        authority = MissionAuthority(store)
+>       with pytest.raises(AuthorityDenied) as denied:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AuthorityDenied
+
+tests/integration/test_phase1_scope_outcomes.py:86: Failed
+=========================== short test summary info ============================
+FAILED tests/integration/test_phase1_scope_outcomes.py::test_unknown_origin_cannot_read_protected_content
+1 failed in 0.91s

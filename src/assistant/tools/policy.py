@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
@@ -490,6 +491,11 @@ mission_dispatch_guard: contextvars.ContextVar[MissionDispatchGuard | None] = (
     contextvars.ContextVar("mission_dispatch_guard", default=None)
 )
 
+# Synchronous final admission, after all awaited authorization/audit work.
+mission_final_dispatch_check: contextvars.ContextVar[Callable[[], str | None] | None] = (
+    contextvars.ContextVar("mission_final_dispatch_check", default=None)
+)
+
 #: Mission mode makes the action ledger authoritative: a failed intent write
 #: BLOCKS the mutation (fail closed, STORAGE_UNAVAILABLE) instead of the
 #: legacy fail-open behavior, which remains for non-mission runs.
@@ -641,8 +647,11 @@ async def cua_run_scope(
 OBSERVATION_DEFAULTS: dict[str, dict[str, Any]] = {
     "get_window_state": {
         "include_screenshot": False,
-        "max_elements": 120,
-        "max_depth": 12,
+        # The model sees a compact, visible-only list (scene.compact_observation),
+        # so the walk can be deep: a 120-element cap returned browser chrome and
+        # cut the page itself off ("the tree truncates" -- live 2026-10-01).
+        "max_elements": 1500,
+        "max_depth": 30,
     },
     "get_accessibility_tree": {"max_elements": 120},
 }
@@ -838,6 +847,8 @@ def _remember_app_identities(name: str, structured: dict[str, Any], state: dict[
     """
     apps: dict[int, str] = state.setdefault("apps", {})
     if name == "list_apps":
+        state["inventory_observed_at_ms"] = int(time.time() * 1000)
+        apps.clear()
         for entry in structured.get("apps") or structured.get("applications") or []:
             if not isinstance(entry, dict):
                 continue
@@ -1063,6 +1074,15 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
                         f"{name} (storage unavailable). Nothing was dispatched; the "
                         "mission will reconcile instead of acting unrecorded."
                     )
+        if run is not None:
+            run.require_active()
+        final_check = mission_final_dispatch_check.get()
+        if final_check is not None:
+            refusal = final_check()
+            if refusal is not None:
+                if ledger_id is not None:
+                    await _ledger_observe(ledger, ledger_id, "refused", "final_admission")
+                return refusal
         try:
             result = await original(**kwargs)
         except CuaBudgetExceeded:
@@ -1159,6 +1179,15 @@ def wrap_tool_errors(tool: BaseTool) -> BaseTool:
             text += f"\n[{len(result.images)} screenshot(s) retained locally]"
         if result.truncated:
             text += "\n[observation truncated]"
+        if name == "get_window_state" and isinstance(result.structured, dict):
+            from assistant.velo.scene import compact_observation
+
+            compact = compact_observation(result.structured)
+            if compact:
+                # What is ON SCREEN, one line each, tokens included: the raw
+                # tree's truncated head is browser chrome and the model never
+                # saw the control the user named.
+                text = compact
         if name == "list_windows" and isinstance(result.structured, dict):
             enumerated = _window_enumeration(result.structured)
             if enumerated:

@@ -1,0 +1,10 @@
+{
+  "head": "df04060f189a10bb81baf522a58347cddc6cc915",
+  "branch": "main",
+  "source_manifest_sha256": "d58f393e21a3ab563754328150f20c5a1eb352c44d851faf09c9f451e9ff358a",
+  "dirty_diff_sha256": "cd372fb85148700fa88095e3492d3f9f5beb43e555e5ff26d95f5a6adc36f8e6",
+  "source_count": 668,
+  "source_unchanged": true,
+  "historical_files_checked": 92,
+  "historical_files_changed": []
+}

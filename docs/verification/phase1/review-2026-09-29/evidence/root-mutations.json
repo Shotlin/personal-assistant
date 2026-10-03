@@ -1,0 +1,32 @@
+[
+  {
+    "name": "surface",
+    "path": "src/assistant/missions/authority.py",
+    "before": "        self._check_surface(item, scope, action, observed)",
+    "after": "        pass # review-only mutation",
+    "test": "tests/unit/test_mission_authority.py::test_scope_sensitive_reads_are_guarded",
+    "baseline_exit": 0,
+    "mutant_exit": 1,
+    "restored": true
+  },
+  {
+    "name": "budget",
+    "path": "src/assistant/missions/store.py",
+    "before": "if ceiling is not None and usage.total(charge.resource) + charge.amount > ceiling:",
+    "after": "if False: # review-only mutation",
+    "test": "tests/unit/test_mission_store.py::test_budget_reservation_idempotent_and_capped",
+    "baseline_exit": 0,
+    "mutant_exit": 1,
+    "restored": true
+  },
+  {
+    "name": "voice",
+    "path": "sani/src-tauri/python/sani_tts.py",
+    "before": "if len(text) > TEXT_MAX_CHARS:",
+    "after": "if False: # review-only mutation",
+    "test": "tests/unit/test_sani_tts_worker.py",
+    "baseline_exit": 0,
+    "mutant_exit": 1,
+    "restored": true
+  }
+]

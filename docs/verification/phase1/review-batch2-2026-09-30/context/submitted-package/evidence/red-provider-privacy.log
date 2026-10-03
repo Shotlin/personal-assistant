@@ -1,0 +1,163 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+___________ test_provider_requests_recorded_without_double_charging ____________
+
+store = <assistant.missions.store.MissionStore object at 0x10c53dcd0>
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-28/test_provider_requests_recorde0')
+
+    async def test_provider_requests_recorded_without_double_charging(
+        store: MissionStore, tmp_path: Any
+    ) -> None:
+        """Three graph-internal provider requests → three durable rows with
+        unique call ids; the OUTER deep_calls budget is not re-charged."""
+        from assistant.core.agents import _DeepInvoke
+        from assistant.missions.controller import controller_role
+    
+        mission, _ = await _claimed(store, tmp_path)
+>       transport = _DeepInvoke(
+            _ScriptedGraphDeep(requests=3), thread_id="conv", mission_id=mission.mission_id,
+            plan_version=1, store=store,
+        )
+E       TypeError: _DeepInvoke.__init__() got an unexpected keyword argument 'store'
+
+tests/integration/test_phase1_provider_privacy.py:97: TypeError
+______________ test_provider_request_ceiling_aborts_runaway_graph ______________
+
+store = <assistant.missions.store.MissionStore object at 0x10c53de20>
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-28/test_provider_request_ceiling_0')
+
+    async def test_provider_request_ceiling_aborts_runaway_graph(
+        store: MissionStore, tmp_path: Any
+    ) -> None:
+        """A graph that exceeds the per-invocation request ceiling is aborted
+        AFTER its requests are recorded — no free calls, no silent overrun."""
+        from assistant.core.agents import _DeepInvoke
+        from assistant.missions.controller import controller_role
+    
+        mission, _ = await _claimed(store, tmp_path)
+>       transport = _DeepInvoke(
+            _ScriptedGraphDeep(requests=4), thread_id="conv", mission_id=mission.mission_id,
+            plan_version=1, store=store, max_provider_requests=2,
+        )
+E       TypeError: _DeepInvoke.__init__() got an unexpected keyword argument 'store'
+
+tests/integration/test_phase1_provider_privacy.py:124: TypeError
+______________________ test_evidence_expires_at_creation _______________________
+
+store = <assistant.missions.store.MissionStore object at 0x10dc8f230>
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-28/test_evidence_expires_at_creat0')
+
+    async def test_evidence_expires_at_creation(store: MissionStore, tmp_path: Any) -> None:
+        from assistant.missions.contracts import EvidenceCandidate
+    
+        _mission, evidence = await _claimed(store, tmp_path)
+        ref = await evidence.put(EvidenceCandidate(
+            kind="structured_facts", payload={"pid": 1},
+            captured_at_ms=int(time.time() * 1000)),
+            mission_id=(await _mission_id(store)))
+>       assert ref.expires_at_ms is not None and ref.expires_at_ms > ref.captured_at_ms
+E       AssertionError: assert (None is not None)
+E        +  where None = EvidenceRef(evidence_id='5f99426f-218c-4778-b978-ee920318ab37', mission_id='9698400c-cd5a-47c9-be44-6d7e45c8bf9a', exe...r='', producer_version='', sensitivity='INTERNAL', redaction_version='v1', redaction_status='SAFE', expires_at_ms=None).expires_at_ms
+
+tests/integration/test_phase1_provider_privacy.py:145: AssertionError
+__________ test_lifecycle_retention_deletes_expired_and_holds_protect __________
+
+store = <assistant.missions.store.MissionStore object at 0x10dc8f7d0>
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-28/test_lifecycle_retention_delet0')
+
+    async def test_lifecycle_retention_deletes_expired_and_holds_protect(
+        store: MissionStore, tmp_path: Any
+    ) -> None:
+        """Normal lifecycle retention removes expired evidence (row + file);
+        an explicit hold preserves the same evidence."""
+        from assistant.missions.contracts import EvidenceCandidate
+        from assistant.missions.service import MissionService
+    
+        mission, evidence = await _claimed(store, tmp_path)
+>       held_evidence = EvidenceStore(tmp_path / "held", store, ttl_ms=1)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: EvidenceStore.__init__() got an unexpected keyword argument 'ttl_ms'
+
+tests/integration/test_phase1_provider_privacy.py:164: TypeError
+___________ test_canaries_withheld_at_result_and_final_review_sinks ____________
+
+store = <assistant.missions.store.MissionStore object at 0x10dca9040>
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-28/test_canaries_withheld_at_resu0')
+
+    async def test_canaries_withheld_at_result_and_final_review_sinks(
+        store: MissionStore, tmp_path: Any
+    ) -> None:
+        """A synthetic canary riding in an exception result or the final review
+        is withheld at the persistence sink — never persisted verbatim."""
+        canary = "sk-sink-synthetic-canary-12345678901234567890"
+        mission, _ = await _claimed(store, tmp_path)
+        item = await store.claim_step(mission.mission_id, 1, 1, tool_ids=["list_apps"])
+        assert item is not None
+        applied = await store.apply_result(StepResult(
+            mission_id=mission.mission_id, plan_version=1, control_epoch=1, step_id="s1",
+            execution_id=item.execution_id, attempt=1, status="NEEDS_CONTROLLER",
+            effect_outcome="NOT_ATTEMPTED", failure_category="TRANSPORT_LOST",
+            uncertainty=f"driver said: {canary}"))
+        assert applied == "APPLIED"
+        raw = store._conn.execute(
+            "SELECT result_json FROM mission_attempts WHERE execution_id=?",
+            (item.execution_id,)).fetchone()
+>       assert raw is not None and canary not in str(raw[0])
+E       assert (('{"artifact_ids":[],"attempt":1,"control_epoch":1,"effect_outcome":"NOT_ATTEMPTED","elapsed_ms":0,"evidence_ids":[],"...ll,"known_input_tokens":0,"known_output_tokens":0,"known_reasoning_tokens":0,"reserved":{},"unknown_usage_calls":0}}',) is not None and 'sk-sink-syn...901234567890' not in '{"artifact_...e_calls":0}}'
+E         
+E         'sk-sink-synthetic-...2345678901234567890' is contained here:
+E           ver said: sk-sink-synthetic-canary-12345678901234567890","usage":{"active_ms":0,"consumed":{},"external_wait_ms":0,"known_cache_tokens":0,"known_cost_microunits":null,"known_input_tokens":0,"known_output_tokens":0,"known_reasoning_tokens":0,"reserved":{},"unknown_usage_calls":0}}
+E         ?           +++++++++++++++++++++++++++++++++++++++++++++)
+
+tests/integration/test_phase1_provider_privacy.py:203: AssertionError
+___________ test_owner_deletion_removes_derivatives_with_tombstones ____________
+
+store = <assistant.missions.store.MissionStore object at 0x10dc8eff0>
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-28/test_owner_deletion_removes_de0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10dc8f7a0>
+
+    async def test_owner_deletion_removes_derivatives_with_tombstones(
+        store: MissionStore, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        """Owner deletion removes evidence files and derived recommendations and
+        keeps safe tombstones — the audit survives the content."""
+        from assistant.missions.contracts import EvidenceCandidate
+        from assistant.missions.service import MissionService
+    
+        mission, evidence = await _claimed(store, tmp_path)
+        rec_store = RecommendationStore(tmp_path / "recs")
+        recommendation = ObserverRecommendation(
+            recommendation_id=new_id(), pattern_id="repeated_failure",
+            mission_ids=[mission.mission_id], hypothesis="fixture hypothesis",
+            confidence=0.5, created_at_ms=int(time.time() * 1000))
+        rec_store.append(recommendation)
+        ref = await evidence.put(EvidenceCandidate(
+            kind="structured_facts", payload={"pid": 1},
+            captured_at_ms=int(time.time() * 1000)),
+            mission_id=mission.mission_id)
+        assert (evidence.root / ref.relative_path).exists()
+    
+        service = MissionService(
+            type("S", (), {})(), store=store, authority=MissionAuthority(store),
+            evidence=evidence,
+            executor=type("E", (), {})(),
+            controller=type("C", (), {})(),
+        )
+        service._observer = type("O", (), {
+            "prune_expired": lambda self, *a, **k: [],
+            "delete_for_mission": lambda self, mid, *, now_ms: rec_store.delete_for_mission(
+                mid, now_ms=now_ms),
+            "analyze": lambda self, events: [],
+        })()
+>       report = await service.purge_mission_derivatives(mission.mission_id)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MissionService' object has no attribute 'purge_mission_derivatives'
+
+tests/integration/test_phase1_provider_privacy.py:248: AttributeError
+=========================== short test summary info ============================
+FAILED tests/integration/test_phase1_provider_privacy.py::test_provider_requests_recorded_without_double_charging
+FAILED tests/integration/test_phase1_provider_privacy.py::test_provider_request_ceiling_aborts_runaway_graph
+FAILED tests/integration/test_phase1_provider_privacy.py::test_evidence_expires_at_creation
+FAILED tests/integration/test_phase1_provider_privacy.py::test_lifecycle_retention_deletes_expired_and_holds_protect
+FAILED tests/integration/test_phase1_provider_privacy.py::test_canaries_withheld_at_result_and_final_review_sinks
+FAILED tests/integration/test_phase1_provider_privacy.py::test_owner_deletion_removes_derivatives_with_tombstones

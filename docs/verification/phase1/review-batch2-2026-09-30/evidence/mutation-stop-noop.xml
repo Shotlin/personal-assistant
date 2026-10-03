@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.055" timestamp="2026-09-30T23:38:25.546149+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.unit.test_mission_desktop_queue" name="test_stop_of_non_owner_never_invalidates_a_valid_lease" time="0.001" /><testcase classname="tests.integration.test_mission_desktop_control" name="test_idle_stop_is_safe" time="0.001"><failure message="AssertionError: a no-op stop must not move the generation&#10;assert 1 == 0&#10; +  where 1 = &lt;assistant.runtime.desktop_queue.DesktopQueue object at 0x10a57b500&gt;.generation">async def test_idle_stop_is_safe() -&gt; None:
+        """D08: a stop naming nothing is a NO-OP — it must not increment the
+        shared generation. The old oracle (generation &gt;= 2) pinned the bug
+        where a no-op stop invalidated an unrelated valid lease."""
+        queue = DesktopQueue(timeout_seconds=2)
+        report = await queue.stop_owner(None)
+        assert report == {"stopped": False, "owner": None, "certain": True}
+&gt;       assert queue.generation == 0, "a no-op stop must not move the generation"
+E       AssertionError: a no-op stop must not move the generation
+E       assert 1 == 0
+E        +  where 1 = &lt;assistant.runtime.desktop_queue.DesktopQueue object at 0x10a57b500&gt;.generation
+
+tests/integration/test_mission_desktop_control.py:146: AssertionError</failure></testcase></testsuite></testsuites>

@@ -50,6 +50,12 @@ VERIFIER_CATALOG: dict[str, str] = {
     # the text itself).
     "field_value": "1.0.0",
     "window_visible": "1.0.0",
+    # D06: scroll and ordinal activation owe EXACT before/after evidence —
+    # a re-observed window alone (window_visible {}) proves nothing. Both
+    # verifiers require a before→after pair bound to ONE window; when the
+    # driver reports no comparable state they fail honestly.
+    "scroll_effect": "1.0.0",
+    "press_effect": "1.0.0",
 }
 
 _IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
@@ -57,6 +63,13 @@ _IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
 
 def _evidence_text(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+#: D16: the planned policy — screenshot-kind content expires at 7 days,
+#: structured metadata evidence at 30 days. Retention is then a normal
+#: lifecycle operation, not a manual SQL sweep.
+DEFAULT_EVIDENCE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+SCREENSHOT_EVIDENCE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 
 class EvidenceStore:
@@ -68,6 +81,7 @@ class EvidenceStore:
         store: MissionStore | None = None,
         *,
         trusted_roots: list[Path | str] | None = None,
+        ttl_ms: int = DEFAULT_EVIDENCE_TTL_MS,
     ) -> None:
         self._root = Path(root).resolve()
         self._store = store
@@ -76,6 +90,7 @@ class EvidenceStore:
         self._trusted_roots = [
             Path(r).expanduser().resolve() for r in (trusted_roots or [])
         ]
+        self._ttl_ms = max(1, int(ttl_ms))
 
     @property
     def root(self) -> Path:
@@ -124,6 +139,10 @@ class EvidenceStore:
                 evidence_id, mission_id, execution_id, candidate.kind, now,
                 "evidence storage unavailable; content not stored",
             )
+        # D16: the TTL is kind-aware — pixels 7 days, metadata 30 days —
+        # unless the store was built with an explicit override.
+        effective_ttl = min(self._ttl_ms, SCREENSHOT_EVIDENCE_TTL_MS) \
+            if candidate.kind in {"screenshot", "image"} else self._ttl_ms
         ref = EvidenceRef(
             evidence_id=evidence_id,
             mission_id=mission_id,
@@ -133,6 +152,9 @@ class EvidenceStore:
             sha256=sha256,
             sensitivity="INTERNAL",
             captured_at_ms=now,
+            # D07: expiry is configured during ordinary creation, so the
+            # retention sweep has an honest bound for every live row.
+            expires_at_ms=now + effective_ttl,
         )
         if self._store is not None:
             await self._store.put_evidence(ref)
@@ -169,19 +191,29 @@ class EvidenceStore:
         C07: only paths the store's tombstoned rows named are removed —
         this never deletes a file whose row is still live (holds included).
         """
-        removed = 0
+        return len(self.sweep_deleted_files_report(deleted_paths)["deleted"])
+
+    def sweep_deleted_files_report(self, deleted_paths: list[str]) -> dict[str, list[str]]:
+        """Try confined unlinks and return exact durable-queue outcomes.
+
+        Invalid/out-of-root paths are failures, never silently treated as
+        deleted. Callers retain failed paths in SQLite for a later retry.
+        """
+        deleted: list[str] = []
+        failed: list[str] = []
         for relative in deleted_paths:
             if not relative:
                 continue
             target = (self._root / relative).resolve()
             if not _contained(target, self._root) or target.is_symlink():
+                failed.append(relative)
                 continue
             try:
                 target.unlink(missing_ok=True)
-                removed += 1
+                deleted.append(relative)
             except OSError:
-                continue
-        return removed
+                failed.append(relative)
+        return {"deleted": deleted, "failed": failed}
 
     def remove_orphan_files(self, live_relative_paths: set[str]) -> int:
         """Delete artifact files with no live evidence row (orphan cleanup)."""
@@ -313,7 +345,8 @@ class EvidenceStore:
                 raise _VerifierFailure("page_state requires expected markers")
             for ref in refs:
                 payload = payload_by_id.get(ref.evidence_id) or {}
-                haystack = _evidence_text(payload).lower()
+                observed_payload = {k: v for k, v in payload.items() if k != "resolved_payloads"}
+                haystack = _evidence_text(observed_payload).lower()
                 if all(marker in haystack for marker in markers):
                     return True, "all markers observed", [ref.evidence_id]
             return False, "not all expected markers were observed in the evidence", []
@@ -344,20 +377,140 @@ class EvidenceStore:
             ref_id = str(expected.get("payload_ref", "")).strip()
             if not ref_id:
                 raise _VerifierFailure("field_value requires a payload_ref")
+            # D15: every evidence in this check must belong to ONE bound
+            # process/window identity — a matching token or value in a
+            # DIFFERENT window never proves the typing.
+            window = _common_window(refs, payload_by_id)
+            if window is None:
+                return False, (
+                    "the evidence is not bound to a single window identity"
+                ), []
+            if len(refs) < 2:
+                return False, "typing needs distinct before and after observations", []
             for ref in refs:
                 payload = payload_by_id.get(ref.evidence_id) or {}
                 resolved = (payload.get("resolved_payloads") or {}).get(ref_id)
                 if resolved is None:
                     continue
+                # D15: the typed field is the field that held FOCUS in the
+                # BEFORE capture of the bound window. Without that BEFORE
+                # focus the check fails honestly — it never falls back to
+                # any matching field.
+                focused_token = _focused_token_from(refs, payload_by_id)
+                if focused_token is None:
+                    return False, (
+                        "the before-observation carries no focused field; "
+                        "the typing target cannot be proven"
+                    ), []
                 for element in payload.get("elements", []):
                     if not isinstance(element, dict):
                         continue
+                    if (
+                        focused_token is not None
+                        and str(element.get("element_token") or "") != focused_token
+                    ):
+                        continue
                     value = str(element.get("value") or "")
                     if value and value == str(resolved):
-                        return True, "the resolved payload is present in a field value", [
+                        return True, "the resolved payload is in the focused field", [
                             ref.evidence_id
                         ]
             return False, "no observed field carries the resolved payload", []
+        if check.verifier_id == "scroll_effect":
+            direction = str(expected.get("direction", "")).strip().lower()
+            min_delta = int(expected.get("min_delta", 1) or 1)
+            if direction not in {"up", "down", "left", "right"}:
+                raise _VerifierFailure("scroll_effect requires a scroll direction")
+            ordered = sorted(refs, key=lambda r: r.captured_at_ms)
+            if len(ordered) < 2:
+                return False, "scroll needs before and after observations", []
+            pairs = [(r, payload_by_id.get(r.evidence_id) or {}) for r in ordered]
+            # D15: the offset is bound to the scroll AXIS (vertical
+            # up/down, horizontal left/right) the driver reports.
+            def _axis_offset(payload: dict[str, Any]) -> Any:
+                if direction in {"left", "right"}:
+                    return payload.get("scroll_offset_x")
+                return payload.get("scroll_offset_y", payload.get("scroll_offset"))
+            offsets: list[float] = []
+            for _ref, payload in pairs:
+                offset = _axis_offset(payload)
+                if not isinstance(offset, (int, float)) or isinstance(offset, bool):
+                    return False, (
+                        "the driver did not report an axis scroll offset; "
+                        "the check cannot be evaluated honestly"
+                    ), []
+                offsets.append(float(offset))
+            windows = {(p.get("pid"), p.get("window_id")) for _, p in pairs}
+            if len(windows) != 1 or (None, None) in windows:
+                return False, "before/after observations are not bound to one window", []
+            delta = (
+                offsets[-1] - offsets[0]
+                if direction in {"down", "right"}
+                else offsets[0] - offsets[-1]
+            )
+            if delta >= min_delta:
+                return True, f"scroll offset moved {delta:+.0f}", [ordered[-1].evidence_id]
+            return False, (
+                f"scroll offset moved {delta:+.0f}; {min_delta} required for {direction}"
+            ), []
+        if check.verifier_id == "press_effect":
+            # D15: the check is bound to the RESOLVED ordinal control —
+            # the same resolution the recipe dispatched (kind + index over
+            # the before-tree). An unrelated control gaining focus proves
+            # nothing.
+            kind = str(expected.get("role_kind", "")).strip().lower()
+            try:
+                index = int(expected.get("ordinal_index", 0))
+            except (TypeError, ValueError):
+                index = 0
+            if not kind or index < 1:
+                raise _VerifierFailure(
+                    "press_effect requires the resolved ordinal identity "
+                    "(role_kind and ordinal_index)"
+                )
+            ordered = sorted(refs, key=lambda r: r.captured_at_ms)
+            if len(ordered) < 2:
+                return False, "ordinal activation needs before and after observations", []
+            pairs = [(r, payload_by_id.get(r.evidence_id) or {}) for r in ordered]
+            window = _common_window(refs, payload_by_id)
+            if window is None:
+                return False, "before/after observations are not bound to one window", []
+            before_elements = [
+                e for e in pairs[0][1].get("elements", [])
+                if isinstance(e, dict) and e.get("element_token")
+            ]
+            candidates = [
+                e for e in before_elements
+                if str(e.get("role", "")).lower().removeprefix("ax") == kind
+            ]
+            if len(candidates) < index:
+                return False, (
+                    f"only {len(candidates)} {kind}(s) in the before-observation; "
+                    f"the {index}th cannot be resolved"
+                ), []
+            token = str(candidates[index - 1].get("element_token"))
+            prior = candidates[index - 1]
+            after_by_token = {
+                str(e.get("element_token")): e
+                for e in pairs[-1][1].get("elements", [])
+                if isinstance(e, dict) and e.get("element_token")
+            }
+            after = after_by_token.get(token)
+            if after is None:
+                return False, (
+                    f"the resolved {kind} #{index} vanished from the after-observation"
+                ), []
+            # Focus acquisition is merely a targeting precondition.  It is
+            # not independent evidence that a press activated anything.
+            for flag in ("checked", "selected", "expanded", "pressed"):
+                if bool(after.get(flag)) and not bool(prior.get(flag)):
+                    return True, (
+                        f"the resolved {kind} #{index} ({token!r}) gained {flag}"
+                    ), [ordered[-1].evidence_id]
+            return False, (
+                f"the resolved {kind} #{index} shows no activation-state change; "
+                "the press is not independently proven"
+            ), []
         if check.verifier_id == "window_visible":
             wanted = str(expected.get("app", "")).strip().lower()
             for ref in refs:
@@ -438,6 +591,40 @@ class EvidenceStore:
 
 class _VerifierFailure(RuntimeError):
     """A check could not be evaluated; the honest answer is a failure."""
+
+
+def _common_window(refs: list[EvidenceRef],
+                   payload_by_id: dict[str, Any]) -> tuple[Any, Any] | None:
+    """D15: the ONE (pid, window_id) identity shared by every evidence
+    observation, or None when the evidence mixes windows."""
+    windows = {
+        (p.get("pid"), p.get("window_id"))
+        for p in (payload_by_id.get(r.evidence_id) or {} for r in refs)
+        if isinstance(p, dict)
+    }
+    if len(windows) != 1:
+        return None
+    identity = next(iter(windows))
+    if identity in {(None, None), (None,)} or identity[0] is None or identity[1] is None:
+        return None
+    return identity
+
+
+def _focused_token_from(refs: list[EvidenceRef], payload_by_id: dict[str, Any]) -> str | None:
+    """The element token that held focus in the earliest observation (D06).
+
+    The executor's before-evidence records which editable field was focused
+    when the unit started; a typed payload must land in THAT field. When no
+    before-evidence exists the binding is unavailable and None is returned.
+    """
+    ordered = sorted(refs, key=lambda r: r.captured_at_ms)
+    if not ordered:
+        return None
+    payload = payload_by_id.get(ordered[0].evidence_id) or {}
+    for element in payload.get("elements", []):
+        if isinstance(element, dict) and element.get("focused") and element.get("element_token"):
+            return str(element["element_token"])
+    return None
 
 
 def _failed(check: CheckSpec, now: int, reason: str) -> CheckResult:

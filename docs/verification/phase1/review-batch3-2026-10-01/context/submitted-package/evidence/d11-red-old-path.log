@@ -1,0 +1,17 @@
+Error in LedgerCallbackHandler.on_llm_end callback: RuntimeError('provider request ceiling exceeded')
+Error in LedgerCallbackHandler.on_llm_end callback: RuntimeError('provider request ceiling exceeded')
+Error in LedgerCallbackHandler.on_llm_end callback: RuntimeError('provider request ceiling exceeded')
+Traceback (most recent call last):
+  File "<string>", line 52, in <module>
+  File "/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "<string>", line 48, in main
+AssertionError: OLD PATH FAILS CLOSED REQUIREMENT: 5 responses completed at limit 2
+{"completed_responses": 5, "recorded_rows": 5, "limit": 2}

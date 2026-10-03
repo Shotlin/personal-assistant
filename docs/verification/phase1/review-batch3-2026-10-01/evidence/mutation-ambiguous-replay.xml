@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.921" timestamp="2026-10-01T02:46:09.871032+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_external_waits" name="test_unknown_effect_cannot_enter_or_release_a_wait" time="0.010"><failure message="AssertionError: release must block the mission, not requeue the unknown effect&#10;assert (MissionRecord(schema_version=1, mission_id='507942b2-f7e2-4cfa-99ee-f4641df359f7', request_id='d9a1f66a-8e0f-423c-add8...al_ids=[], artifact_ids=[], pending_approvals=[], priority=4, created_at_ms=1790802970675, updated_at_ms=1790802970678) is not None and 'VERIFYING' == 'BLOCKED'&#10;  &#10;  - BLOCKED&#10;  + VERIFYING)">store = &lt;assistant.missions.store.MissionStore object at 0x110a30740&gt;
+
+    async def test_unknown_effect_cannot_enter_or_release_a_wait(store: MissionStore) -&gt; None:
+        """The independent reproduction — UNKNOWN → wait → attempt 2 — must be
+        refused at admission AND at release."""
+        mission = await _claimed(store)
+        item = await store.claim_step(mission.mission_id, 1, 1, tool_ids=["click"])
+        assert item is not None
+        await store.mark_dispatched(item.execution_id)
+        await store.apply_result(_unknown_result(mission, item))
+        # Admission refuses.
+        with pytest.raises(MissionStoreError, match="unresolved UNKNOWN"):
+            await store.record_external_wait(
+                mission.mission_id, 1, "s1", reason="backoff",
+                checkpoint={"cursor": "s1"}, retry_after_ms=50,
+                deadline_ms=int(time.time() * 1000) + 60_000)
+        # Even a manually inserted wait cannot release into a replay.
+        store._conn.execute(
+            "INSERT INTO mission_external_waits (wait_id, mission_id, plan_version, "
+            "step_id, reason, checkpoint_json, retry_after_ms, deadline_ms, created_at_ms) "
+            "VALUES ('forced', ?, 1, 's1', 'bypass', '{}', 10, 9999999999999, ?)",
+            (mission.mission_id, int(time.time() * 1000)))
+        released = await store.release_wait("forced")
+&gt;       assert released is not None and released.status == "BLOCKED", (
+            "release must block the mission, not requeue the unknown effect")
+E       AssertionError: release must block the mission, not requeue the unknown effect
+E       assert (MissionRecord(schema_version=1, mission_id='507942b2-f7e2-4cfa-99ee-f4641df359f7', request_id='d9a1f66a-8e0f-423c-add8...al_ids=[], artifact_ids=[], pending_approvals=[], priority=4, created_at_ms=1790802970675, updated_at_ms=1790802970678) is not None and 'VERIFYING' == 'BLOCKED'
+E         
+E         - BLOCKED
+E         + VERIFYING)
+
+tests/integration/test_external_waits.py:92: AssertionError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.856" timestamp="2026-09-29T19:15:13.780095+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_phase1_corrective_boundaries" name="test_invalidated_intent_cannot_append_dispatch_ledger" time="0.006"><failure message="Failed: DID NOT RAISE MissionStoreError">store = &lt;assistant.missions.store.MissionStore object at 0x1102706b0&gt;
+
+    async def test_invalidated_intent_cannot_append_dispatch_ledger(store: MissionStore) -&gt; None:
+        mission, item = await claimed(store)
+        await store.control(MissionControl(control_id=new_id(), mission_id=mission.mission_id,
+            expected_plan_version=1, expected_control_epoch=1, kind="PAUSE"))
+        ledger = MissionActionLedger(store, execution_id=item.execution_id,
+                                    mission_id=mission.mission_id)
+        from assistant.missions.store import MissionStoreError
+&gt;       with pytest.raises(MissionStoreError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE MissionStoreError
+
+tests/integration/test_phase1_corrective_boundaries.py:111: Failed</failure></testcase></testsuite></testsuites>

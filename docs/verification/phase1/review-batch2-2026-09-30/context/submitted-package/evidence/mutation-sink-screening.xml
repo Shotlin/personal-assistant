@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.910" timestamp="2026-09-30T22:59:58.180461+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_phase1_provider_privacy" name="test_canaries_withheld_at_result_and_final_review_sinks" time="0.009"><failure message="assert (('{&quot;artifact_ids&quot;:[],&quot;attempt&quot;:1,&quot;control_epoch&quot;:1,&quot;effect_outcome&quot;:&quot;NOT_ATTEMPTED&quot;,&quot;elapsed_ms&quot;:0,&quot;evidence_ids&quot;:[],&quot;...ll,&quot;known_input_tokens&quot;:0,&quot;known_output_tokens&quot;:0,&quot;known_reasoning_tokens&quot;:0,&quot;reserved&quot;:{},&quot;unknown_usage_calls&quot;:0}}',) is not None and 'sk-sink-syn...901234567890' not in '{&quot;artifact_...e_calls&quot;:0}}'&#10;  &#10;  'sk-sink-synthetic-...2345678901234567890' is contained here:&#10;    ver said: sk-sink-synthetic-canary-12345678901234567890&quot;,&quot;usage&quot;:{&quot;active_ms&quot;:0,&quot;consumed&quot;:{},&quot;external_wait_ms&quot;:0,&quot;known_cache_tokens&quot;:0,&quot;known_cost_microunits&quot;:null,&quot;known_input_tokens&quot;:0,&quot;known_output_tokens&quot;:0,&quot;known_reasoning_tokens&quot;:0,&quot;reserved&quot;:{},&quot;unknown_usage_calls&quot;:0}}&#10;  ?           +++++++++++++++++++++++++++++++++++++++++++++)">store = &lt;assistant.missions.store.MissionStore object at 0x10bf62f30&gt;
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-34/test_canaries_withheld_at_resu0')
+
+    async def test_canaries_withheld_at_result_and_final_review_sinks(
+        store: MissionStore, tmp_path: Any
+    ) -&gt; None:
+        """A synthetic canary riding in an exception result or the final review
+        is withheld at the persistence sink — never persisted verbatim."""
+        canary = "sk-sink-synthetic-canary-12345678901234567890"
+        mission, _ = await _claimed(store, tmp_path)
+        item = await store.claim_step(mission.mission_id, 1, 1, tool_ids=["list_apps"])
+        assert item is not None
+        applied = await store.apply_result(StepResult(
+            mission_id=mission.mission_id, plan_version=1, control_epoch=1, step_id="s1",
+            execution_id=item.execution_id, attempt=1, status="NEEDS_CONTROLLER",
+            effect_outcome="NOT_ATTEMPTED", failure_category="TRANSPORT_LOST",
+            uncertainty=f"driver said: {canary}"))
+        assert applied == "APPLIED"
+        raw = store._conn.execute(
+            "SELECT result_json FROM mission_attempts WHERE execution_id=?",
+            (item.execution_id,)).fetchone()
+&gt;       assert raw is not None and canary not in str(raw[0])
+E       assert (('{"artifact_ids":[],"attempt":1,"control_epoch":1,"effect_outcome":"NOT_ATTEMPTED","elapsed_ms":0,"evidence_ids":[],"...ll,"known_input_tokens":0,"known_output_tokens":0,"known_reasoning_tokens":0,"reserved":{},"unknown_usage_calls":0}}',) is not None and 'sk-sink-syn...901234567890' not in '{"artifact_...e_calls":0}}'
+E         
+E         'sk-sink-synthetic-...2345678901234567890' is contained here:
+E           ver said: sk-sink-synthetic-canary-12345678901234567890","usage":{"active_ms":0,"consumed":{},"external_wait_ms":0,"known_cache_tokens":0,"known_cost_microunits":null,"known_input_tokens":0,"known_output_tokens":0,"known_reasoning_tokens":0,"reserved":{},"unknown_usage_calls":0}}
+E         ?           +++++++++++++++++++++++++++++++++++++++++++++)
+
+tests/integration/test_phase1_provider_privacy.py:203: AssertionError</failure></testcase></testsuite></testsuites>

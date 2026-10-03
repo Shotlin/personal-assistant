@@ -1,0 +1,71 @@
+{
+  "unit-final": {
+    "tests": 625,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "integration": {
+    "tests": 96,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "performance": {
+    "tests": 7,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "native": {
+    "passed": 121,
+    "failed": 0,
+    "ignored": 2
+  },
+  "renderer": {
+    "exit_code": 0
+  },
+  "static": {
+    "mypy_count": 91,
+    "mypy_added": [],
+    "mypy_removed": [],
+    "ruff_count": 42,
+    "ruff_added": [],
+    "ruff_removed": []
+  },
+  "mutations": {
+    "mutation-approval-release": {
+      "exit_code": 1,
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "mutation-origin-readonly": {
+      "exit_code": 1,
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "mutation-stop-noop": {
+      "exit_code": 1,
+      "tests": 2,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "mutation-sink-screening": {
+      "exit_code": 1,
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "overall": "PHASE_1_INCOMPLETE_NOT_ACCEPTED",
+  "review_started": "2026-09-30",
+  "review_artifacts_finished": "2026-10-01",
+  "agents_used": 0,
+  "live_actions_run": false
+}

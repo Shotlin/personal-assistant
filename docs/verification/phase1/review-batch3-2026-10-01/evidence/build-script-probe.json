@@ -1,0 +1,6 @@
+{
+  "exit_code": 1,
+  "network_or_asset_operations": false,
+  "uv_is_stub": true,
+  "command": "bash sani/scripts/build-tts.sh"
+}

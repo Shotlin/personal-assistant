@@ -1,0 +1,3110 @@
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................F............................... [ 27%]
+........................................................................ [ 37%]
+........................................................................ [ 46%]
+........................................................................ [ 55%]
+........................................................................ [ 64%]
+........................................................................ [ 74%]
+.......................................EEEEEEEEEEEEEEEEEEEEEEEEs........ [ 83%]
+..................................................EEEEEEEE.............. [ 92%]
+EEEEEE......EEEEEEEEEFFFFFFFFEEEEEEEEEEEEEEEEEEE........                 [100%]
+==================================== ERRORS ====================================
+______ ERROR at setup of test_mutating_call_writes_planned_then_confirmed ______
+
+    @pytest.fixture
+    async def ledger_env():
+>       store, ledger, run_id = await _store_and_ledger()
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_action_ledger_dispatch.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_action_ledger_dispatch.py:34: in _store_and_ledger
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+_______ ERROR at setup of test_tool_error_marks_row_failed_not_confirmed _______
+
+    @pytest.fixture
+    async def ledger_env():
+>       store, ledger, run_id = await _store_and_ledger()
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_action_ledger_dispatch.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_action_ledger_dispatch.py:34: in _store_and_ledger
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+___________ ERROR at setup of test_unobserved_outcome_marks_unknown ____________
+
+    @pytest.fixture
+    async def ledger_env():
+>       store, ledger, run_id = await _store_and_ledger()
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_action_ledger_dispatch.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_action_ledger_dispatch.py:34: in _store_and_ledger
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+______ ERROR at setup of test_observation_tools_do_not_create_ledger_rows ______
+
+    @pytest.fixture
+    async def ledger_env():
+>       store, ledger, run_id = await _store_and_ledger()
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_action_ledger_dispatch.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_action_ledger_dispatch.py:34: in _store_and_ledger
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+___________ ERROR at setup of test_no_ledger_in_scope_means_no_rows ____________
+
+    @pytest.fixture
+    async def ledger_env():
+>       store, ledger, run_id = await _store_and_ledger()
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_action_ledger_dispatch.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_action_ledger_dispatch.py:34: in _store_and_ledger
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+_____________ ERROR at setup of test_digest_differs_per_arguments ______________
+
+    @pytest.fixture
+    async def ledger_env():
+>       store, ledger, run_id = await _store_and_ledger()
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_action_ledger_dispatch.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_action_ledger_dispatch.py:34: in _store_and_ledger
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+__________ ERROR at setup of test_agent_has_no_task_or_execute_tools ___________
+
+self = <Coroutine test_agent_has_no_task_or_execute_tools>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:926: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+__ ERROR at setup of test_conversation_streams_and_persists_across_reconnect ___
+
+self = <Coroutine test_conversation_streams_and_persists_across_reconnect>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+___ ERROR at setup of test_memory_write_recalled_in_new_thread_and_isolated ____
+
+self = <Coroutine test_memory_write_recalled_in_new_thread_and_isolated>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+___ ERROR at setup of test_memory_policy_blocks_secret_writes_in_agent_flow ____
+
+self = <Coroutine test_memory_policy_blocks_secret_writes_in_agent_flow>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_____________ ERROR at setup of test_stop_unknown_run_returns_404 ______________
+
+self = <Coroutine test_stop_unknown_run_returns_404>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_______________ ERROR at setup of test_stop_requires_gateway_key _______________
+
+self = <Coroutine test_stop_requires_gateway_key>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+____________ ERROR at setup of test_stop_marks_active_run_cancelled ____________
+
+self = <Coroutine test_stop_marks_active_run_cancelled>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______ ERROR at setup of test_mutating_tool_call_writes_one_confirmed_row ______
+
+self = <Coroutine test_mutating_tool_call_writes_one_confirmed_row>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______ ERROR at setup of test_models_endpoint_requires_and_validates_key _______
+
+self = <Coroutine test_models_endpoint_requires_and_validates_key>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______________ ERROR at setup of test_unsupported_model_rejected _______________
+
+self = <Coroutine test_unsupported_model_rejected>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_______________ ERROR at setup of test_missing_identity_rejected _______________
+
+self = <Coroutine test_missing_identity_rejected>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_______ ERROR at setup of test_production_mode_rejects_dev_test_headers ________
+
+self = <Coroutine test_production_mode_rejects_dev_test_headers>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______ ERROR at setup of test_non_streaming_chat_and_thread_continuation _______
+
+self = <Coroutine test_non_streaming_chat_and_thread_continuation>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_________ ERROR at setup of test_streaming_chat_returns_sse_with_done __________
+
+self = <Coroutine test_streaming_chat_returns_sse_with_done>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+________ ERROR at setup of test_resubmitted_turn_is_not_executed_twice _________
+
+self = <Coroutine test_resubmitted_turn_is_not_executed_twice>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______ ERROR at setup of test_utility_task_uses_plain_model_without_agent ______
+
+self = <Coroutine test_utility_task_uses_plain_model_without_agent>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+____ ERROR at setup of test_stream_terminal_event_only_after_generator_ends ____
+
+self = <Coroutine test_stream_terminal_event_only_after_generator_ends>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+__________ ERROR at setup of test_usage_ledger_records_provider_call ___________
+
+self = <Coroutine test_usage_ledger_records_provider_call>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_negations_and_multi_clauses_reach_the_agent[Do not open Chrome] _
+
+self = <Coroutine test_negations_and_multi_clauses_reach_the_agent[Do not open Chrome]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_negations_and_multi_clauses_reach_the_agent[Open Terminal, delete the project, then open Chrome] _
+
+self = <Coroutine test_negations_and_multi_clauses_reach_the_agent[Open Terminal, delete the project, then open Chrome]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_negations_and_multi_clauses_reach_the_agent[Open Excel] _
+
+self = <Coroutine test_negations_and_multi_clauses_reach_the_agent[Open Excel]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_negations_and_multi_clauses_reach_the_agent[open calculator and compute 2+2] _
+
+self = <Coroutine test_negations_and_multi_clauses_reach_the_agent[open calculator and compute 2+2]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_negations_and_multi_clauses_reach_the_agent[please don't launch anything] _
+
+self = <Coroutine test_negations_and_multi_clauses_reach_the_agent[please don't launch anything]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_____ ERROR at setup of test_no_negation_ever_dispatches_a_native_mutation _____
+
+self = <Coroutine test_no_negation_ever_dispatches_a_native_mutation>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_______________ ERROR at setup of test_healthz_p95_under_budget ________________
+
+self = <Coroutine test_healthz_p95_under_budget>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+________________ ERROR at setup of test_models_p95_under_budget ________________
+
+self = <Coroutine test_models_p95_under_budget>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+____________ ERROR at setup of test_thread_state_survives_reconnect ____________
+
+self = <Coroutine test_thread_state_survives_reconnect>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_____________ ERROR at setup of test_store_items_survive_reconnect _____________
+
+self = <Coroutine test_store_items_survive_reconnect>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_____________ ERROR at setup of test_user_namespaces_are_isolated ______________
+
+self = <Coroutine test_user_namespaces_are_isolated>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+__ ERROR at setup of test_production_lifespan_claims_and_closes_store[False] ___
+
+self = <Coroutine test_production_lifespan_claims_and_closes_store[False]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+___ ERROR at setup of test_production_lifespan_claims_and_closes_store[True] ___
+
+self = <Coroutine test_production_lifespan_claims_and_closes_store[True]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______ ERROR at setup of test_production_startup_failure_closes_run_store ______
+
+self = <Coroutine test_production_startup_failure_closes_run_store>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_gateway_maps_provider_failures[exc0-provider_timeout-504] _
+
+self = <Coroutine test_gateway_maps_provider_failures[exc0-provider_timeout-504]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_gateway_maps_provider_failures[exc1-provider_unavailable-503] _
+
+self = <Coroutine test_gateway_maps_provider_failures[exc1-provider_unavailable-503]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+__________ ERROR at setup of test_duplicate_message_id_executes_once ___________
+
+self = <Coroutine test_duplicate_message_id_executes_once>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_______________ ERROR at setup of test_new_message_id_runs_again _______________
+
+self = <Coroutine test_new_message_id_runs_again>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______________ ERROR at setup of test_events_requires_gateway_key ______________
+
+self = <Coroutine test_events_requires_gateway_key>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_______________ ERROR at setup of test_events_unknown_run_is_404 _______________
+
+self = <Coroutine test_events_unknown_run_is_404>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_events_stream_reports_started_actions_and_completion __
+
+self = <Coroutine test_events_stream_reports_started_actions_and_completion>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______ ERROR at setup of test_events_stream_reports_failed_action_and_run ______
+
+self = <Coroutine test_events_stream_reports_failed_action_and_run>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_____ ERROR at setup of test_events_stream_never_contains_payload_material _____
+
+self = <Coroutine test_events_stream_never_contains_payload_material>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______ ERROR at setup of test_pristine_setup_and_repeat_preserve_history _______
+
+self = <Coroutine test_pristine_setup_and_repeat_preserve_history>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_legacy_duplicates_fail_setup_without_deleting_history[False] _
+
+self = <Coroutine test_legacy_duplicates_fail_setup_without_deleting_history[False]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_legacy_duplicates_fail_setup_without_deleting_history[True] _
+
+self = <Coroutine test_legacy_duplicates_fail_setup_without_deleting_history[True]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_duplicate_returns_canonical_identity_and_conflicts_fail_closed _
+
+self = <Coroutine test_duplicate_returns_canonical_identity_and_conflicts_fail_closed>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______ ERROR at setup of test_failed_run_is_retryable_with_same_identity _______
+
+self = <Coroutine test_failed_run_is_retryable_with_same_identity>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+__________ ERROR at setup of test_retry_claim_is_atomic_single_winner __________
+
+self = <Coroutine test_retry_claim_is_atomic_single_winner>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______ ERROR at setup of test_inflight_and_completed_retries_still_dedup _______
+
+self = <Coroutine test_inflight_and_completed_retries_still_dedup>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+____ ERROR at setup of test_identity_conflict_after_failure_still_rejected _____
+
+self = <Coroutine test_identity_conflict_after_failure_still_rejected>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+__ ERROR at setup of test_concurrent_claims_have_one_canonical_winner[False] ___
+
+self = <Coroutine test_concurrent_claims_have_one_canonical_winner[False]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+___ ERROR at setup of test_concurrent_claims_have_one_canonical_winner[True] ___
+
+self = <Coroutine test_concurrent_claims_have_one_canonical_winner[True]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+____________ ERROR at setup of test_lease_rejects_invalid_ttl[0.0] _____________
+
+self = <Coroutine test_lease_rejects_invalid_ttl[0.0]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+____________ ERROR at setup of test_lease_rejects_invalid_ttl[-1.0] ____________
+
+self = <Coroutine test_lease_rejects_invalid_ttl[-1.0]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+____________ ERROR at setup of test_lease_rejects_invalid_ttl[nan] _____________
+
+self = <Coroutine test_lease_rejects_invalid_ttl[nan]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+____________ ERROR at setup of test_lease_rejects_invalid_ttl[inf] _____________
+
+self = <Coroutine test_lease_rejects_invalid_ttl[inf]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+____________ ERROR at setup of test_lease_rejects_invalid_ttl[-inf] ____________
+
+self = <Coroutine test_lease_rejects_invalid_ttl[-inf]>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+__ ERROR at setup of test_lease_uses_database_clock_and_owner_checked_release __
+
+self = <Coroutine test_lease_uses_database_clock_and_owner_checked_release>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_ ERROR at setup of test_concurrent_lease_acquisition_reports_only_actual_winner _
+
+self = <Coroutine test_concurrent_lease_acquisition_reports_only_actual_winner>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+_________ ERROR at setup of test_scenario_a_knowledge_chat_without_cua _________
+
+self = <Coroutine test_scenario_a_knowledge_chat_without_cua>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+______ ERROR at setup of test_scenario_b_memory_across_restart_and_chats _______
+
+self = <Coroutine test_scenario_b_memory_across_restart_and_chats>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    @pytest.fixture(scope="session")
+    def require_postgres() -> None:
+        """Fail loudly when the compose database is not running."""
+        if not postgres_reachable():
+>           pytest.fail(
+                f"PostgreSQL is not reachable at {POSTGRES_HOST}:{POSTGRES_PORT}. "
+                "Start it first: docker compose up -d postgres"
+            )
+E           Failed: PostgreSQL is not reachable at 127.0.0.1:5433. Start it first: docker compose up -d postgres
+
+tests/conftest.py:24: Failed
+=================================== FAILURES ===================================
+______________ test_per_action_ledger_records_intent_and_outcome _______________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-13/test_per_action_ledger_records0')
+
+    async def test_per_action_ledger_records_intent_and_outcome(tmp_path: Any) -> None:
+        """R04: the per-action ledger records 'planned' before dispatch and a
+        terminal state after, bound to the execution."""
+        from assistant.missions.store import MissionActionLedger
+    
+        db = tmp_path / "ledger.db"
+        store = await MissionStore.connect(db)
+        await store.setup()
+        mission_id = await _mission(store)
+        execution_id = new_id()
+        store._conn.execute(
+            "INSERT INTO mission_attempts (execution_id, mission_id, plan_version, "
+            "step_id, attempt, control_epoch, packet_digest, dispatch_state, "
+            "effect_class, created_at_ms, updated_at_ms) "
+            "VALUES (?, ?, 1, 's', 1, 1, 'd', 'DISPATCHED', 'REPEATABLE_LOCAL', ?, ?)",
+            (execution_id, mission_id, _now(), _now()),
+        )
+        ledger = MissionActionLedger(store, execution_id=execution_id, mission_id=mission_id)
+>       ledger_id = await ledger.plan(tool_name="click", args_digest="abc" * 10)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_mission_budgets.py:240: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/assistant/missions/store.py:303: in plan
+    return await self._store._run_tx(self._plan_sync, tool_name, args_digest)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/assistant/missions/store.py:449: in _run_tx
+    return await asyncio.to_thread(fn, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/assistant/missions/store.py:334: in _plan_sync
+    return self._store._tx(tx)
+           ^^^^^^^^^^^^^^^^^^^
+src/assistant/missions/store.py:464: in _tx
+    result = fn()
+             ^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tx() -> int:
+        now = _now_ms()
+        # The ledger is the last durable boundary before a mutating tool.
+        # Persist uncertainty in the SAME transaction as its action row.
+        row = self._store._conn.execute(
+            "SELECT a.dispatch_state, a.plan_version, a.control_epoch, "
+            "m.plan_version, m.control_epoch, m.status FROM mission_attempts a "
+            "JOIN missions m ON m.mission_id=a.mission_id "
+            "WHERE a.execution_id=? AND a.mission_id=?",
+            (self.execution_id, self.mission_id),
+        ).fetchone()
+        if row is None or str(row[0]) not in {"INTENT_COMMITTED", "DISPATCHED"}:
+            raise MissionStoreError("action intent is no longer dispatchable")
+        if row[1] != row[3] or row[2] != row[4] or row[5] != "RUNNING":
+>           raise StaleControlError("action intent lost its current mission epoch")
+E           assistant.missions.store.StaleControlError: action intent lost its current mission epoch
+
+src/assistant/missions/store.py:320: StaleControlError
+____________ test_first_claim_wins_and_duplicate_delivery_observes _____________
+
+    async def test_first_claim_wins_and_duplicate_delivery_observes() -> None:
+>       store = await _store()
+                ^^^^^^^^^^^^^^
+
+tests/integration/test_run_ledger.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_run_ledger.py:20: in _store
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+______________ test_same_text_new_id_is_a_new_intentional_command ______________
+
+    async def test_same_text_new_id_is_a_new_intentional_command() -> None:
+>       store = await _store()
+                ^^^^^^^^^^^^^^
+
+tests/integration/test_run_ledger.py:69: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_run_ledger.py:20: in _store
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+_________________ test_conflicting_digest_same_id_is_rejected __________________
+
+    async def test_conflicting_digest_same_id_is_rejected() -> None:
+>       store = await _store()
+                ^^^^^^^^^^^^^^
+
+tests/integration/test_run_ledger.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_run_ledger.py:20: in _store
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+___________________ test_run_status_transitions_are_recorded ___________________
+
+    async def test_run_status_transitions_are_recorded() -> None:
+>       store = await _store()
+                ^^^^^^^^^^^^^^
+
+tests/integration/test_run_ledger.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_run_ledger.py:20: in _store
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+_________________ test_action_ledger_records_plan_then_outcome _________________
+
+    async def test_action_ledger_records_plan_then_outcome() -> None:
+>       store = await _store()
+                ^^^^^^^^^^^^^^
+
+tests/integration/test_run_ledger.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_run_ledger.py:20: in _store
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+____________ test_uncertain_dispatch_is_marked_unknown_not_replayed ____________
+
+    async def test_uncertain_dispatch_is_marked_unknown_not_replayed() -> None:
+        """Crash after dispatch/before acknowledgement -> unknown state, which
+        requires readback; the action is NOT silently resubmitted (WP4 gate)."""
+>       store = await _store()
+                ^^^^^^^^^^^^^^
+
+tests/integration/test_run_ledger.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_run_ledger.py:20: in _store
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+________________ test_desktop_lease_is_exclusive_across_owners _________________
+
+    async def test_desktop_lease_is_exclusive_across_owners() -> None:
+>       store = await _store()
+                ^^^^^^^^^^^^^^
+
+tests/integration/test_run_ledger.py:164: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_run_ledger.py:20: in _store
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+_______________________ test_expired_lease_is_stealable ________________________
+
+    async def test_expired_lease_is_stealable() -> None:
+>       store = await _store()
+                ^^^^^^^^^^^^^^
+
+tests/integration/test_run_ledger.py:178: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_run_ledger.py:20: in _store
+    store = await RunStore.connect(
+src/assistant/runtime/runs.py:133: in connect
+    conn = await psycopg.AsyncConnection.connect(database_url, autocommit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.AsyncConnection'>
+conninfo = 'user=assistant password=assistant dbname=assistant host=127.0.0.1 port=5433 hostaddr=127.0.0.1'
+autocommit = True, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {}
+
+    @classmethod
+    async def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: AsyncRowFactory[Row] | None = None,
+        cursor_factory: type[AsyncCursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `AsyncConnection` instance.
+        """
+        if True:  # ASYNC
+            if sys.platform == "win32":
+                loop = asyncio.get_running_loop()
+                if isinstance(loop, asyncio.ProactorEventLoop):
+    
+                    from ._compat import _asyncio_run_snippet
+    
+                    raise e.InterfaceError(
+                        "Psycopg cannot use the 'ProactorEventLoop' to run in async"
+                        " mode. Please use a compatible event loop, for instance by"
+                        + f" {_asyncio_run_snippet}"
+                    )
+    
+        params = await cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = await conninfo_attempts_async(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = await waiting.wait_conn_async(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receive data from server: Connection refused
+
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/psycopg/connection_async.py:138: OperationalError
+=============================== warnings summary ===============================
+../../../../Documents/personal-assistant/.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /Users/sayan/Documents/personal-assistant/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_mission_budgets.py::test_per_action_ledger_records_intent_and_outcome
+FAILED tests/integration/test_run_ledger.py::test_first_claim_wins_and_duplicate_delivery_observes
+FAILED tests/integration/test_run_ledger.py::test_same_text_new_id_is_a_new_intentional_command
+FAILED tests/integration/test_run_ledger.py::test_conflicting_digest_same_id_is_rejected
+FAILED tests/integration/test_run_ledger.py::test_run_status_transitions_are_recorded
+FAILED tests/integration/test_run_ledger.py::test_action_ledger_records_plan_then_outcome
+FAILED tests/integration/test_run_ledger.py::test_uncertain_dispatch_is_marked_unknown_not_replayed
+FAILED tests/integration/test_run_ledger.py::test_desktop_lease_is_exclusive_across_owners
+FAILED tests/integration/test_run_ledger.py::test_expired_lease_is_stealable
+ERROR tests/integration/test_action_ledger_dispatch.py::test_mutating_call_writes_planned_then_confirmed
+ERROR tests/integration/test_action_ledger_dispatch.py::test_tool_error_marks_row_failed_not_confirmed
+ERROR tests/integration/test_action_ledger_dispatch.py::test_unobserved_outcome_marks_unknown
+ERROR tests/integration/test_action_ledger_dispatch.py::test_observation_tools_do_not_create_ledger_rows
+ERROR tests/integration/test_action_ledger_dispatch.py::test_no_ledger_in_scope_means_no_rows
+ERROR tests/integration/test_action_ledger_dispatch.py::test_digest_differs_per_arguments
+ERROR tests/integration/test_deep_agent.py::test_agent_has_no_task_or_execute_tools
+ERROR tests/integration/test_deep_agent.py::test_conversation_streams_and_persists_across_reconnect
+ERROR tests/integration/test_deep_agent.py::test_memory_write_recalled_in_new_thread_and_isolated
+ERROR tests/integration/test_deep_agent.py::test_memory_policy_blocks_secret_writes_in_agent_flow
+ERROR tests/integration/test_desktop_stop.py::test_stop_unknown_run_returns_404
+ERROR tests/integration/test_desktop_stop.py::test_stop_requires_gateway_key
+ERROR tests/integration/test_desktop_stop.py::test_stop_marks_active_run_cancelled
+ERROR tests/integration/test_gateway_action_ledger.py::test_mutating_tool_call_writes_one_confirmed_row
+ERROR tests/integration/test_gateway_streaming.py::test_models_endpoint_requires_and_validates_key
+ERROR tests/integration/test_gateway_streaming.py::test_unsupported_model_rejected
+ERROR tests/integration/test_gateway_streaming.py::test_missing_identity_rejected
+ERROR tests/integration/test_gateway_streaming.py::test_production_mode_rejects_dev_test_headers
+ERROR tests/integration/test_gateway_streaming.py::test_non_streaming_chat_and_thread_continuation
+ERROR tests/integration/test_gateway_streaming.py::test_streaming_chat_returns_sse_with_done
+ERROR tests/integration/test_gateway_streaming.py::test_resubmitted_turn_is_not_executed_twice
+ERROR tests/integration/test_gateway_streaming.py::test_utility_task_uses_plain_model_without_agent
+ERROR tests/integration/test_gateway_streaming.py::test_stream_terminal_event_only_after_generator_ends
+ERROR tests/integration/test_gateway_streaming.py::test_usage_ledger_records_provider_call
+ERROR tests/integration/test_negative_routing_e2e.py::test_negations_and_multi_clauses_reach_the_agent[Do not open Chrome]
+ERROR tests/integration/test_negative_routing_e2e.py::test_negations_and_multi_clauses_reach_the_agent[Open Terminal, delete the project, then open Chrome]
+ERROR tests/integration/test_negative_routing_e2e.py::test_negations_and_multi_clauses_reach_the_agent[Open Excel]
+ERROR tests/integration/test_negative_routing_e2e.py::test_negations_and_multi_clauses_reach_the_agent[open calculator and compute 2+2]
+ERROR tests/integration/test_negative_routing_e2e.py::test_negations_and_multi_clauses_reach_the_agent[please don't launch anything]
+ERROR tests/integration/test_negative_routing_e2e.py::test_no_negation_ever_dispatches_a_native_mutation
+ERROR tests/integration/test_performance_budgets.py::test_healthz_p95_under_budget
+ERROR tests/integration/test_performance_budgets.py::test_models_p95_under_budget
+ERROR tests/integration/test_postgres_persistence.py::test_thread_state_survives_reconnect
+ERROR tests/integration/test_postgres_persistence.py::test_store_items_survive_reconnect
+ERROR tests/integration/test_postgres_persistence.py::test_user_namespaces_are_isolated
+ERROR tests/integration/test_production_run_store.py::test_production_lifespan_claims_and_closes_store[False]
+ERROR tests/integration/test_production_run_store.py::test_production_lifespan_claims_and_closes_store[True]
+ERROR tests/integration/test_production_run_store.py::test_production_startup_failure_closes_run_store
+ERROR tests/integration/test_provider_timeout.py::test_gateway_maps_provider_failures[exc0-provider_timeout-504]
+ERROR tests/integration/test_provider_timeout.py::test_gateway_maps_provider_failures[exc1-provider_unavailable-503]
+ERROR tests/integration/test_run_dedup.py::test_duplicate_message_id_executes_once
+ERROR tests/integration/test_run_dedup.py::test_new_message_id_runs_again - F...
+ERROR tests/integration/test_run_events_route.py::test_events_requires_gateway_key
+ERROR tests/integration/test_run_events_route.py::test_events_unknown_run_is_404
+ERROR tests/integration/test_run_events_route.py::test_events_stream_reports_started_actions_and_completion
+ERROR tests/integration/test_run_events_route.py::test_events_stream_reports_failed_action_and_run
+ERROR tests/integration/test_run_events_route.py::test_events_stream_never_contains_payload_material
+ERROR tests/integration/test_run_store_safety.py::test_pristine_setup_and_repeat_preserve_history
+ERROR tests/integration/test_run_store_safety.py::test_legacy_duplicates_fail_setup_without_deleting_history[False]
+ERROR tests/integration/test_run_store_safety.py::test_legacy_duplicates_fail_setup_without_deleting_history[True]
+ERROR tests/integration/test_run_store_safety.py::test_duplicate_returns_canonical_identity_and_conflicts_fail_closed
+ERROR tests/integration/test_run_store_safety.py::test_failed_run_is_retryable_with_same_identity
+ERROR tests/integration/test_run_store_safety.py::test_retry_claim_is_atomic_single_winner
+ERROR tests/integration/test_run_store_safety.py::test_inflight_and_completed_retries_still_dedup
+ERROR tests/integration/test_run_store_safety.py::test_identity_conflict_after_failure_still_rejected
+ERROR tests/integration/test_run_store_safety.py::test_concurrent_claims_have_one_canonical_winner[False]
+ERROR tests/integration/test_run_store_safety.py::test_concurrent_claims_have_one_canonical_winner[True]
+ERROR tests/integration/test_run_store_safety.py::test_lease_rejects_invalid_ttl[0.0]
+ERROR tests/integration/test_run_store_safety.py::test_lease_rejects_invalid_ttl[-1.0]
+ERROR tests/integration/test_run_store_safety.py::test_lease_rejects_invalid_ttl[nan]
+ERROR tests/integration/test_run_store_safety.py::test_lease_rejects_invalid_ttl[inf]
+ERROR tests/integration/test_run_store_safety.py::test_lease_rejects_invalid_ttl[-inf]
+ERROR tests/integration/test_run_store_safety.py::test_lease_uses_database_clock_and_owner_checked_release
+ERROR tests/integration/test_run_store_safety.py::test_concurrent_lease_acquisition_reports_only_actual_winner
+ERROR tests/integration/test_scenarios.py::test_scenario_a_knowledge_chat_without_cua
+ERROR tests/integration/test_scenarios.py::test_scenario_b_memory_across_restart_and_chats

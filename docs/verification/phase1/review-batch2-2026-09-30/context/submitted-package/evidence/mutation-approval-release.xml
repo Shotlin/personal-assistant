@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.952" timestamp="2026-09-30T22:59:53.501794+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_phase1_owner_controls" name="test_release_matches_only_the_pending_digest" time="0.825"><failure message="assert 1 == 0">store = &lt;assistant.missions.store.MissionStore object at 0x10c3ecdd0&gt;
+
+    async def test_release_matches_only_the_pending_digest(store: MissionStore) -&gt; None:
+        """An unrelated approval must not release an approval-blocked step."""
+        mission, scope = await claimed(store, steps=2)
+        right_digest = "a" * 64
+        wrong_digest = "b" * 64
+        item = await store.claim_step(mission.mission_id, 1, 1, tool_ids=["click"])
+        assert item is not None
+        applied = await store.apply_result(_blocked_result(mission, right_digest, item))
+        assert applied == "APPLIED"
+        # A real approval for a DIFFERENT action releases nothing.
+        await store.record_approval(_approval(mission, scope, wrong_digest))
+&gt;       assert await store.release_approved_blocked_steps(mission.mission_id, 1) == 0
+E       assert 1 == 0
+
+tests/integration/test_phase1_owner_controls.py:118: AssertionError</failure></testcase></testsuite></testsuites>

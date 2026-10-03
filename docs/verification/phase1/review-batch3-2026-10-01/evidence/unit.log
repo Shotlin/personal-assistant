@@ -1,0 +1,104 @@
+....................F....FF............................................. [ 11%]
+..................................F..................................... [ 22%]
+........................................................................ [ 34%]
+........................................................................ [ 45%]
+........................................................................ [ 56%]
+........................................................................ [ 68%]
+........................................................................ [ 79%]
+........................................................................ [ 90%]
+..........................................................               [100%]
+=================================== FAILURES ===================================
+______________ test_probe_driver_rejects_a_stale_embedded_socket _______________
+
+    async def test_probe_driver_rejects_a_stale_embedded_socket() -> None:
+        """A leftover socket pathname must not be presented as a ready daemon."""
+        stale_socket = Path(f"/private/tmp/sani-stale-{os.getpid()}.sock")
+        stale_socket.unlink(missing_ok=True)
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+>       listener.bind(str(stale_socket))
+E       PermissionError: [Errno 1] Operation not permitted
+
+tests/unit/test_core_desktop.py:83: PermissionError
+____________ test_embedded_probe_reads_the_mode_over_its_own_socket ____________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-107/test_embedded_probe_reads_the_0')
+
+    async def test_embedded_probe_reads_the_mode_over_its_own_socket(tmp_path: Path) -> None:
+        """A connectable endpoint used to be enough; it proved nothing about mode.
+    
+        The shim records its own arguments, which is how this asserts the read was
+        aimed at Sani's private socket rather than at the global standalone daemon.
+        """
+        socket_path = Path(f"/private/tmp/sani-posture-{os.getpid()}.sock")
+        socket_path.unlink(missing_ok=True)
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+>       listener.bind(str(socket_path))
+E       PermissionError: [Errno 1] Operation not permitted
+
+tests/unit/test_core_desktop.py:181: PermissionError
+_____________ test_embedded_probe_reports_a_resurrected_wrong_mode _____________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-107/test_embedded_probe_reports_a_0')
+
+    async def test_embedded_probe_reports_a_resurrected_wrong_mode(tmp_path: Path) -> None:
+        socket_path = Path(f"/private/tmp/sani-wrongmode-{os.getpid()}.sock")
+        socket_path.unlink(missing_ok=True)
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+>       listener.bind(str(socket_path))
+E       PermissionError: [Errno 1] Operation not permitted
+
+tests/unit/test_core_desktop.py:202: PermissionError
+___________ test_a_lease_waits_for_a_driver_that_is_still_coming_up ____________
+
+    async def test_a_lease_waits_for_a_driver_that_is_still_coming_up() -> None:
+        """Measured live: after a restart the socket file exists before anything
+        accepts on it, and a lease opened in that window dies on 'Connection closed'.
+        So the wait is for a listening endpoint, not for a path."""
+        import socket as socket_module
+        from types import SimpleNamespace
+    
+        # A short, fixed directory: AF_UNIX paths are capped at ~104 bytes, and a
+        # pytest tmp_path blows straight through that.
+        base = "/private/tmp"
+        path = f"{base}/sani-late-{os.getpid()}.sock"
+        transport = StubTransport([])
+        transport._settings = SimpleNamespace(cua_socket=path)
+        transport.ENDPOINT_WAIT_SECONDS = 3.0
+        held: list[socket_module.socket] = []
+    
+        async def bind_later() -> None:
+            await asyncio.sleep(0.4)
+            listener = socket_module.socket(socket_module.AF_UNIX, socket_module.SOCK_STREAM)
+            listener.bind(path)
+            listener.listen(1)
+            held.append(listener)
+    
+        task = asyncio.create_task(bind_later())
+        loop = asyncio.get_running_loop()
+        began = loop.time()
+        await transport._wait_for_endpoint()
+        waited = loop.time() - began
+>       await task
+
+tests/unit/test_cua_transport_recovery.py:201: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def bind_later() -> None:
+        await asyncio.sleep(0.4)
+        listener = socket_module.socket(socket_module.AF_UNIX, socket_module.SOCK_STREAM)
+>       listener.bind(path)
+E       PermissionError: [Errno 1] Operation not permitted
+
+tests/unit/test_cua_transport_recovery.py:192: PermissionError
+=============================== warnings summary ===============================
+../../../../Users/sayan/Documents/personal-assistant/.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /Users/sayan/Documents/personal-assistant/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_core_desktop.py::test_probe_driver_rejects_a_stale_embedded_socket
+FAILED tests/unit/test_core_desktop.py::test_embedded_probe_reads_the_mode_over_its_own_socket
+FAILED tests/unit/test_core_desktop.py::test_embedded_probe_reports_a_resurrected_wrong_mode
+FAILED tests/unit/test_cua_transport_recovery.py::test_a_lease_waits_for_a_driver_that_is_still_coming_up
+4 failed, 630 passed, 1 warning in 46.09s

@@ -4,6 +4,7 @@ No network calls and no inference spend: adapter modules have their model
 classes replaced with recording stubs (Phase 1 spec, Task 2).
 """
 
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
@@ -21,6 +22,7 @@ class RecordingStub:
 
     def __init__(self, **kwargs: Any) -> None:
         type(self).last_kwargs = kwargs
+        self.client = SimpleNamespace(sdk_configuration=SimpleNamespace(retry_config=None))
 
 
 class StubOpenRouter(RecordingStub):
@@ -65,7 +67,10 @@ def test_openrouter_adapter_uses_native_integration(monkeypatch: pytest.MonkeyPa
     assert kwargs["openrouter_api_key"] == SecretStr("or-key")
     # request_timeout is SDK timeout_ms: MODEL_TIMEOUT_SECONDS=30 -> 30_000 ms.
     assert kwargs["request_timeout"] == 30_000
-    assert kwargs["max_retries"] == 1
+    # SDK retries would create HTTP attempts inside one admitted LangChain
+    # invocation, so OpenRouter retries are owned by Mission recovery.
+    assert kwargs["max_retries"] == 0
+    assert model.client.sdk_configuration.retry_config.strategy == "none"
 
 
 def test_generic_compatible_adapter_kwargs(monkeypatch: pytest.MonkeyPatch) -> None:

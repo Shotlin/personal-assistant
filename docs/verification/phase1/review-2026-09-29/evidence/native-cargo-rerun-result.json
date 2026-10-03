@@ -1,0 +1,12 @@
+{
+  "exit": 101,
+  "command": [
+    "cargo",
+    "test",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "/private/tmp/jarvis-native-review-lxk6brnx/sani/src-tauri/Cargo.toml"
+  ],
+  "fixture_config_copied": true
+}

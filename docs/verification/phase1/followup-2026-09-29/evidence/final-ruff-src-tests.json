@@ -1,0 +1,1200 @@
+[
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 103,
+      "row": 118
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/adapter.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 118
+    },
+    "message": "Line too long (102 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 118,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "F822",
+    "end_location": {
+      "column": 20,
+      "row": 367
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/adapter.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 367
+    },
+    "message": "Undefined name `TaskCancelled` in `__all__`",
+    "name": "undefined-export",
+    "noqa_row": 367,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/undefined-export"
+  },
+  {
+    "cell": null,
+    "code": "UP037",
+    "end_location": {
+      "column": 41,
+      "row": 151
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/contracts.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "ActionOutcome | None",
+          "end_location": {
+            "column": 41,
+            "row": 151
+          },
+          "location": {
+            "column": 19,
+            "row": 151
+          }
+        }
+      ],
+      "message": "Remove quotes"
+    },
+    "location": {
+      "column": 19,
+      "row": 151
+    },
+    "message": "Remove quotes from type annotation",
+    "name": "quoted-annotation",
+    "noqa_row": 151,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/quoted-annotation"
+  },
+  {
+    "cell": null,
+    "code": "UP037",
+    "end_location": {
+      "column": 33,
+      "row": 153
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/contracts.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "NoProgressTracker",
+          "end_location": {
+            "column": 33,
+            "row": 153
+          },
+          "location": {
+            "column": 14,
+            "row": 153
+          }
+        }
+      ],
+      "message": "Remove quotes"
+    },
+    "location": {
+      "column": 14,
+      "row": 153
+    },
+    "message": "Remove quotes from type annotation",
+    "name": "quoted-annotation",
+    "noqa_row": 153,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/quoted-annotation"
+  },
+  {
+    "cell": null,
+    "code": "UP037",
+    "end_location": {
+      "column": 26,
+      "row": 264
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/contracts.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "deque[str]",
+          "end_location": {
+            "column": 26,
+            "row": 264
+          },
+          "location": {
+            "column": 14,
+            "row": 264
+          }
+        }
+      ],
+      "message": "Remove quotes"
+    },
+    "location": {
+      "column": 14,
+      "row": 264
+    },
+    "message": "Remove quotes from type annotation",
+    "name": "quoted-annotation",
+    "noqa_row": 264,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/quoted-annotation"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 61,
+      "row": 77
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/jev.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "        from langchain_core._api import LangChainBetaWarning\n        from langchain_typesafe import TypeSafeClassifier\n",
+          "end_location": {
+            "column": 1,
+            "row": 78
+          },
+          "location": {
+            "column": 1,
+            "row": 75
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 9,
+      "row": 75
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "name": "unsorted-imports",
+    "noqa_row": 75,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  },
+  {
+    "cell": null,
+    "code": "UP037",
+    "end_location": {
+      "column": 75,
+      "row": 169
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/jev.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "JevAnswers",
+          "end_location": {
+            "column": 75,
+            "row": 169
+          },
+          "location": {
+            "column": 63,
+            "row": 169
+          }
+        }
+      ],
+      "message": "Remove quotes"
+    },
+    "location": {
+      "column": 63,
+      "row": 169
+    },
+    "message": "Remove quotes from type annotation",
+    "name": "quoted-annotation",
+    "noqa_row": 169,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/quoted-annotation"
+  },
+  {
+    "cell": null,
+    "code": "UP037",
+    "end_location": {
+      "column": 36,
+      "row": 241
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/jev.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "JevAnswers",
+          "end_location": {
+            "column": 36,
+            "row": 241
+          },
+          "location": {
+            "column": 24,
+            "row": 241
+          }
+        }
+      ],
+      "message": "Remove quotes"
+    },
+    "location": {
+      "column": 24,
+      "row": 241
+    },
+    "message": "Remove quotes from type annotation",
+    "name": "quoted-annotation",
+    "noqa_row": 241,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/quoted-annotation"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 23,
+      "row": 21
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/parse.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from __future__ import annotations\n\nimport re\nfrom dataclasses import dataclass, field\nfrom typing import Any\n\n\n",
+          "end_location": {
+            "column": 1,
+            "row": 23
+          },
+          "location": {
+            "column": 1,
+            "row": 17
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 1,
+      "row": 17
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "name": "unsorted-imports",
+    "noqa_row": 17,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 51,
+      "row": 38
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/recipes.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from __future__ import annotations\n\nimport asyncio\nimport logging\nfrom dataclasses import dataclass\nfrom typing import Any\nfrom urllib.parse import quote_plus\n\nfrom assistant.velo import verify as outcome_check\nfrom assistant.velo.adapter import CuaAdapter\nfrom assistant.velo.contracts import (\n    AppIdentity,\n    OutcomeState,\n    Postcondition,\n    PostconditionKind,\n    Target,\n    TargetOwnership,\n    TaskState,\n)\n\n",
+          "end_location": {
+            "column": 1,
+            "row": 40
+          },
+          "location": {
+            "column": 1,
+            "row": 20
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 1,
+      "row": 20
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "name": "unsorted-imports",
+    "noqa_row": 20,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  },
+  {
+    "cell": null,
+    "code": "F821",
+    "end_location": {
+      "column": 31,
+      "row": 50
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/recipes.py",
+    "fix": null,
+    "location": {
+      "column": 19,
+      "row": 50
+    },
+    "message": "Undefined name `Verification`",
+    "name": "undefined-name",
+    "noqa_row": 50,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/undefined-name"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 102,
+      "row": 82
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/recipes.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 82
+    },
+    "message": "Line too long (101 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 82,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "F821",
+    "end_location": {
+      "column": 18,
+      "row": 123
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/recipes.py",
+    "fix": null,
+    "location": {
+      "column": 6,
+      "row": 123
+    },
+    "message": "Undefined name `Verification`",
+    "name": "undefined-name",
+    "noqa_row": 123,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/undefined-name"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 110,
+      "row": 370
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/recipes.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 370
+    },
+    "message": "Line too long (109 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 370,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 115,
+      "row": 80
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 80
+    },
+    "message": "Line too long (114 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 80,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 110,
+      "row": 102
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 102
+    },
+    "message": "Line too long (109 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 102,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 125,
+      "row": 104
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 104
+    },
+    "message": "Line too long (124 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 104,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 104,
+      "row": 140
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 140
+    },
+    "message": "Line too long (103 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 140,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 104,
+      "row": 143
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 143
+    },
+    "message": "Line too long (103 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 143,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 103,
+      "row": 164
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 164
+    },
+    "message": "Line too long (102 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 164,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 123,
+      "row": 165
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 165
+    },
+    "message": "Line too long (122 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 165,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 103,
+      "row": 202
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 202
+    },
+    "message": "Line too long (102 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 202,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 123,
+      "row": 203
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 203
+    },
+    "message": "Line too long (122 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 203,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 103,
+      "row": 231
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 231
+    },
+    "message": "Line too long (102 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 231,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "E501",
+    "end_location": {
+      "column": 123,
+      "row": 232
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/velo/verify.py",
+    "fix": null,
+    "location": {
+      "column": 101,
+      "row": 232
+    },
+    "message": "Line too long (122 > 100)",
+    "name": "line-too-long",
+    "noqa_row": 232,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/line-too-long"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 54,
+      "row": 11
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_adapter.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from __future__ import annotations\n\nimport pytest\n\nfrom assistant.tools.policy import STRUCTURED_CALLS\nfrom assistant.velo.adapter import CuaAdapter\nfrom assistant.velo.contracts import AdapterContractError, AppIdentity, TaskState\nfrom tests.unit.velo_fakes import FakeTool, app_entry\n\n\n",
+          "end_location": {
+            "column": 1,
+            "row": 14
+          },
+          "location": {
+            "column": 1,
+            "row": 3
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 1,
+      "row": 3
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "name": "unsorted-imports",
+    "noqa_row": 3,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 2,
+      "row": 23
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_controller.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from __future__ import annotations\n\nimport contextlib\nfrom typing import Any\n\nimport pytest\n\nfrom assistant.agent.context import RunBudget\nfrom assistant.tools.policy import desktop_contexts\nfrom assistant.velo.contracts import Candidate, CandidateKind, DecisionStatus, JevDecision\nfrom assistant.velo.controller import VeloEntry\nfrom tests.unit.velo_fakes import (\n    EventLog,\n    FakeRuntime,\n    app_entry,\n    reset_world,\n    standard_tools,\n    window_state_payload,\n)\n\n\n",
+          "end_location": {
+            "column": 1,
+            "row": 26
+          },
+          "location": {
+            "column": 1,
+            "row": 3
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 1,
+      "row": 3
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "name": "unsorted-imports",
+    "noqa_row": 3,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 18,
+      "row": 5
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_controller.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 6
+          },
+          "location": {
+            "column": 1,
+            "row": 5
+          }
+        }
+      ],
+      "message": "Remove unused import: `contextlib`"
+    },
+    "location": {
+      "column": 8,
+      "row": 5
+    },
+    "message": "`contextlib` imported but unused",
+    "name": "unused-import",
+    "noqa_row": 5,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 46,
+      "row": 10
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_controller.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 11
+          },
+          "location": {
+            "column": 1,
+            "row": 10
+          }
+        }
+      ],
+      "message": "Remove unused import: `assistant.agent.context.RunBudget`"
+    },
+    "location": {
+      "column": 37,
+      "row": 10
+    },
+    "message": "`assistant.agent.context.RunBudget` imported but unused",
+    "name": "unused-import",
+    "noqa_row": 10,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 47,
+      "row": 12
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_controller.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from assistant.velo.contracts import DecisionStatus, JevDecision",
+          "end_location": {
+            "column": 91,
+            "row": 12
+          },
+          "location": {
+            "column": 1,
+            "row": 12
+          }
+        }
+      ],
+      "message": "Remove unused import"
+    },
+    "location": {
+      "column": 38,
+      "row": 12
+    },
+    "message": "`assistant.velo.contracts.Candidate` imported but unused",
+    "name": "unused-import",
+    "noqa_row": 12,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 62,
+      "row": 12
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_controller.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from assistant.velo.contracts import DecisionStatus, JevDecision",
+          "end_location": {
+            "column": 91,
+            "row": 12
+          },
+          "location": {
+            "column": 1,
+            "row": 12
+          }
+        }
+      ],
+      "message": "Remove unused import"
+    },
+    "location": {
+      "column": 49,
+      "row": 12
+    },
+    "message": "`assistant.velo.contracts.CandidateKind` imported but unused",
+    "name": "unused-import",
+    "noqa_row": 12,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 21,
+      "row": 157
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_jev.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 158
+          },
+          "location": {
+            "column": 1,
+            "row": 157
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `provider`"
+    },
+    "location": {
+      "column": 13,
+      "row": 157
+    },
+    "message": "Local variable `provider` is assigned to but never used",
+    "name": "unused-variable",
+    "noqa_row": 157,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 2,
+      "row": 28
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_live_regressions.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from __future__ import annotations\n\nimport asyncio\n\nimport pytest\n\nfrom assistant.velo.adapter import CuaAdapter\nfrom assistant.velo.contracts import (\n    AppIdentity,\n    OutcomeState,\n    Postcondition,\n    PostconditionKind,\n    Target,\n    TaskState,\n)\nfrom assistant.velo.parse import parse\nfrom assistant.velo.recipes import execute\nfrom tests.unit.velo_fakes import (\n    EventLog,\n    FakeTool,\n    app_entry,\n    reset_world,\n    standard_tools,\n    window_state_payload,\n)\n\n\n",
+          "end_location": {
+            "column": 1,
+            "row": 31
+          },
+          "location": {
+            "column": 1,
+            "row": 3
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 1,
+      "row": 3
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "name": "unsorted-imports",
+    "noqa_row": 3,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 15,
+      "row": 5
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_live_regressions.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 6
+          },
+          "location": {
+            "column": 1,
+            "row": 5
+          }
+        }
+      ],
+      "message": "Remove unused import: `asyncio`"
+    },
+    "location": {
+      "column": 8,
+      "row": 5
+    },
+    "message": "`asyncio` imported but unused",
+    "name": "unused-import",
+    "noqa_row": 5,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 18,
+      "row": 13
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_live_regressions.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from assistant.velo.contracts import (\n    AppIdentity,\n    OutcomeState,\n    Target,\n    TaskState,\n)",
+          "end_location": {
+            "column": 2,
+            "row": 17
+          },
+          "location": {
+            "column": 1,
+            "row": 10
+          }
+        }
+      ],
+      "message": "Remove unused import"
+    },
+    "location": {
+      "column": 5,
+      "row": 13
+    },
+    "message": "`assistant.velo.contracts.Postcondition` imported but unused",
+    "name": "unused-import",
+    "noqa_row": 13,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 22,
+      "row": 14
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_live_regressions.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from assistant.velo.contracts import (\n    AppIdentity,\n    OutcomeState,\n    Target,\n    TaskState,\n)",
+          "end_location": {
+            "column": 2,
+            "row": 17
+          },
+          "location": {
+            "column": 1,
+            "row": 10
+          }
+        }
+      ],
+      "message": "Remove unused import"
+    },
+    "location": {
+      "column": 5,
+      "row": 14
+    },
+    "message": "`assistant.velo.contracts.PostconditionKind` imported but unused",
+    "name": "unused-import",
+    "noqa_row": 14,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 13,
+      "row": 23
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_live_regressions.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from tests.unit.velo_fakes import (\n    EventLog,\n    app_entry,\n    reset_world,\n    standard_tools,\n    window_state_payload,\n)",
+          "end_location": {
+            "column": 2,
+            "row": 28
+          },
+          "location": {
+            "column": 1,
+            "row": 21
+          }
+        }
+      ],
+      "message": "Remove unused import: `tests.unit.velo_fakes.FakeTool`"
+    },
+    "location": {
+      "column": 5,
+      "row": 23
+    },
+    "message": "`tests.unit.velo_fakes.FakeTool` imported but unused",
+    "name": "unused-import",
+    "noqa_row": 23,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 52,
+      "row": 176
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_live_regressions.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "    from assistant.velo.controller import VeloEntry\n    from tests.unit.velo_fakes import FakeRuntime\n",
+          "end_location": {
+            "column": 1,
+            "row": 177
+          },
+          "location": {
+            "column": 1,
+            "row": 174
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 5,
+      "row": 174
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "name": "unsorted-imports",
+    "noqa_row": 174,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 2,
+      "row": 23
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_recipes.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from __future__ import annotations\n\nimport pytest\n\nfrom assistant.velo.adapter import CuaAdapter\nfrom assistant.velo.contracts import (\n    AppIdentity,\n    OutcomeState,\n    PostconditionKind,\n    Target,\n    TaskState,\n)\nfrom assistant.velo.recipes import execute\nfrom tests.unit.velo_fakes import (\n    EventLog,\n    app_entry,\n    reset_world,\n    standard_tools,\n    window_state_payload,\n)\n\n\n",
+          "end_location": {
+            "column": 1,
+            "row": 26
+          },
+          "location": {
+            "column": 1,
+            "row": 3
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 1,
+      "row": 3
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "name": "unsorted-imports",
+    "noqa_row": 3,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 22,
+      "row": 11
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/test_velo_recipes.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from assistant.velo.contracts import (\n    AppIdentity,\n    OutcomeState,\n    Target,\n    TaskState,\n)",
+          "end_location": {
+            "column": 2,
+            "row": 14
+          },
+          "location": {
+            "column": 1,
+            "row": 8
+          }
+        }
+      ],
+      "message": "Remove unused import: `assistant.velo.contracts.PostconditionKind`"
+    },
+    "location": {
+      "column": 5,
+      "row": 11
+    },
+    "message": "`assistant.velo.contracts.PostconditionKind` imported but unused",
+    "name": "unused-import",
+    "noqa_row": 11,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 85,
+      "row": 15
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/velo_fakes.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from assistant.tools.policy import STRUCTURED_CALLS, cua_run_scope",
+          "end_location": {
+            "column": 85,
+            "row": 15
+          },
+          "location": {
+            "column": 1,
+            "row": 15
+          }
+        }
+      ],
+      "message": "Remove unused import: `assistant.tools.policy.desktop_contexts`"
+    },
+    "location": {
+      "column": 69,
+      "row": 15
+    },
+    "message": "`assistant.tools.policy.desktop_contexts` imported but unused",
+    "name": "unused-import",
+    "noqa_row": 15,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  },
+  {
+    "cell": null,
+    "code": "UP037",
+    "end_location": {
+      "column": 45,
+      "row": 103
+    },
+    "filename": "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/tests/unit/velo_fakes.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "FakeRuntime",
+          "end_location": {
+            "column": 45,
+            "row": 103
+          },
+          "location": {
+            "column": 32,
+            "row": 103
+          }
+        }
+      ],
+      "message": "Remove quotes"
+    },
+    "location": {
+      "column": 32,
+      "row": 103
+    },
+    "message": "Remove quotes from type annotation",
+    "name": "quoted-annotation",
+    "noqa_row": 103,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/quoted-annotation"
+  }
+]

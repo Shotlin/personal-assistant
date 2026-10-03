@@ -1,10 +1,10 @@
 {
-  "source_revision": "8a0010b04f8ab8a0eeb38956e80f8d0608f9fd31",
+  "source_revision": "df04060f189a10bb81baf522a58347cddc6cc915",
   "architecture": "aarch64-apple-darwin",
   "protocol": 1,
   "components": {
-    "sani-stt": "4bc70fc33faf7e2bf37edadcc4c505612b93b3ba5d46b25fbbd108de7d892ee2",
-    "sani-core": "4497465fcb7fb0756cc058438381e692d66bf52eea7933e43abd185aeb238422",
+    "sani-stt": "89bfa7c34c4171269e07b348f6164b8be61903147ff89231985dea9809e81142",
+    "sani-core": "6b209429102dd7b6393f51cb77b9f8a8b0bbddf99db0be77744b8e4a85234da3",
     "cua-driver": "92756f0b3f40d7834a9c381980a042476bcab9b3759b07dd80444129d7e3d56e"
   }
 }

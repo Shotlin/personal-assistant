@@ -1,0 +1,10 @@
+........................................................................ [ 54%]
+............................................................             [100%]
+=============================== warnings summary ===============================
+tests/integration/test_external_waits.py::test_cancel_releases_open_waits
+  /Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/src/assistant/missions/contracts.py:402: RuntimeWarning: coroutine '_none_runtime_factory.<locals>._none' was never awaited
+    @model_validator(mode="after")
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

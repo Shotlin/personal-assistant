@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.036" timestamp="2026-10-01T02:18:36.184570+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="tests.integration.test_phase1_scope_outcomes" name="test_unrelated_focus_cannot_verify_ordinal_press" time="0.009"><failure message="AssertionError: an unrelated control's focus is not the third press&#10;assert not True&#10; +  where True = CheckResult(check_id='outcome', passed=True, evidence_ids=['9029c4fc-b65a-4d2b-b224-6afeaaead597'], checked_at_ms=1790801317137, verifier_id='press_effect', verifier_version='1.0.0', reason=&quot;the resolved button #3 ('tok-3') gained focused&quot;).passed">store = &lt;assistant.missions.store.MissionStore object at 0x10bfa2f30&gt;
+tmp_path = PosixPath('/private/tmp/pytest-of-sayan/pytest-104/test_unrelated_focus_cannot_ve0')
+
+    async def test_unrelated_focus_cannot_verify_ordinal_press(store: MissionStore,
+                                                               tmp_path: Any) -&gt; None:
+        """The reviewer's probe: an unrelated FIRST control gaining focus must
+        not verify an expected THIRD-control press."""
+        evidence = EvidenceStore(tmp_path / "ev", store)
+        scope = _scope()
+        mission, item = await _claimed(store, scope)
+        now = int(time.time() * 1000)
+        first = {"element_token": "tok-1", "role": "AXButton", "label": "first",
+                 "focused": False}
+        second = {"element_token": "tok-2", "role": "AXButton", "label": "second",
+                  "focused": False}
+        third = {"element_token": "tok-3", "role": "AXButton", "label": "third",
+                 "focused": False}
+        before = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={"pid": 9, "window_id": 2,
+                     "elements": [first, second, third]}, captured_at_ms=now - 500),
+            mission_id=mission.mission_id)
+        focused_first = dict(first, focused=True)
+        after = await evidence.put(EvidenceCandidate(kind="structured_facts",
+            payload={"pid": 9, "window_id": 2,
+                     "elements": [focused_first, second, third]}, captured_at_ms=now),
+            mission_id=mission.mission_id)
+        result = await evidence.verify(_check("press_effect", {"ordinal_index": 3,
+            "role_kind": "button"}), item, refs=[before, after])
+&gt;       assert not result.passed, "an unrelated control's focus is not the third press"
+E       AssertionError: an unrelated control's focus is not the third press
+E       assert not True
+E        +  where True = CheckResult(check_id='outcome', passed=True, evidence_ids=['9029c4fc-b65a-4d2b-b224-6afeaaead597'], checked_at_ms=1790801317137, verifier_id='press_effect', verifier_version='1.0.0', reason="the resolved button #3 ('tok-3') gained focused").passed
+
+tests/integration/test_phase1_scope_outcomes.py:346: AssertionError</failure></testcase></testsuite></testsuites>

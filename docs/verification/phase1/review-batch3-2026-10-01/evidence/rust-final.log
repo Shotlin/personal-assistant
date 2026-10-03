@@ -1,0 +1,239 @@
+warning: unused import: `AsyncWrite`
+  --> src/tts.rs:22:42
+   |
+22 | use tokio::io::{AsyncReadExt, AsyncRead, AsyncWrite, AsyncWriteExt};
+   |                                          ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Duration` and `Instant`
+  --> src/tts_queue.rs:18:17
+   |
+18 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^  ^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src/tts_queue.rs:462:23
+    |
+462 |             if let Ok(mut sink) = self.sink.lock() {
+    |                       ----^^^^
+    |                       |
+    |                       help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: type `RunGuard` is more private than the item `SaniState::run`
+  --> src/app_state.rs:60:5
+   |
+60 |     pub(crate) run: Mutex<Option<RunGuard>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `SaniState::run` is reachable at visibility `pub(crate)`
+   |
+note: but type `RunGuard` is only usable at visibility `pub(self)`
+  --> src/app_state.rs:50:1
+   |
+50 | struct RunGuard {
+   | ^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: fields `sample_rate` and `stop` are never read
+  --> src/audio.rs:30:9
+   |
+28 | pub struct AudioHandle {
+   |            ----------- fields in this struct
+29 |     pub device_name: String,
+30 |     pub sample_rate: u32,
+   |         ^^^^^^^^^^^
+...
+36 |     pub stop: Arc<AtomicBool>,
+   |         ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `WORKER_CANCEL_TIMEOUT_MS` is never used
+  --> src/tts.rs:25:11
+   |
+25 | pub const WORKER_CANCEL_TIMEOUT_MS: u64 = 250;
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `has_stdin` and `shutdown` are never used
+   --> src/tts.rs:121:12
+    |
+ 52 | impl TtsSupervisor {
+    | ------------------ methods in this implementation
+...
+121 |     pub fn has_stdin(&self) -> bool {
+    |            ^^^^^^^^^
+...
+133 |     pub async fn shutdown(&self) {
+    |                  ^^^^^^^^
+
+warning: methods `update_generation` and `generation` are never used
+   --> src/tts_protocol.rs:151:12
+    |
+143 | impl StreamValidator {
+    | -------------------- methods in this implementation
+...
+151 |     pub fn update_generation(&mut self, generation: u64) {
+    |            ^^^^^^^^^^^^^^^^^
+...
+156 |     pub fn generation(&self) -> u64 {
+    |            ^^^^^^^^^^
+
+warning: variants `Disabled` and `Loading` are never constructed
+  --> src/tts_queue.rs:53:5
+   |
+52 | pub enum QueueState {
+   |          ---------- variants in this enum
+53 |     Disabled,
+   |     ^^^^^^^^
+54 |     Loading,
+   |     ^^^^^^^
+   |
+   = note: `QueueState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `hide_main` is never used
+   --> src/windows.rs:518:8
+    |
+518 | pub fn hide_main(app: &AppHandle) {
+    |        ^^^^^^^^^
+
+warning: function `show_overlays` is never used
+   --> src/windows.rs:979:8
+    |
+979 | pub fn show_overlays(app: &AppHandle) {
+    |        ^^^^^^^^^^^^^
+
+warning: `sani` (bin "sani" test) generated 11 warnings (run `cargo fix --bin "sani" -p sani --tests` to apply 3 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+     Running unittests src/main.rs (/private/tmp/jarvis-review29/sani/src-tauri/target/debug/deps/sani-68884cb1d9c85746)
+
+running 126 tests
+test app_state::admission_tests::text_admission_only_accepts_idle_state ... ok
+test app_state::admission_tests::second_text_turn_is_rejected_after_the_first_claims_working ... ok
+test macos_work_area::tests::visible_frame_preserves_a_right_dock_inset ... ok
+test macos_work_area::tests::visible_frame_preserves_a_left_dock_inset ... ok
+test desktop_control::tests::latch_is_immediate_and_bumps_generation ... ok
+test desktop_control::tests::reset_clears_the_latch_but_not_the_generation ... ok
+test missions::tests::completed_turn_with_ask_user_mission_is_not_completed ... ok
+test missions::tests::completed_turn_with_blocked_mission_is_not_completed ... ok
+test missions::tests::event_projection_dedups_by_sequence ... ok
+test missions::tests::stale_ui_approval_never_passes ... ok
+test missions::tests::control_payloads_carry_cas_fields ... ok
+test missions::tests::unknown_mission_status_stays_explicit ... ok
+test missions::tests::verified_completion_is_verified ... ok
+test desktop_control::tests::latching_from_many_threads_is_lossless ... ok
+test onboarding::control_tests::a_granted_mac_with_a_live_daemon_is_never_reported_as_unauthorized ... ok
+test onboarding::control_tests::a_policy_lockout_is_its_own_state_never_a_permission_one ... ok
+test onboarding::control_tests::each_state_has_one_distinct_pair_of_words ... ok
+test onboarding::control_tests::only_a_denial_the_driver_itself_answered_reads_as_not_authorized ... ok
+test onboarding::control_tests::priority_runs_from_the_outermost_cause_inward ... ok
+test onboarding::control_tests::waiting_for_a_grant_is_never_called_a_denial ... ok
+test overlay_geometry::tests::bottom_dock_inset_keeps_frames_out_of_the_dock ... ok
+test overlay_geometry::tests::committing_an_unusable_frame_stores_the_default ... ok
+test overlay_geometry::tests::committing_keeps_logical_size_but_enforces_supported_limits ... ok
+test overlay_geometry::tests::defaults_reproduce_the_phase_one_placement ... ok
+test overlay_geometry::tests::disconnected_affinity_falls_back_to_main_then_primary ... ok
+test overlay_geometry::tests::frames_never_exceed_a_small_work_area ... ok
+test overlay_geometry::tests::invalid_frames_fall_back_to_defaults ... ok
+test overlay_geometry::tests::left_dock_inset_keeps_frames_out_of_the_dock ... ok
+test overlay_geometry::tests::logical_frames_are_independent_of_the_backing_scale_factor ... ok
+test overlay_geometry::tests::missing_affinity_uses_main_display_and_clamps ... ok
+test overlay_geometry::tests::no_displays_at_all_still_yields_a_safe_frame ... ok
+test overlay_geometry::tests::panel_keeps_logical_width_on_larger_work_area ... ok
+test overlay_geometry::tests::pill_height_is_always_the_supported_fixed_height ... ok
+test overlay_geometry::tests::right_dock_inset_keeps_frames_out_of_the_dock ... ok
+test overlay_geometry::tests::saved_affinity_wins_over_the_main_window_display ... ok
+test overlay_geometry::tests::undersized_frames_are_raised_to_the_supported_minimum ... ok
+test runtime::tests::explicit_agent_modes_select_the_matching_registry_entry ... ok
+test runtime::tests::legacy_auto_and_unknown_ids_do_not_silently_route_to_another_agent ... ok
+test sani_core::tests::a_detached_daemon_is_found_and_reclaimed_from_its_socket ... ignored, starts and stops a real throwaway CUA daemon on a temp socket
+test runtime::tests::only_registry_ids_are_selectable ... ok
+test sani_core::tests::bounded_launch_keeps_the_reviewed_manifest_and_its_approval_flag ... ok
+test sani_core::tests::a_daemon_on_another_socket_is_left_alone ... ok
+test sani_core::tests::an_orphaned_driver_on_the_same_socket_is_detected_as_foreign ... ok
+test sani_core::tests::cold_registry_handshake_has_a_bounded_boot_budget ... ok
+test sani_core::tests::embedded_driver_recovery_requires_a_live_child_and_live_socket ... ok
+test sani_core::tests::finds_the_real_orphaned_driver_running_on_this_mac ... ignored, reads the live process table: asserts Sani can find its own orphan
+test sani_core::tests::encode_frame_prefixes_big_endian_length ... ok
+test sani_core::tests::permission_probe_keeps_a_policy_lockout_apart_from_a_denial ... ok
+test sani_core::tests::process_rows_parse_pid_ppid_and_the_full_argument_line ... ok
+test sani_core::tests::read_frame_rejects_non_json_body ... ok
+test sani_core::tests::recovery_inside_the_cooldown_is_refused_so_no_herd_starts ... ok
+test sani_core::tests::read_frame_rejects_truncated_header ... ok
+test sani_core::tests::read_frame_rejects_oversize_length ... ok
+test sani_core::tests::read_frame_rejects_truncated_body ... ok
+test sani_core::tests::read_frame_roundtrips_then_reports_eof ... ok
+test sani_core::tests::request_maps_error_response_to_err ... ok
+test sani_core::tests::request_drops_interleaved_event_frames ... ok
+test sani_core::tests::standard_launch_asks_for_no_manifest_at_all ... ok
+test sani_core::tests::request_reports_eof_when_sidecar_exits ... ok
+test sani_core::tests::the_reported_mode_is_read_from_the_daemon_not_from_the_setting ... ok
+test sani_core::tests::the_sidecars_own_mcp_client_is_never_mistaken_for_a_daemon ... ok
+test sani_core::tests::the_watchdog_recovers_a_dead_driver_but_never_interferes_with_a_live_turn ... ok
+test sani_core::tests::request_roundtrips_against_fake_peer ... ok
+test sani_core::tests::unavailable_or_empty_registry_gets_exactly_one_recovery_attempt ... ok
+test sani_core::tests::embedded_driver_socket_must_accept_connections_before_ready ... ok
+test sani_core::tests::run_stream_forwards_events_and_returns_final_result ... ok
+test settings::tests::computer_control_starts_in_standard_mode_and_keeps_the_rollback ... ok
+test settings::tests::maximized_transition_keeps_last_normal_bounds ... ok
+test settings::tests::empty_agent_mode_is_migrated_to_velo ... ok
+test settings::tests::missing_agent_mode_defaults_to_velo_without_rewriting_explicit_modes ... ok
+test sani_core::tests::run_stream_sends_cancel_and_keeps_reading_until_the_final_response ... ok
+test settings::tests::old_settings_without_overlay_layout_still_load ... ok
+test settings::tests::older_settings_without_main_window_load_normally ... ok
+test settings::tests::overlay_layout_defaults_survive_a_partial_document ... ok
+test settings::tests::overlay_layout_round_trips_through_json ... ok
+test setup::tests::fresh_state_is_zero_percent ... ok
+test setup::tests::all_complete_reaches_one_hundred ... ok
+test settings::tests::saving_overlay_layout_never_changes_main_window ... ok
+test setup::tests::keys_are_unique_and_round_trip ... ok
+test setup::tests::migrate_preserves_completed_and_adds_new ... ok
+test setup::tests::weights_sum_to_one_hundred ... ok
+test setup::tests::skipped_counts_as_done ... ok
+test speech::tests::accepts_the_sidecars_catalog_shape ... ok
+test speech::tests::model_mutation_is_rejected_during_any_voice_capture_stage ... ok
+test speech::tests::owned_cache_path_rejects_path_traversal ... ok
+test speech::tests::rejects_a_catalog_whose_default_is_not_supported ... ok
+test speech::tests::stale_worker_contract_has_a_specific_repairable_error ... ok
+test speech::tests::the_ready_line_the_sidecar_actually_sends_deserialises ... ok
+test system_permissions::tests::granted_or_unknown_counts_as_usable ... ok
+test system_permissions::tests::statuses_serialize_snake_case ... ok
+test tts::tests::supervisor_defaults_to_disabled ... ok
+test tts::tests::worker_env_allowlist_is_credential_free ... ok
+test tts::tests::stop_worker_without_worker_is_false ... ok
+test tts::tests::host_request_satisfies_worker_contract ... ok
+test tts_protocol::tests::non_monotonic_sequence_refused ... ok
+test tts_protocol::tests::nan_pcm_is_refused ... ok
+test tts_protocol::tests::oversize_text_is_refused ... ok
+test tts_protocol::tests::stale_generation_refused ... ok
+test tts_protocol::tests::unknown_kind_and_bad_rate_refuse ... ok
+test tts_protocol::tests::valid_pcm_decodes ... ok
+test tts_protocol::tests::valid_request_passes ... ok
+test tts::resolution_tests::missing_packaged_worker_resolves_to_none_not_a_guess ... ok
+test tts_queue::drain_tests::finish_keeps_playing_until_the_device_drains ... ok
+test tts_queue::drain_tests::finish_without_buffered_audio_is_idle_immediately ... ok
+test tts_queue::drain_tests::stop_drains_buffered_audio_and_returns_to_idle ... ok
+test tts_queue::concurrency_tests::drain_completes_against_concurrent_playback ... ok
+test tts_queue::tests::enqueue_and_finish_cycle ... ok
+test tts_queue::tests::queue_bounds_at_three_utterances ... ok
+test tts_queue::tests::sink_failure_sets_error_state ... ok
+test tts_queue::tests::buffer_bound_blocks_flood ... ok
+test tts_queue::tests::stale_chunk_after_stop_is_refused ... ok
+test tts_queue::tests::stop_bumps_generation_and_clears_queue ... ok
+test window_geometry::tests::malformed_or_offscreen_normal_bounds_are_clamped_not_reused ... ok
+test window_geometry::tests::missing_external_display_uses_primary_visible_area ... ok
+test windows::tests::an_overlay_opened_outside_preview_is_never_hidden_again ... ok
+test window_geometry::tests::restore_retains_maximized_flag_but_resolves_normal_bounds_first ... ok
+test tts::resolution_tests::staged_layout_matches_resolver_when_present ... ok
+test windows::tests::cancel_restores_committed_layout_and_prior_visibility ... ok
+test windows::tests::close_main_is_hide_not_quit_policy ... ok
+test windows::tests::normal_bounds_are_not_captured_while_maximized ... ok
+test windows::tests::save_commits_the_new_layout_and_restores_prior_visibility ... ok
+test tts::resolution_tests::packaged_worker_resolves_from_bundle_layout ... ok
+test sani_core::tests::run_stream_times_out_at_deadline ... ok
+test sani_core::tests::stopping_the_daemon_reaps_the_child_and_clears_the_endpoint ... ok
+test tts_queue::concurrency_tests::concurrent_lifecycle_ops_never_deadlock ... ok
+test tts_queue::tests::drained_stream_does_not_accumulate_lifetime_samples ... ok
+
+test result: ok. 124 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use serde_json::json;
-use tokio::io::{AsyncReadExt, AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncRead, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, Command};
 
 pub const WORKER_CANCEL_TIMEOUT_MS: u64 = 250;
@@ -36,7 +36,7 @@ pub struct TtsSupervisor {
     worker: tokio::sync::Mutex<Option<Child>>,
     /// The worker's framed stdin, taken out of the child at spawn; speech
     /// requests and controls are written here.
-    stdin: Mutex<Option<ChildStdin>>,
+    stdin: tokio::sync::Mutex<Option<ChildStdin>>,
 }
 
 impl Default for TtsSupervisor {
@@ -44,7 +44,7 @@ impl Default for TtsSupervisor {
         Self {
             enabled: AtomicBool::new(false),
             worker: tokio::sync::Mutex::new(None),
-            stdin: Mutex::new(None),
+            stdin: tokio::sync::Mutex::new(None),
         }
     }
 }
@@ -62,13 +62,14 @@ impl TtsSupervisor {
     /// allowlist (C09/N11). No credentials, no core IPC handles, no profile
     /// paths. Returns an error string the host can surface as "voice output
     /// unavailable" while text keeps working.
-    pub async fn start(&self, python: &str, worker_script: &str) -> Result<(), String> {
-        let engine = std::env::var("SANI_TTS_ENGINE").unwrap_or_else(|_| "unspecified".to_string());
-        let mut command = Command::new(python);
-        command
-            .arg(worker_script)
-            .arg("-I") // isolated mode: no user site-packages, no PYTHONPATH
-            .env_clear();
+    pub async fn start(&self, worker: &str, worker_script: Option<&str>) -> Result<(), String> {
+        let engine = default_engine();
+        let mut command = Command::new(worker);
+        if let Some(script) = worker_script {
+            // Explicit development override only: keep Python isolated.
+            command.arg("-I").arg(script);
+        }
+        command.env_clear();
         for key in WORKER_ENV_ALLOWLIST {
             if let Ok(value) = std::env::var(key) {
                 command.env(key, value);
@@ -86,9 +87,7 @@ impl TtsSupervisor {
             .stdin
             .take()
             .ok_or_else(|| "tts worker stdin unavailable".to_string())?;
-        if let Ok(mut slot) = self.stdin.lock() {
-            *slot = Some(stdin);
-        }
+        *self.stdin.lock().await = Some(stdin);
         *self.worker.lock().await = Some(child);
         Ok(())
     }
@@ -96,10 +95,9 @@ impl TtsSupervisor {
     /// Write one framed JSON payload to the worker's stdin.
     pub async fn send_frame(&self, frame: &serde_json::Value) -> bool {
         let body = frame.to_string();
-        let mut guard = match self.stdin.lock() {
-            Ok(guard) => guard,
-            Err(_) => return false,
-        };
+        // A tokio mutex: the guard is held across the writes, so it must be
+        // Send for this to run as a background task.
+        let mut guard = self.stdin.lock().await;
         let Some(stdin) = guard.as_mut() else {
             return false;
         };
@@ -119,7 +117,7 @@ impl TtsSupervisor {
     }
 
     pub fn has_stdin(&self) -> bool {
-        self.stdin.lock().map(|slot| slot.is_some()).unwrap_or(false)
+        self.stdin.try_lock().map(|slot| slot.is_some()).unwrap_or(true)
     }
 
     /// Cancel the current utterance: cooperative first, bounded wait, then
@@ -294,12 +292,19 @@ impl crate::tts_queue::AudioSink for CpalSink {
         };
         if let Ok(mut buf) = self.ring.lock() {
             buf.extend(resampled.iter().copied());
-            // Bounded ring: never let a long reply grow memory unboundedly.
-            while buf.len() > 24_000 * 8 {
-                buf.pop_front();
+            // The queue admits at most two seconds and waits for device
+            // consumption; never silently discard the beginning of speech.
+            if buf.len() > device_rate as usize * 2 {
+                self.healthy.store(false, Ordering::SeqCst);
+                return false;
             }
         }
         true
+    }
+
+    fn queued_seconds(&self) -> f32 {
+        self.ring.lock().map(|buf| buf.len() as f32
+            / self.device_rate.load(Ordering::SeqCst).max(1) as f32).unwrap_or(f32::INFINITY)
     }
 
     fn drain(&mut self) {
@@ -332,6 +337,41 @@ pub async fn read_frame(reader: &mut (impl AsyncReadExt + Unpin)) -> Option<serd
 /// still `unspecified` (owner audition pending) the worker answers `error`,
 /// which surfaces here as honest unavailability — never as silence claimed
 /// as spoken audio.
+fn synthesis_request(text: &str, conversation_id: &str, mission_id: Option<&str>,
+                     utterance_id: &str, generation: u64) -> serde_json::Value {
+    json!({
+        "type": "request",
+        "request": {
+            "request_id": uuid::Uuid::new_v4().simple().to_string(),
+            "utterance_id": utterance_id,
+            "conversation_id": conversation_id,
+            "mission_id": mission_id,
+            "message_id": utterance_id,
+            "generation": generation,
+            "text": text,
+            "voice_asset_id": "",
+            "rate": 1.0,
+            "kind": "FINAL",
+        }
+    })
+}
+
+/// The configured engine; on macOS the local `say` engine unless overridden.
+fn default_engine() -> String {
+    std::env::var("SANI_TTS_ENGINE").unwrap_or_else(|_| {
+        if cfg!(target_os = "macos") { "macos-say" } else { "unspecified" }.to_string()
+    })
+}
+
+/// Voice output is on by default on macOS (local, no network); `SANI_TTS_ENABLED=0`
+/// turns it off, and other platforms stay opt-in until they have an engine.
+fn tts_enabled_from_env() -> bool {
+    match std::env::var("SANI_TTS_ENABLED") {
+        Ok(v) => v == "1" || v.eq_ignore_ascii_case("true"),
+        Err(_) => cfg!(target_os = "macos"),
+    }
+}
+
 pub fn enqueue_speech(
     app: &tauri::AppHandle,
     text: &str,
@@ -351,26 +391,24 @@ pub fn enqueue_speech(
         Ok(generation) => generation,
         Err(reason) => return json!({"spoken": false, "reason": reason}),
     };
-    let supervisor = &state.supervisor;
-    let request = json!({
-        "type": "request",
-        "request": {
-            "request_id": uuid::Uuid::new_v4().simple().to_string(),
-            "utterance_id": utterance_id,
-            "conversation_id": conversation_id,
-            "mission_id": mission_id,
-            "message_id": "",
-            "generation": generation,
-            "text": trimmed,
-            "voice_asset_id": "",
-            "rate": 1.0,
-            "kind": "FINAL",
+    let request = synthesis_request(&trimmed, conversation_id, mission_id,
+                                    &utterance_id, generation);
+    // Never `block_on` here: this runs inside the async turn task, and
+    // blocking a runtime thread on the runtime panics ("cannot start a
+    // runtime from within a runtime"), which silently killed every spoken
+    // reply. The write is best-effort and off-thread: a dead worker drops the
+    // queue entry; text output is unaffected.
+    let app_handle = app.clone();
+    let pending_id = utterance_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app_handle.state::<TtsState>();
+        if !state.supervisor.send_frame(&request).await {
+            log::warn!("tts: worker not accepting requests; reply stays text-only");
+            state.queue.finish_utterance(&pending_id);
         }
     });
-    // The write is best-effort: a dead worker is reported and the queue
-    // entry is dropped by the next stop; text output is unaffected.
-    let sent = tauri::async_runtime::block_on(supervisor.send_frame(&request));
-    json!({"spoken": sent, "utterance_id": utterance_id, "generation": generation})
+    json!({"spoken": false, "queued": true, "utterance_id": utterance_id,
+           "generation": generation})
 }
 
 /// `speech.say` command: the renderer may ask for a bounded acknowledgment.
@@ -398,6 +436,7 @@ pub fn spawn_worker_pump(app: tauri::AppHandle) {
             }
         };
         let mut reader = reader;
+        let mut sequences: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         loop {
             let Some(frame) = read_frame(&mut reader).await else {
                 log::info!("tts worker stream closed");
@@ -410,27 +449,49 @@ pub fn spawn_worker_pump(app: tauri::AppHandle) {
             let generation = event["generation"].as_u64().unwrap_or(0);
             match kind {
                 "chunk" => {
-                    let Some(samples_b64) = event["pcm_base64"].as_str() else {
+                    let chunk = serde_json::from_value::<crate::tts_protocol::PcmChunk>(event.clone());
+                    let Ok(chunk) = chunk else { continue; };
+                    if generation != state.queue.generation()
+                        || !state.queue.contains_utterance(utterance_id, generation) {
+                        continue;
+                    }
+                    let expected = sequences.get(utterance_id).map_or(0, |last| last + 1);
+                    if chunk.sequence != expected {
+                        state.queue.finish_utterance(utterance_id);
+                        continue;
+                    }
+                    let Ok(floats) = chunk.validate() else {
+                        state.queue.finish_utterance(utterance_id);
                         continue;
                     };
-                    let rate = event["sample_rate"].as_u64().unwrap_or(24_000) as u32;
-                    use base64::Engine as _;
-                    let Ok(decoded) = base64::engine::general_purpose::STANDARD
-                        .decode(samples_b64)
-                    else {
-                        continue;
-                    };
-                    let floats: Vec<f32> = decoded
-                        .chunks_exact(4)
-                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                        .collect();
-                    let _ = state.queue.play_chunk(generation, rate, &floats);
+                    sequences.insert(utterance_id.to_string(), chunk.sequence);
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                    loop {
+                        if std::time::Instant::now() >= deadline {
+                            state.queue.stop();
+                            break;
+                        }
+                        match state.queue.play_chunk(generation, chunk.sample_rate, &floats) {
+                            Ok(()) => break,
+                            Err(reason) if reason == "audio backpressure" => {
+                                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                            }
+                            Err(_) => {
+                                state.queue.finish_utterance(utterance_id);
+                                break;
+                            }
+                        }
+                    }
                 }
                 "finished" => {
+                    sequences.remove(utterance_id);
                     let _ = state.queue.finish_utterance(utterance_id);
+                    drain_after_finish(&state.queue).await;
                 }
                 "cancelled" | "error" => {
+                    sequences.remove(utterance_id);
                     let _ = state.queue.finish_utterance(utterance_id);
+                    drain_after_finish(&state.queue).await;
                 }
                 _ => {}
             }
@@ -438,12 +499,48 @@ pub fn spawn_worker_pump(app: tauri::AppHandle) {
     });
 }
 
+/// D09: after the last utterance the device may still hold buffered audio.
+/// The pump polls `drain_pending` (bounded) so the queue returns to Idle
+/// only when playback actually drained — barge-in's `stop()` drains it
+/// immediately instead. The poll never outlives a generation change: stale
+/// audio was already refused by the queue itself.
+async fn drain_after_finish(queue: &HostSpeechQueue) {
+    for _ in 0..200 {
+        if queue.drain_pending() == crate::tts_queue::QueueState::Idle {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+/// D18: resolve the self-contained packaged speech worker.
+///
+/// An explicit `SANI_TTS_PYTHON`/`SANI_TTS_WORKER` pair (dev runs) wins.
+/// Otherwise the PACKAGED locations are the only fallback — the previous
+/// environment-only default (`"sani_tts.py"` from cwd) was intentionally
+/// unavailable and is gone. When nothing resolvable exists the caller
+/// reports voice output as unavailable; it never guesses at an
+/// interpreter. No engine or asset selection happens here.
+pub fn resolve_packaged_worker(
+    exe_dir: &std::path::Path,
+    resource_dir: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
+    let worker_candidates: [Option<std::path::PathBuf>; 2] = [
+        Some(exe_dir.join("sani-tts-python/sani-tts-python")),
+        resource_dir.map(|r| r.join("sani-tts-python/sani-tts-python")),
+    ];
+    for worker in worker_candidates.iter().flatten() {
+        if worker.is_file() {
+            return Some(worker.clone());
+        }
+    }
+    None
+}
+
 /// Host startup: behind `SANI_TTS_ENABLED`, open the real output sink and
 /// start the worker. Text output never depends on this succeeding.
 pub fn init(app: &tauri::AppHandle) -> serde_json::Value {
-    let enabled = std::env::var("SANI_TTS_ENABLED")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+    let enabled = tts_enabled_from_env();
     let state = app.state::<TtsState>();
     if !enabled {
         state.supervisor.set_enabled(false);
@@ -458,17 +555,45 @@ pub fn init(app: &tauri::AppHandle) -> serde_json::Value {
     } else {
         log::warn!("tts: no output device; speech stays silent, text unaffected");
     }
-    // The worker: the packaged python + sani_tts.py beside the binary.
-    let python = std::env::var("SANI_TTS_PYTHON").unwrap_or_else(|_| "/usr/bin/env".to_string());
-    let script = std::env::var("SANI_TTS_WORKER").unwrap_or_else(|_| {
-        "sani_tts.py".to_string()
+    // Explicit interpreter/script variables are developer-only overrides.
+    // Production resolves the frozen worker binary from the app bundle.
+    let resolved: Option<(String, Option<String>)> = if let Ok(python) = std::env::var("SANI_TTS_PYTHON") {
+        let script = std::env::var("SANI_TTS_WORKER").unwrap_or_else(|_| "sani_tts.py".to_string());
+        Some((python, Some(script)))
+    } else {
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()));
+        let resource_dir = app.path().resource_dir().ok();
+        match exe_dir {
+            Some(exe_dir) => resolve_packaged_worker(&exe_dir, resource_dir.as_deref())
+                .map(|worker| (worker.to_string_lossy().into_owned(), None)),
+            None => None,
+        }
+    };
+    // Dev builds run from the source tree: fall back to the script beside the
+    // manifest so `tauri dev` speaks without building the frozen worker.
+    #[cfg(debug_assertions)]
+    let resolved = resolved.or_else(|| {
+        let script = concat!(env!("CARGO_MANIFEST_DIR"), "/python/sani_tts.py");
+        std::path::Path::new(script)
+            .exists()
+            .then(|| ("/usr/bin/python3".to_string(), Some(script.to_string())))
     });
-    let spawn = tauri::async_runtime::block_on(state.supervisor.start(&python, &script));
+    let Some((worker, script)) = resolved else {
+        log::warn!("tts: no packaged speech worker found; voice output unavailable");
+        return json!({"enabled": true, "worker": false,
+            "reason": "Packaged speech worker is not present in this bundle"});
+    };
+    let spawn = tauri::async_runtime::block_on(
+        state.supervisor.start(&worker, script.as_deref())
+    );
     match spawn {
         Ok(()) => {
             spawn_worker_pump(app.clone());
-            log::info!("tts worker started (engine pending owner audition)");
-            json!({"enabled": true, "worker": true, "engine": "unspecified"})
+            let engine = default_engine();
+            log::info!("tts worker started (engine {engine})");
+            json!({"enabled": true, "worker": true, "engine": engine})
         }
         Err(reason) => {
             log::warn!("tts worker unavailable: {reason}");
@@ -480,6 +605,14 @@ pub fn init(app: &tauri::AppHandle) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_request_satisfies_worker_contract() {
+        let frame = synthesis_request("hello", "conversation", None, "utterance", 1);
+        let request: crate::tts_protocol::TtsRequest =
+            serde_json::from_value(frame["request"].clone()).unwrap();
+        assert!(request.validate().is_ok());
+    }
 
     #[test]
     fn supervisor_defaults_to_disabled() {
@@ -509,5 +642,56 @@ mod tests {
         // through — the honest answer is false, not a silent success.
         let supervisor = TtsSupervisor::default();
         assert!(!supervisor.stop_worker().await);
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use super::*;
+
+    fn scratch_dir(tag: &str) -> std::path::PathBuf {
+        let base = std::env::temp_dir().join(format!(
+            "sani-tts-resolution-test-{}-{}", tag, std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).expect("scratch");
+        base
+    }
+
+    #[test]
+    fn packaged_worker_resolves_from_bundle_layout() {
+        let root = scratch_dir("layout");
+        let exe_dir = root.join("Supernova.app/Contents/MacOS");
+        let resources = root.join("Supernova.app/Contents/Resources");
+        std::fs::create_dir_all(exe_dir.join("sani-tts-python")).unwrap();
+        std::fs::create_dir_all(&resources).unwrap();
+        std::fs::write(exe_dir.join("sani-tts-python/sani-tts-python"), b"worker\n").unwrap();
+        let resolved = resolve_packaged_worker(&exe_dir, Some(&resources));
+        assert!(resolved.is_some(), "the packaged worker resolves");
+        assert!(resolved.unwrap().ends_with("sani-tts-python/sani-tts-python"));
+    }
+
+    #[test]
+    fn staged_layout_matches_resolver_when_present() {
+        // D18: after `scripts/build-tts.sh` freezes the worker, the resolver
+        // accepts the real relocatable layout (binaries/sani-tts-python).
+        let root = scratch_dir("staged");
+        let exe_dir = root.join("binaries");
+        let staged_worker = exe_dir.join("sani-tts-python/sani-tts-python");
+        if !staged_worker.exists() {
+            // Not staged in this checkout: the resolver must refuse rather
+            // than guess, which the missing-layout test covers.
+            return;
+        }
+        let resolved = resolve_packaged_worker(&exe_dir, Some(&root));
+        assert!(resolved.is_some(), "the staged layout must resolve");
+    }
+
+    #[test]
+    fn missing_packaged_worker_resolves_to_none_not_a_guess() {
+        let root = scratch_dir("missing");
+        let resolved = resolve_packaged_worker(&root, None);
+        assert!(resolved.is_none(),
+            "without a packaged interpreter the honest answer is unavailable");
     }
 }

@@ -1,0 +1,142 @@
+{
+  "head": "58dac9c88018674c2e780086953902f1ea135308",
+  "tracked_diff_sha256": "353f3d045e1f98bf9557381205b5e2bd3f05e2821f1942668949a3b9feaa83b7",
+  "purpose": "Phase1 independent review and proposed corrections only",
+  "files": [
+    {
+      "path": "00_VERDICT.md",
+      "sha256": "3833f065989dcdfd03f6cd8c90f66d6a1670e7e5a0ae6df17eeffb8b73c14ae6",
+      "bytes": 6039
+    },
+    {
+      "path": "01_FINDINGS.md",
+      "sha256": "2acf430dff2a02fa3ddff3c2ef0994d6c9e2f438e369d21073228a6bf8e293f1",
+      "bytes": 16639
+    },
+    {
+      "path": "02_COVERAGE_MATRIX.md",
+      "sha256": "4b62ec1e37a337e58a462755cdc5d09fd8216304e569ed0c6cf44d89590d47e9",
+      "bytes": 12790
+    },
+    {
+      "path": "03_PHASE_1_CORRECTIVE_PLAN.md",
+      "sha256": "3bb4b5af83a2dfd7f35629a6bdf41e0f51607f515b0e1bfe0ca79c573792d513",
+      "bytes": 19105
+    },
+    {
+      "path": "04_PHASE_1_FIX_AGENT_PROMPT.md",
+      "sha256": "177e9dc55a27399952e7954182409e404539fa14345f0cf1c83bc14416e902f5",
+      "bytes": 7191
+    },
+    {
+      "path": "05_VERIFICATION.md",
+      "sha256": "65065326b50699ae460770ac4dce69a6ef6d95ec7ea7f0f28cfa350979aeac6a",
+      "bytes": 7811
+    },
+    {
+      "path": "evidence/QUALITY_CHECK.json",
+      "sha256": "e0195ddea4f365ac08fc104cce60d9f98b26a9404c6bf02296a6e1e2287085c6",
+      "bytes": 387
+    },
+    {
+      "path": "evidence/launcher-recheck.log",
+      "sha256": "7040371af15613c02e821ec0eecc1d1330f691ace4cef93a41bfa358822c4103",
+      "bytes": 80
+    },
+    {
+      "path": "evidence/launcher-recheck.xml",
+      "sha256": "d95e3337f890bde9b8e5768b1b5b5f6056d7b1d5c59e9fd4ccd0ef75e77da81f",
+      "bytes": 1393
+    },
+    {
+      "path": "evidence/mypy-delta.json",
+      "sha256": "8b206eaefd3236d873ebc563b1996c49c121569318ca8275c5497be08b039567",
+      "bytes": 2816
+    },
+    {
+      "path": "evidence/mypy-review.log",
+      "sha256": "c9f9ac65b41b4bff027020cd8163db7be1b4e8cdee93f26e1adaa97f0e0ebf11",
+      "bytes": 33278
+    },
+    {
+      "path": "evidence/original-gate-integration.json",
+      "sha256": "e6e6c876d46b8e89c0675cae0c044254ba5192c8c56b9973c86037ce9f793901",
+      "bytes": 1078
+    },
+    {
+      "path": "evidence/original-gate-performance.json",
+      "sha256": "341b770d66d8a447cc8b21aa861832f7dd3b04f58c2c9a3e917a19922f599c54",
+      "bytes": 797
+    },
+    {
+      "path": "evidence/original-gate-renderer.json",
+      "sha256": "865da97deb5c4d9c38de22c2768b5dc02ac7a010e6ec166b12cc1960b4957504",
+      "bytes": 713
+    },
+    {
+      "path": "evidence/original-gate-rust.json",
+      "sha256": "236cf2aa15a078a442e68aea66cbf89b9be45fa5e8aafab00a29fdf62f2f9ea1",
+      "bytes": 823
+    },
+    {
+      "path": "evidence/original-gate-unit.json",
+      "sha256": "2fc35be3e2436ba4052d50c13d14092333ee692bc992b59f4fae3a9120185db6",
+      "bytes": 768
+    },
+    {
+      "path": "evidence/renderer-recheck.log",
+      "sha256": "1558545fe33c48fc55831d19765d12a59c29f0c983326e44fb34eba149463d56",
+      "bytes": 1496
+    },
+    {
+      "path": "evidence/renderer-review.log",
+      "sha256": "47e276b451305c68b66e58cb7a8e254bd5140b963f25e67d1b2127faca8fc932",
+      "bytes": 633
+    },
+    {
+      "path": "evidence/review-manifest.json",
+      "sha256": "02c13138cedd296d06c6b61f25faf0087c48381ebd3043b8c59125620a3ee4fd",
+      "bytes": 48722
+    },
+    {
+      "path": "evidence/review-probes.json",
+      "sha256": "1612f9a127ef8aafddb778336bf69cd80e15e0900109cfeb08b6ef0ef297fa43",
+      "bytes": 3460
+    },
+    {
+      "path": "evidence/review-tests.log",
+      "sha256": "e384598699290332957900557db84b767808d2a976bf7b768ad2b6b02d09eea0",
+      "bytes": 48250
+    },
+    {
+      "path": "evidence/review-tests.xml",
+      "sha256": "35f5028245de5c15854fe2bcddba1ac936b0068c897c2c00b0228f4b99140aed",
+      "bytes": 121683
+    },
+    {
+      "path": "evidence/review_extra_probes.py",
+      "sha256": "ca3236603c86896233ab139f515324f4182c213d6508acd9f1422d9986f84abc",
+      "bytes": 3079
+    },
+    {
+      "path": "evidence/review_probes.py",
+      "sha256": "c6b8b1c46c705a883ed28ce05ce2128a441da5627108ed40179bd3f91dc4d1a3",
+      "bytes": 6722
+    },
+    {
+      "path": "evidence/ruff-review.log",
+      "sha256": "5426797d45a4d2ec15e7d4bf79950f6731e6d908ffb7ee558b5bfab89258d5f6",
+      "bytes": 25830
+    },
+    {
+      "path": "evidence/rust-review.log",
+      "sha256": "8b286f787f65f8703338dde1eb42bd346df22e8f0e9976df75aa609f35fe489c",
+      "bytes": 24132
+    },
+    {
+      "path": "evidence/skipped-voice-probe.log",
+      "sha256": "78f058e0a5c4b3b190e3602912738a154772ce8f2b7a48b97eafd7dc110271b0",
+      "bytes": 111
+    }
+  ]
+}

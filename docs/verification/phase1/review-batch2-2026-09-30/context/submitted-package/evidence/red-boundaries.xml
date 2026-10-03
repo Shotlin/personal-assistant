@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="0.919" timestamp="2026-09-30T22:57:29.968019+05:30" hostname="Sayans-MacBook-Air.local"><testcase classname="" name="tests.integration.test_phase1_owner_controls" time="0.000"><error message="collection failure">ImportError while importing test module '/private/tmp/phase1-red-baseline/tests/integration/test_phase1_owner_controls.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/integration/test_phase1_owner_controls.py:18: in &lt;module&gt;
+    from assistant.missions.contracts import (
+E   ImportError: cannot import name 'PendingApprovalDigest' from 'assistant.missions.contracts' (/tmp/phase1-red-baseline/src/assistant/missions/contracts.py)</error></testcase></testsuite></testsuites>

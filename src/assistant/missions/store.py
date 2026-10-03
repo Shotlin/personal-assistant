@@ -47,6 +47,7 @@ from assistant.missions.contracts import (
     EvidenceRequirements,
     MissionControl,
     MissionRecord,
+    PendingApprovalDigest,
     Scope,
     StepResult,
     StepSpec,
@@ -246,11 +247,96 @@ CREATE INDEX IF NOT EXISTS mission_retention_log_time_idx
     ON mission_retention_log (recorded_at_ms);
 """
 
+#: D02: exact approval binding + durable external waits arrive as migration 4
+#: so existing mission databases upgrade additively (checksum-verified).
+#: ``pending_action_digest`` is the exact digest the BLOCKED step owes an
+#: owner approval for; ``mission_external_waits`` persists wait reason,
+#: retry-after/deadline and the resume checkpoint across restarts.
+_EXACT_APPROVAL_WAIT_MIGRATION = """
+ALTER TABLE mission_steps ADD COLUMN pending_action_digest TEXT NOT NULL DEFAULT '';
+ALTER TABLE mission_steps ADD COLUMN pending_tool TEXT NOT NULL DEFAULT '';
+ALTER TABLE mission_steps ADD COLUMN pending_target_ref TEXT;
+
+CREATE TABLE IF NOT EXISTS mission_external_waits (
+    wait_id     TEXT PRIMARY KEY,
+    mission_id  TEXT NOT NULL,
+    plan_version INTEGER NOT NULL,
+    step_id     TEXT NOT NULL,
+    reason      TEXT NOT NULL DEFAULT '',
+    checkpoint_json TEXT NOT NULL DEFAULT '{}',
+    retry_after_ms INTEGER NOT NULL,
+    deadline_ms  INTEGER NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    released_at_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS mission_external_waits_open_idx
+    ON mission_external_waits (mission_id, released_at_ms);
+
+CREATE TABLE IF NOT EXISTS mission_provider_requests (
+    request_id  TEXT PRIMARY KEY,
+    mission_id  TEXT NOT NULL,
+    plan_version INTEGER NOT NULL,
+    role        TEXT NOT NULL DEFAULT '',
+    call_key    TEXT NOT NULL DEFAULT '',
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    created_at_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS mission_provider_requests_idx
+    ON mission_provider_requests (mission_id, plan_version);
+"""
+
+#: D11: attempted/completed/failed request states arrive as migration 5 so
+#: existing mission databases upgrade additively (checksum-verified).
+_PROVIDER_STATE_MIGRATION = """
+ALTER TABLE mission_provider_requests ADD COLUMN state TEXT NOT NULL DEFAULT 'COMPLETED';
+ALTER TABLE mission_provider_requests ADD COLUMN updated_at_ms INTEGER NOT NULL DEFAULT 0;
+"""
+
+#: D16: durable retention holds + metadata-retention tombstones arrive as
+#: migration 6. A hold survives restarts and is honored by BOTH the normal
+#: (mission-observed) and idle (startup) retention sweeps.
+_RETENTION_HOLDS_MIGRATION = """
+CREATE TABLE IF NOT EXISTS mission_retention_holds (
+    mission_id  TEXT PRIMARY KEY,
+    reason      TEXT NOT NULL DEFAULT '',
+    held_at_ms  INTEGER NOT NULL,
+    released_at_ms INTEGER
+);
+"""
+
+# D14: a wait is authority-bearing resume state.  Its plan and control epoch
+# must survive restart and be compared inside the release transaction.
+_WAIT_EPOCH_MIGRATION = """
+ALTER TABLE mission_external_waits ADD COLUMN control_epoch INTEGER NOT NULL DEFAULT 1;
+CREATE INDEX IF NOT EXISTS mission_external_waits_identity_idx
+    ON mission_external_waits (mission_id, plan_version, control_epoch, released_at_ms);
+"""
+
+# D16: a row can be safely tombstoned before its artifact file is removed,
+# but an unlink failure must remain durable and retryable across restart.
+_FILE_DELETION_QUEUE_MIGRATION = """
+CREATE TABLE IF NOT EXISTS mission_file_deletions (
+    relative_path TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL DEFAULT '',
+    queued_at_ms INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS mission_file_deletions_mission_idx
+    ON mission_file_deletions (mission_id);
+"""
+
 #: Applied in order; each entry is (version, checksum, statements).
 _MIGRATIONS: tuple[tuple[int, str, str], ...] = (
     (_MISSION_SCHEMA_VERSION, digest_of(_MISSION_SCHEMA), _MISSION_SCHEMA),
     (2, digest_of(_ACTION_LEDGER_MIGRATION), _ACTION_LEDGER_MIGRATION),
     (3, digest_of(_RETENTION_LOG_MIGRATION), _RETENTION_LOG_MIGRATION),
+    (4, digest_of(_EXACT_APPROVAL_WAIT_MIGRATION), _EXACT_APPROVAL_WAIT_MIGRATION),
+    (5, digest_of(_PROVIDER_STATE_MIGRATION), _PROVIDER_STATE_MIGRATION),
+    (6, digest_of(_RETENTION_HOLDS_MIGRATION), _RETENTION_HOLDS_MIGRATION),
+    (7, digest_of(_WAIT_EPOCH_MIGRATION), _WAIT_EPOCH_MIGRATION),
+    (8, digest_of(_FILE_DELETION_QUEUE_MIGRATION), _FILE_DELETION_QUEUE_MIGRATION),
 )
 
 ACTIVE_DISPATCH_STATES = frozenset({"INTENT_COMMITTED", "DISPATCHED", "RECONCILING"})
@@ -279,6 +365,74 @@ class UnknownExecution(MissionStoreError):
 ApplyOutcome = Literal["APPLIED", "DUPLICATE", "STALE"]
 
 
+def _screen_private(text: str) -> str:
+    """Screen one text at a persistence/model sink (D07).
+
+    Secret-shaped content is replaced by an explicit withheld marker; the
+    fact that something was withheld stays honest, the content never
+    persists.
+    """
+    if not text:
+        return text
+    from assistant.memory.policy import contains_secret
+
+    return "[withheld by privacy policy]" if contains_secret(text) is not None else text
+
+
+_CHECKPOINT_MAX_KEYS = 16
+_CHECKPOINT_MAX_VALUE_CHARS = 200
+_CHECKPOINT_MAX_DEPTH = 3
+
+
+def _safe_checkpoint_json(raw: Any) -> dict[str, Any]:
+    """D16: a damaged durable row is reported, never fatal to recovery."""
+    try:
+        parsed = json.loads(str(raw))
+        return parsed if isinstance(parsed, dict) else {"checkpoint": parsed}
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {"damaged": True}
+
+
+def _bound_checkpoint(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    """D16: bound a checkpoint by STRUCTURE after screening, so the
+    serialized form is always valid JSON within a bounded size."""
+    def walk(value: Any, depth: int) -> Any:
+        if depth > _CHECKPOINT_MAX_DEPTH:
+            return "[depth-bound]"
+        if isinstance(value, dict):
+            bounded: dict[str, Any] = {}
+            for key in sorted(value.keys())[:_CHECKPOINT_MAX_KEYS]:
+                # Keys reach durable JSON just as values do.  A token-shaped
+                # map key is still a secret and must be screened before any
+                # truncation/bounding preserves it.
+                safe_key = _screen_private(str(key))[:64]
+                bounded[safe_key] = walk(value[key], depth + 1)
+            return bounded
+        if isinstance(value, list):
+            return [walk(item, depth + 1) for item in value[:_CHECKPOINT_MAX_KEYS]]
+        if isinstance(value, str):
+            return _screen_private(value)[:_CHECKPOINT_MAX_VALUE_CHARS]
+        if isinstance(value, bool) or value is None:
+            return value
+        if isinstance(value, int):
+            return value
+        return _screen_private(str(value))[:_CHECKPOINT_MAX_VALUE_CHARS]
+
+    if not isinstance(checkpoint, dict):
+        return {"checkpoint": _screen_private(str(checkpoint))[:_CHECKPOINT_MAX_VALUE_CHARS]}
+    return walk(checkpoint, 0)
+
+
+def _screen_result(result: StepResult) -> dict[str, Any]:
+    """A StepResult projection with sink-screened free text (D07)."""
+    dump = result.model_dump()
+    dump["uncertainty"] = _screen_private(str(dump.get("uncertainty") or ""))[:512]
+    dump["suggested_next_action"] = _screen_private(
+        str(dump.get("suggested_next_action") or "")
+    )[:512] if dump.get("suggested_next_action") is not None else None
+    return dump
+
+
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -303,18 +457,35 @@ class MissionActionLedger:
         return await self._store._run_tx(self._plan_sync, tool_name, args_digest)
 
     def _plan_sync(self, tool_name: str, args_digest: str) -> int:
-        now = _now_ms()
-        row = self._store._conn.execute(
-            """
-            INSERT INTO mission_action_ledger (execution_id, mission_id, tool_name,
-                args_digest, state, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'planned', ?, ?)
-            RETURNING ledger_id
-            """,
-            (self.execution_id, self.mission_id, tool_name, args_digest, now, now),
-        ).fetchone()
-        assert row is not None
-        return int(row[0])
+        def tx() -> int:
+            now = _now_ms()
+            # The ledger is the last durable boundary before a mutating tool.
+            # Persist uncertainty in the SAME transaction as its action row.
+            row = self._store._conn.execute(
+                "SELECT a.dispatch_state, a.plan_version, a.control_epoch, "
+                "m.plan_version, m.control_epoch, m.status FROM mission_attempts a "
+                "JOIN missions m ON m.mission_id=a.mission_id "
+                "WHERE a.execution_id=? AND a.mission_id=?",
+                (self.execution_id, self.mission_id),
+            ).fetchone()
+            if row is None or str(row[0]) not in {"INTENT_COMMITTED", "DISPATCHED"}:
+                raise MissionStoreError("action intent is no longer dispatchable")
+            if row[1] != row[3] or row[2] != row[4] or row[5] != "RUNNING":
+                raise StaleControlError("action intent lost its current mission epoch")
+            self._store._conn.execute(
+                "UPDATE mission_attempts SET dispatch_state='DISPATCHED', updated_at_ms=? "
+                "WHERE execution_id=?", (now, self.execution_id),
+            )
+            ledger = self._store._conn.execute(
+                "INSERT INTO mission_action_ledger (execution_id, mission_id, tool_name, "
+                "args_digest, state, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'planned', ?, ?) RETURNING ledger_id",
+                (self.execution_id, self.mission_id, tool_name, args_digest, now, now),
+            ).fetchone()
+            assert ledger is not None
+            return int(ledger[0])
+
+        return self._store._tx(tx)
 
     async def observe(self, ledger_id: int, outcome: str, evidence: str = "") -> None:
         await self._store._run_tx(self._observe_sync, ledger_id, outcome, evidence)
@@ -594,6 +765,29 @@ class MissionStore:
         ).fetchall()
         record.steps = [StepSpec.model_validate(json.loads(r[0])) for r in steps]
         record.steps.sort(key=lambda s: s.ordinal)
+        # D02/D10: the exact approvals the host UI owes right now, read from
+        # durable step state — never reconstructed from prose or model text.
+        pending = self._conn.execute(
+            "SELECT step_id, pending_tool, pending_action_digest, pending_target_ref "
+            "FROM mission_steps "
+            "WHERE mission_id=? AND plan_version=? AND state='BLOCKED' "
+            "AND pending_action_digest!=''",
+            (mission_id, record.plan_version),
+        ).fetchall()
+        by_step = {step.step_id: step for step in record.steps}
+        record.pending_approvals = []
+        for step_id, tool, action_digest, target_ref in pending:
+            step = by_step.get(str(step_id))
+            if step is None:
+                continue
+            record.pending_approvals.append(PendingApprovalDigest(
+                step_id=str(step_id), tool=str(tool), action_digest=str(action_digest),
+                plan_version=record.plan_version, control_epoch=record.control_epoch,
+                target_ref=target_ref if target_ref is None else str(target_ref),
+                account_ref=step.scope.account_ref,
+                workspace_ref=step.scope.workspace_ref,
+                effect_class=step.effect_class,
+            ))
         return record
 
     async def get_mission(self, mission_id: str) -> MissionRecord | None:
@@ -668,11 +862,23 @@ class MissionStore:
                 )
             if status in {"COMPLETED", "FAILED", "CANCELLED"}:
                 raise MissionStoreError(f"cannot plan a terminal mission ({status})")
+            unresolved = self._conn.execute(
+                "SELECT 1 FROM mission_attempts WHERE mission_id=? AND "
+                "(dispatch_state IN ('DISPATCHED', 'RECONCILING') OR "
+                "(dispatch_state='RECONCILED' AND effect_outcome!='NO_EFFECT')) LIMIT 1",
+                (mission_id,),
+            ).fetchone()
+            if unresolved is not None:
+                raise MissionStoreError("cannot replace a plan with an unresolved effect")
             new_version = expected_version + 1
             plan_doc = {
                 "steps": [s.model_dump() for s in steps],
                 "criteria": [c.model_dump() for c in criteria],
             }
+            from assistant.memory.policy import contains_secret
+
+            if contains_secret(canonical_json(plan_doc)) or contains_secret(reason + creator):
+                raise MissionStoreError("plan refused by privacy policy")
             self._conn.execute(
                 """
                 INSERT INTO mission_plans (mission_id, plan_version, plan_json, digest,
@@ -1139,7 +1345,9 @@ class MissionStore:
                 """,
                 (
                     result.effect_outcome,
-                    canonical_json(result.model_dump()),
+                    # D07: the outcome sink is screened — a canary riding in
+                    # an exception or refusal text never persists verbatim.
+                    canonical_json(_screen_result(result)),
                     result_digest,
                     now,
                     result.execution_id,
@@ -1147,11 +1355,59 @@ class MissionStore:
             )
             self._conn.execute(
                 """
-                UPDATE mission_steps SET state=?, active_execution_id=NULL, updated_at_ms=?
+                UPDATE mission_steps SET state=?, active_execution_id=NULL, updated_at_ms=?,
+                    pending_action_digest=?, pending_tool=?, pending_target_ref=?
                 WHERE mission_id=? AND plan_version=? AND step_id=?
                 """,
-                (step_state, now, attempt_mission, attempt_plan, attempt_step),
+                (
+                    step_state,
+                    now,
+                    # D02: persist the exact approval this BLOCKED step owes.
+                    # Any other transition clears it — a stale digest must
+                    # never survive onto a step that left the approval gate.
+                    (
+                        result.pending_approval.action_digest
+                        if step_state == "BLOCKED" and result.pending_approval else ""
+                    ),
+                    (
+                        result.pending_approval.tool
+                        if step_state == "BLOCKED" and result.pending_approval else ""
+                    ),
+                    (
+                        result.pending_approval.target_ref
+                        if step_state == "BLOCKED" and result.pending_approval else None
+                    ),
+                    attempt_mission,
+                    attempt_plan,
+                    attempt_step,
+                ),
             )
+            if step_state == "BLOCKED" and result.pending_approval is not None:
+                # D13: an approval block holds the mission at
+                # NEEDS_APPROVAL immediately — even with dependent PENDING
+                # steps — so the owner's resume path is always available.
+                if mission_status == "RUNNING":
+                    self._conn.execute(
+                        "UPDATE missions SET status='NEEDS_APPROVAL', "
+                        "resume_cursor=?, updated_at_ms=? WHERE mission_id=?",
+                        (attempt_step, now, attempt_mission),
+                    )
+                self._append_event(
+                    mission_id=attempt_mission,
+                    plan_version=attempt_plan,
+                    control_epoch=mission_epoch,
+                    step_id=attempt_step,
+                    kind="approval",
+                    payload={
+                        "required": True,
+                        "step_id": attempt_step,
+                        "tool": result.pending_approval.tool,
+                        "action_digest": result.pending_approval.action_digest,
+                        "plan_version": attempt_plan,
+                        "control_epoch": mission_epoch,
+                    },
+                    occurred_at_ms=now,
+                )
             usage = BudgetUsage.model_validate(self._usage_dict(mission_row[3]))
             for resource, amount in result.usage.consumed.items():
                 usage.consumed[resource] = usage.consumed.get(resource, 0) + int(amount)
@@ -1192,7 +1448,9 @@ class MissionStore:
             )
             # When every step of the current plan is terminal, the mission is
             # ready for its acceptance gate (VERIFYING); the service owns the
-            # final verdict from here.
+            # final verdict from here. D02: a step blocked at the approval
+            # gate holds the mission at NEEDS_APPROVAL instead — the owner,
+            # not the acceptance gate, decides what happens next.
             states = self._conn.execute(
                 "SELECT state FROM mission_steps WHERE mission_id=? AND plan_version=?",
                 (attempt_mission, attempt_plan),
@@ -1200,6 +1458,10 @@ class MissionStore:
             if all(str(s[0]) in {"SUCCEEDED", "FAILED", "BLOCKED", "CANCELLED",
                  "SKIPPED"} for s in states):
                 new_status = "VERIFYING" if mission_status == "RUNNING" else mission_status
+                if new_status == "VERIFYING" and (
+                    step_state == "BLOCKED" and result.pending_approval is not None
+                ):
+                    new_status = "NEEDS_APPROVAL"
                 self._conn.execute(
                     "UPDATE missions SET status=?, resume_cursor=?, updated_at_ms=? "
                     "WHERE mission_id=?",
@@ -1253,9 +1515,20 @@ class MissionStore:
                 case "PAUSE":
                     new_status, new_epoch = "PAUSED", epoch + 1
                 case "RESUME":
-                    if status != "PAUSED":
-                        raise MissionStoreError(f"RESUME requires PAUSED, got {status}")
-                    new_status, new_epoch = "RUNNING", epoch + 1
+                    if status == "PAUSED":
+                        # The epoch bump revokes open approvals: a new epoch
+                        # never silently inherits an old digest (D02).
+                        new_status, new_epoch = "RUNNING", epoch + 1
+                    elif status in {"NEEDS_APPROVAL", "WAITING_EXTERNAL"}:
+                        # D02: the approval-gate/wait resume. The epoch does
+                        # NOT change — the owner's freshly minted approval is
+                        # bound to the CURRENT epoch and stays consumable, and
+                        # no dispatched work is in flight to invalidate.
+                        new_status, new_epoch = "RUNNING", epoch
+                    else:
+                        raise MissionStoreError(
+                            f"RESUME requires PAUSED/NEEDS_APPROVAL, got {status}"
+                        )
                 case "CANCEL":
                     new_status, new_epoch = "CANCELLED", epoch + 1
                 case "REVISE":
@@ -1299,6 +1572,21 @@ class MissionStore:
                     )
                 pause_resume = command.kind in {"PAUSE", "REVISE"}
                 if pause_resume:
+                    # D02: the epoch bump voids the old approval gate — the
+                    # persisted pending digest was minted for the OLD epoch,
+                    # so no later release may match it.
+                    # D13: an approval-blocked step was NEVER dispatched
+                    # (the guard refused before any effect), so re-observing
+                    # is safe: it returns to PENDING and earns a FRESH
+                    # obligation at the next dispatch. Blocks from uncertain
+                    # effects stay BLOCKED.
+                    self._conn.execute(
+                        "UPDATE mission_steps SET state=CASE WHEN state='BLOCKED' "
+                        "AND pending_action_digest!='' THEN 'PENDING' ELSE state END, "
+                        "pending_action_digest='', pending_tool='', pending_target_ref=NULL, "
+                        "updated_at_ms=? WHERE mission_id=? AND state='BLOCKED'",
+                        (now, command.mission_id),
+                    )
                     # R07/F07 (RP07): a paused step never strands RUNNING —
                     # but only a step whose attempt was SAFELY cancelled
                     # returns to PENDING. A step whose attempt was
@@ -1323,15 +1611,23 @@ class MissionStore:
                         "WHERE mission_id=? AND state='RUNNING'",
                         (now, command.mission_id),
                     )
-                if command.kind == "RESUME":
-                    # C05: the owner's resume REAFFIRMS a pending approval —
-                    # live approvals carry across the epoch bump so the
-                    # approved typing loop can re-claim and consume them.
+                if command.kind == "CANCEL":
                     self._conn.execute(
-                        "UPDATE mission_approvals SET control_epoch=? "
-                        "WHERE mission_id=? AND control_epoch=? AND revoked=0 "
-                        "AND consumed_at_ms IS NULL AND expires_at_ms>?",
-                        (new_epoch, command.mission_id, epoch, now),
+                        "UPDATE mission_external_waits SET released_at_ms=? "
+                        "WHERE mission_id=? AND released_at_ms IS NULL",
+                        (now, command.mission_id),
+                    )
+                if command.kind == "RESUME":
+                    # D02: approvals are NOT carried across an epoch bump. An
+                    # approval minted for epoch N is bound (cryptographically,
+                    # via the action digest) to that epoch; a new epoch must
+                    # re-earn an owner approval for ITS OWN digest. Open
+                    # external waits end here too — the resume supersedes
+                    # them.
+                    self._conn.execute(
+                        "UPDATE mission_external_waits SET released_at_ms=? "
+                        "WHERE mission_id=? AND released_at_ms IS NULL",
+                        (now, command.mission_id),
                     )
                 else:
                     self._conn.execute(
@@ -1622,26 +1918,64 @@ class MissionStore:
 
         self._tx(tx)
 
-    async def consume_approval(self, approval_id: str, action_digest: str) -> bool:
-        return await self._run_tx(self._consume_approval_sync, approval_id, action_digest)
+    async def consume_approval(
+        self,
+        approval_id: str,
+        action_digest: str,
+        *,
+        plan_version: int | None = None,
+        control_epoch: int | None = None,
+        target_ref: str | None = None,
+    ) -> bool:
+        """Consume one approval, bound to the exact action identity (D02).
 
-    def _consume_approval_sync(self, approval_id: str, action_digest: str) -> bool:
+        The digest already binds mission/step/plan-version/epoch/tool/args;
+        the row's own plan_version/control_epoch and the target ref must
+        match the dispatch as well, so an approval minted for another epoch
+        or target can never be consumed here.
+        """
+        return await self._run_tx(
+            self._consume_approval_sync,
+            approval_id, action_digest, plan_version, control_epoch, target_ref,
+        )
+
+    def _consume_approval_sync(
+        self,
+        approval_id: str,
+        action_digest: str,
+        plan_version: int | None,
+        control_epoch: int | None,
+        target_ref: str | None,
+    ) -> bool:
         now = _now_ms()
 
         def tx() -> bool:
             row = self._conn.execute(
-                "SELECT action_digest, expires_at_ms, consumed_at_ms, "
-                "revoked FROM mission_approvals WHERE approval_id=?",
+                "SELECT action_digest, expires_at_ms, consumed_at_ms, revoked, "
+                "plan_version, control_epoch, target_ref FROM mission_approvals "
+                "WHERE approval_id=?",
                 (approval_id,),
             ).fetchone()
             if row is None:
                 return False
-            stored_digest, expires_at, consumed_at, revoked = row
+            (stored_digest, expires_at, consumed_at, revoked,
+             approval_plan, approval_epoch, approval_target) = row
             if consumed_at is not None or int(revoked or 0) == 1:
                 return False
             if int(expires_at) <= now:
                 return False
             if str(stored_digest) != action_digest:
+                return False
+            # D02: the approval's own binding must match the dispatch — a
+            # new epoch (or plan) never inherits an old digest, and a
+            # target-bound approval never releases a different target.
+            if plan_version is not None and int(approval_plan) != int(plan_version):
+                return False
+            if control_epoch is not None and int(approval_epoch) != int(control_epoch):
+                return False
+            if (str(approval_target) if approval_target is not None else None) != (
+                str(target_ref) if target_ref is not None else None
+            ):
                 return False
             self._conn.execute(
                 "UPDATE mission_approvals SET consumed_at_ms=? WHERE approval_id=?",
@@ -1669,12 +2003,536 @@ class MissionStore:
         ).fetchall()
         return [str(r[0]) for r in rows]
 
+    # -- durable external waits (D02) ------------------------------------------------
+
+    async def record_external_wait(
+        self,
+        mission_id: str,
+        plan_version: int,
+        step_id: str,
+        *,
+        reason: str,
+        checkpoint: dict[str, Any],
+        retry_after_ms: int,
+        deadline_ms: int,
+        control_epoch: int | None = None,
+    ) -> str:
+        """Persist a WAITING_EXTERNAL checkpoint: reason, retry-after,
+        deadline and resume state. Returns the wait id."""
+        return await self._run_tx(
+            self._record_external_wait_sync,
+            mission_id, plan_version, step_id, reason, checkpoint,
+            retry_after_ms, deadline_ms, control_epoch,
+        )
+
+    def _record_external_wait_sync(
+        self,
+        mission_id: str,
+        plan_version: int,
+        step_id: str,
+        reason: str,
+        checkpoint: dict[str, Any],
+        retry_after_ms: int,
+        deadline_ms: int,
+        control_epoch: int | None,
+    ) -> str:
+        now = _now_ms()
+
+        def tx() -> str:
+            # D14: wait admission binds the reconciled effect state — a
+            # step whose latest attempt ended UNKNOWN cannot enter a wait,
+            # because a timer must never make an unknown effect replayable.
+            unresolved = self._conn.execute(
+                "SELECT COUNT(*) FROM mission_attempts WHERE mission_id=? AND "
+                "plan_version=? AND step_id=? AND effect_outcome='UNKNOWN' AND "
+                "dispatch_state='RESULT_APPLIED'",
+                (mission_id, plan_version, step_id),
+            ).fetchone()
+            if unresolved is not None and int(unresolved[0]) > 0:
+                raise MissionStoreError(
+                    f"wait refused: step {step_id} has an unresolved UNKNOWN "
+                    "effect; reconciliation must settle it first"
+                )
+            mission_row = self._conn.execute(
+                "SELECT plan_version, control_epoch, status FROM missions WHERE mission_id=?",
+                (mission_id,),
+            ).fetchone()
+            if mission_row is None:
+                raise MissionStoreError(f"wait refused: unknown mission {mission_id}")
+            current_plan, current_epoch, current_status = (
+                int(mission_row[0]), int(mission_row[1]), str(mission_row[2])
+            )
+            bound_epoch = current_epoch if control_epoch is None else int(control_epoch)
+            if current_plan != int(plan_version) or current_epoch != bound_epoch:
+                raise MissionStoreError("wait refused: stale plan or control epoch")
+            if current_status not in {"RUNNING", "PLANNED", "VERIFYING", "WAITING_EXTERNAL"}:
+                raise MissionStoreError(f"wait refused: mission is {current_status}")
+            wait_id = new_id()
+            # D16: screen BEFORE truncation and BEFORE the disk sink — a
+            # canary in the reason or the checkpoint never persists. The
+            # checkpoint is bounded by STRUCTURE (keys/values, after
+            # screening), never by slicing serialized JSON.
+            screened_reason = _screen_private(reason)[:400]
+            bounded = _bound_checkpoint(checkpoint)
+            self._conn.execute(
+                "INSERT INTO mission_external_waits (wait_id, mission_id, plan_version, "
+                "control_epoch, step_id, reason, checkpoint_json, retry_after_ms, deadline_ms, "
+                "created_at_ms, released_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+                (
+                    wait_id, mission_id, plan_version, bound_epoch, step_id,
+                    screened_reason, canonical_json(bounded),
+                    int(retry_after_ms), int(deadline_ms), now,
+                ),
+            )
+            if current_status in {"RUNNING", "PLANNED", "VERIFYING"}:
+                # D14: the one-step failure path reaches VERIFYING before
+                # the escalation decides; a wait is still enterable there.
+                self._conn.execute(
+                    "UPDATE missions SET status='WAITING_EXTERNAL', updated_at_ms=? "
+                    "WHERE mission_id=?",
+                    (now, mission_id),
+                )
+            self._append_event(
+                mission_id=mission_id,
+                plan_version=plan_version,
+                control_epoch=bound_epoch,
+                step_id=step_id,
+                kind="recovery",
+                payload={
+                    "waiting_external": True,
+                    "wait_id": wait_id,
+                    "reason": screened_reason,
+                    "retry_after_ms": int(retry_after_ms),
+                    "deadline_ms": int(deadline_ms),
+                    "checkpoint": bounded,
+                },
+                occurred_at_ms=now,
+            )
+            return wait_id
+
+        return self._tx(tx)
+
+    async def open_waits(self, mission_id: str | None = None) -> list[dict[str, Any]]:
+        """Unreleased waits (optionally one mission's), oldest first."""
+        return await self._run_tx(self._open_waits_sync, mission_id)
+
+    def _open_waits_sync(self, mission_id: str | None) -> list[dict[str, Any]]:
+        if mission_id is None:
+            rows = self._conn.execute(
+                "SELECT wait_id, mission_id, plan_version, control_epoch, step_id, reason, "
+                "checkpoint_json, retry_after_ms, deadline_ms, created_at_ms "
+                "FROM mission_external_waits WHERE released_at_ms IS NULL "
+                "ORDER BY created_at_ms"
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT wait_id, mission_id, plan_version, control_epoch, step_id, reason, "
+                "checkpoint_json, retry_after_ms, deadline_ms, created_at_ms "
+                "FROM mission_external_waits WHERE released_at_ms IS NULL AND mission_id=? "
+                "ORDER BY created_at_ms",
+                (mission_id,),
+            ).fetchall()
+        return [
+            {
+                "wait_id": str(r[0]),
+                "mission_id": str(r[1]),
+                "plan_version": int(r[2]),
+                "control_epoch": int(r[3]),
+                "step_id": str(r[4]),
+                "reason": str(r[5]),
+                "checkpoint": _safe_checkpoint_json(r[6]),
+                "damaged_row": isinstance(r[6], str) and not r[6].strip().startswith("{"),
+                "retry_after_ms": int(r[7]),
+                "deadline_ms": int(r[8]),
+                "created_at_ms": int(r[9]),
+            }
+            for r in rows
+        ]
+
+    async def release_wait(self, wait_id: str) -> MissionRecord | None:
+        """Release one wait: requeue its step and return the mission to RUNNING."""
+        return await self._run_tx(self._release_wait_sync, wait_id)
+
+    def _release_wait_sync(self, wait_id: str) -> MissionRecord | None:
+        now = _now_ms()
+
+        def tx() -> MissionRecord | None:
+            row = self._conn.execute(
+                "SELECT mission_id, plan_version, control_epoch, step_id, released_at_ms, "
+                "deadline_ms "
+                "FROM mission_external_waits WHERE wait_id=?",
+                (wait_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            mission_id, plan_version, control_epoch, step_id, released_at, deadline_ms = row
+            if released_at is not None:
+                return self._get_mission_sync(str(mission_id))
+            current = self._conn.execute(
+                "SELECT plan_version, control_epoch, status FROM missions WHERE mission_id=?",
+                (str(mission_id),),
+            ).fetchone()
+            if current is None:
+                return None
+            current_plan = int(current[0])
+            current_epoch = int(current[1])
+            current_status = str(current[2])
+            # A malformed/legacy wait must never turn a known-ambiguous
+            # effect into a runnable retry, even if the mission has already
+            # moved away from WAITING_EXTERNAL.
+            unresolved = self._conn.execute(
+                "SELECT COUNT(*) FROM mission_attempts WHERE mission_id=? AND "
+                "plan_version=? AND step_id=? AND effect_outcome='UNKNOWN' AND "
+                "dispatch_state='RESULT_APPLIED'",
+                (str(mission_id), int(plan_version), str(step_id)),
+            ).fetchone()
+            if unresolved is not None and int(unresolved[0]) > 0:
+                self._conn.execute(
+                    "UPDATE mission_external_waits SET released_at_ms=? WHERE wait_id=?",
+                    (now, wait_id),
+                )
+                self._conn.execute(
+                    "UPDATE missions SET status='BLOCKED', updated_at_ms=? WHERE mission_id=? "
+                    "AND status IN ('WAITING_EXTERNAL','VERIFYING','RUNNING','PLANNED')",
+                    (now, str(mission_id)),
+                )
+                self._append_event(
+                    mission_id=str(mission_id), plan_version=int(plan_version),
+                    control_epoch=int(control_epoch), step_id=str(step_id), kind="recovery",
+                    payload={"wait_release_refused": True, "wait_id": wait_id,
+                             "reason": "unresolved UNKNOWN effect; reconciliation required"},
+                    occurred_at_ms=now,
+                )
+                return self._get_mission_sync(str(mission_id))
+            if now >= int(deadline_ms):
+                self._conn.execute(
+                    "UPDATE mission_external_waits SET released_at_ms=? WHERE wait_id=?",
+                    (now, wait_id),
+                )
+                self._conn.execute(
+                    "UPDATE missions SET status='BLOCKED', updated_at_ms=? WHERE mission_id=? "
+                    "AND status='WAITING_EXTERNAL'",
+                    (now, str(mission_id)),
+                )
+                return self._get_mission_sync(str(mission_id))
+            if (current_plan, current_epoch, current_status) != (
+                int(plan_version), int(control_epoch), "WAITING_EXTERNAL"
+            ):
+                # A revised/paused/cancelled mission must never be revived by
+                # a stale timer.  Consume this wait so restart cannot re-arm it.
+                self._conn.execute(
+                    "UPDATE mission_external_waits SET released_at_ms=? WHERE wait_id=?",
+                    (now, wait_id),
+                )
+                return self._get_mission_sync(str(mission_id))
+            self._conn.execute(
+                "UPDATE mission_external_waits SET released_at_ms=? WHERE wait_id=?",
+                (now, wait_id),
+            )
+            if not str(step_id).startswith("__controller_"):
+                self._conn.execute(
+                    "UPDATE mission_steps SET state=CASE WHEN state='BLOCKED' THEN 'PENDING' "
+                    "ELSE state END, active_execution_id=NULL, updated_at_ms=? "
+                    "WHERE mission_id=? AND plan_version=? AND step_id=?",
+                    (now, str(mission_id), int(plan_version), str(step_id)),
+                )
+            open_count = self._conn.execute(
+                "SELECT COUNT(*) FROM mission_external_waits WHERE mission_id=? "
+                "AND released_at_ms IS NULL",
+                (str(mission_id),),
+            ).fetchone()
+            if open_count is not None and int(open_count[0]) == 0:
+                self._conn.execute(
+                    "UPDATE missions SET status='RUNNING', updated_at_ms=? "
+                    "WHERE mission_id=? AND plan_version=? AND control_epoch=? "
+                    "AND status='WAITING_EXTERNAL'",
+                    (now, str(mission_id), int(plan_version), int(control_epoch)),
+                )
+            self._append_event(
+                mission_id=str(mission_id),
+                plan_version=int(plan_version),
+                control_epoch=int(control_epoch),
+                step_id=str(step_id),
+                kind="control",
+                payload={
+                    "kind": "WAIT_RELEASED",
+                    "wait_id": wait_id,
+                    "deadline_ms": int(deadline_ms),
+                },
+                occurred_at_ms=now,
+            )
+            return self._get_mission_sync(str(mission_id))
+
+        return self._tx(tx)
+
+    async def mark_mission_evidence_deleted(self, mission_id: str) -> list[str]:
+        """D12: tombstone exactly THIS mission's live evidence rows and
+        return their file paths (relative). Other missions' rows are never
+        selected; idempotent (already-deleted rows return nothing)."""
+        return await self._run_tx(self._mark_mission_evidence_deleted_sync, mission_id)
+
+    def _mark_mission_evidence_deleted_sync(self, mission_id: str) -> list[str]:
+        def tx() -> list[str]:
+            rows = self._conn.execute(
+                "SELECT evidence_id, relative_path FROM mission_evidence "
+                "WHERE mission_id=? AND deleted=0",
+                (mission_id,),
+            ).fetchall()
+            paths: list[str] = []
+            for evidence_id, relative_path in rows:
+                self._conn.execute(
+                    "UPDATE mission_evidence SET deleted=1 "
+                    "WHERE evidence_id=?",
+                    (str(evidence_id),),
+                )
+                if relative_path:
+                    path = str(relative_path)
+                    paths.append(path)
+                    self._queue_file_deletion_sync(
+                        path, mission_id=mission_id, reason="owner_deletion"
+                    )
+            return paths
+
+        return self._tx(tx)
+
+    def _queue_file_deletion_sync(
+        self, relative_path: str, *, mission_id: str, reason: str
+    ) -> None:
+        """Queue a confined artifact unlink in the same transaction as its
+        row tombstone. Empty paths have no filesystem operation to retry."""
+        if not relative_path:
+            return
+        self._conn.execute(
+            "INSERT OR IGNORE INTO mission_file_deletions "
+            "(relative_path, mission_id, reason, queued_at_ms, attempts) VALUES (?, ?, ?, ?, 0)",
+            (relative_path, mission_id, reason, _now_ms()),
+        )
+
+    async def pending_file_deletions(self) -> list[str]:
+        return await self._run_tx(self._pending_file_deletions_sync)
+
+    def _pending_file_deletions_sync(self) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT relative_path FROM mission_file_deletions ORDER BY queued_at_ms, relative_path"
+        ).fetchall()
+        return [str(row[0]) for row in rows]
+
+    async def acknowledge_file_deletions(self, paths: list[str]) -> None:
+        if paths:
+            await self._run_tx(self._acknowledge_file_deletions_sync, paths)
+
+    def _acknowledge_file_deletions_sync(self, paths: list[str]) -> None:
+        self._conn.executemany(
+            "DELETE FROM mission_file_deletions WHERE relative_path=?",
+            [(path,) for path in dict.fromkeys(path for path in paths if path)],
+        )
+
+    async def note_file_deletion_failures(self, paths: list[str]) -> None:
+        if paths:
+            await self._run_tx(self._note_file_deletion_failures_sync, paths)
+
+    def _note_file_deletion_failures_sync(self, paths: list[str]) -> None:
+        self._conn.executemany(
+            "UPDATE mission_file_deletions SET attempts=attempts+1 WHERE relative_path=?",
+            [(path,) for path in dict.fromkeys(path for path in paths if path)],
+        )
+
+    async def record_deletion_tombstone(
+        self, mission_id: str, evidence_files: int, recommendations: list[str]
+    ) -> None:
+        """D07: a safe tombstone for an owner deletion — the content is
+        gone, the fact of the deletion stays auditable."""
+        return await self._run_tx(
+            self._record_deletion_tombstone_sync, mission_id, evidence_files, recommendations
+        )
+
+    def _record_deletion_tombstone_sync(
+        self, mission_id: str, evidence_files: int, recommendations: list[str]
+    ) -> None:
+        now = _now_ms()
+
+        def tx() -> None:
+            self._conn.execute(
+                "INSERT INTO mission_retention_log (recorded_at_ms, kind, subject_id, "
+                "detail_json) VALUES (?, ?, ?, ?)",
+                (
+                    now,
+                    "owner_deletion",
+                    mission_id,
+                    canonical_json({
+                        "evidence_files_deleted": int(evidence_files),
+                        "recommendations_deleted": [str(r) for r in recommendations][:64],
+                        "tombstone": True,
+                    }),
+                ),
+            )
+
+        return self._tx(tx)
+
+    # -- provider request accounting (D05) ---------------------------------------------
+
+    async def record_provider_request(
+        self,
+        mission_id: str,
+        plan_version: int,
+        request_id: str,
+        *,
+        role: str = "",
+        call_key: str = "",
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+    ) -> int:
+        """Persist ONE actual provider transport request (D05).
+
+        Graph-internal sub-calls and retries each get their own durable row
+        keyed by the transport's per-request call id. This is evidence and
+        ceiling enforcement — it never re-charges the outer deep_calls
+        budget, which the service settles exactly once per invocation.
+        """
+        return await self._run_tx(
+            self._record_provider_request_sync,
+            mission_id, plan_version, request_id, role, call_key,
+            input_tokens, output_tokens,
+        )
+
+    def _record_provider_request_sync(
+        self,
+        mission_id: str,
+        plan_version: int,
+        request_id: str,
+        role: str,
+        call_key: str,
+        input_tokens: int | None,
+        output_tokens: int | None,
+    ) -> int:
+        now = _now_ms()
+
+        def tx() -> int:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO mission_provider_requests (request_id, mission_id, "
+                "plan_version, role, call_key, input_tokens, output_tokens, created_at_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    request_id, mission_id, plan_version, role[:32], call_key[:200],
+                    int(input_tokens) if isinstance(input_tokens, int) else None,
+                    int(output_tokens) if isinstance(output_tokens, int) else None,
+                    now,
+                ),
+            )
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM mission_provider_requests "
+                "WHERE mission_id=? AND plan_version=?",
+                (mission_id, plan_version),
+            ).fetchone()
+            return int(row[0]) if row is not None else 0
+
+        return self._tx(tx)
+
+    def provider_request_count_sync(self, mission_id: str, plan_version: int) -> int:
+        """Synchronous count probe for the transport's ceiling check."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM mission_provider_requests "
+            "WHERE mission_id=? AND plan_version=?",
+            (mission_id, plan_version),
+        ).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def admit_provider_request_sync(
+        self,
+        request_id: str,
+        *,
+        mission_id: str = "",
+        plan_version: int = 0,
+        role: str = "",
+        call_key: str = "",
+    ) -> int:
+        """Durably record one ATTEMPTED provider request (D11).
+
+        Called at the transport boundary BEFORE the provider is invoked so
+        an attempted-but-denied request is still accounted. Synchronous:
+        the callback path runs on the event loop thread between awaits.
+        """
+        now = _now_ms()
+
+        def tx() -> int:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO mission_provider_requests (request_id, mission_id, "
+                "plan_version, role, call_key, state, created_at_ms, updated_at_ms) "
+                "VALUES (?, ?, ?, ?, ?, 'ATTEMPTED', ?, ?)",
+                (
+                    request_id, mission_id, plan_version, role[:32], call_key[:200],
+                    now, now,
+                ),
+            )
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM mission_provider_requests "
+                "WHERE mission_id=? AND plan_version=?",
+                (mission_id, plan_version),
+            ).fetchone()
+            return int(row[0]) if row is not None else 0
+
+        return self._tx(tx)
+
+    def settle_provider_request_sync(
+        self,
+        request_id: str,
+        state: str,
+        *,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+    ) -> None:
+        """Settle one admitted request: COMPLETED or FAILED (D11)."""
+        assert state in {"COMPLETED", "FAILED"}
+        now = _now_ms()
+
+        def tx() -> None:
+            self._conn.execute(
+                "UPDATE mission_provider_requests SET state=?, input_tokens=?, "
+                "output_tokens=?, updated_at_ms=? WHERE request_id=?",
+                (
+                    state,
+                    int(input_tokens) if isinstance(input_tokens, int) else None,
+                    int(output_tokens) if isinstance(output_tokens, int) else None,
+                    now, request_id,
+                ),
+            )
+
+        return self._tx(tx)
+
+    async def provider_requests(self, mission_id: str) -> list[dict[str, Any]]:
+        """The durable per-request transport rows for one mission."""
+        return await self._run_tx(self._provider_requests_sync, mission_id)
+
+    def _provider_requests_sync(self, mission_id: str) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT request_id, plan_version, role, call_key, input_tokens, "
+            "output_tokens, created_at_ms FROM mission_provider_requests "
+            "WHERE mission_id=? ORDER BY created_at_ms",
+            (mission_id,),
+        ).fetchall()
+        return [
+            {
+                "request_id": str(r[0]),
+                "plan_version": int(r[1]),
+                "role": str(r[2]),
+                "call_key": str(r[3]),
+                "input_tokens": r[4] if r[4] is None else int(r[4]),
+                "output_tokens": r[5] if r[5] is None else int(r[5]),
+                "created_at_ms": int(r[6]),
+            }
+            for r in rows
+        ]
+
     # -- budget reservations ----------------------------------------------------------
 
-    async def reserve_budget(self, mission_id: str, charge: BudgetCharge) -> BudgetReservation:
-        return await self._run_tx(self._reserve_budget_sync, mission_id, charge)
+    async def reserve_budget(
+        self, mission_id: str, charge: BudgetCharge, *, item: BoundedWorkItem | None = None
+    ) -> BudgetReservation:
+        return await self._run_tx(self._reserve_budget_sync, mission_id, charge, item)
 
-    def _reserve_budget_sync(self, mission_id: str, charge: BudgetCharge) -> BudgetReservation:
+    def _reserve_budget_sync(
+        self, mission_id: str, charge: BudgetCharge, item: BoundedWorkItem | None = None
+    ) -> BudgetReservation:
         now = _now_ms()
 
         def tx() -> BudgetReservation:
@@ -1702,6 +2560,29 @@ class MissionStore:
                         created_at_ms=now,
                         consumed=str(existing[2]) == "CONSUMED",
                     )
+            if item is not None:
+                prefix = f"{charge.resource}:{mission_id}:{item.execution_id}:"
+                if item.mission_id != mission_id or not charge.call_key.startswith(prefix):
+                    raise MissionStoreError("packet budget charge identity mismatch")
+                step = self._conn.execute(
+                    "SELECT s.step_json FROM mission_steps s JOIN mission_attempts a "
+                    "ON a.mission_id=s.mission_id AND a.plan_version=s.plan_version "
+                    "AND a.step_id=s.step_id WHERE a.execution_id=? AND a.mission_id=?",
+                    (item.execution_id, mission_id),
+                ).fetchone()
+                if step is None:
+                    raise UnknownExecution("packet budget has no committed execution")
+                stored = StepSpec.model_validate(self._usage_dict(step[0]))
+                packet_ceiling = min(getattr(item.budget, f"max_{charge.resource}"),
+                                     getattr(stored.budget, f"max_{charge.resource}"))
+                spent = self._conn.execute(
+                    "SELECT COALESCE(SUM(amount),0) FROM mission_budget_reservations "
+                    "WHERE mission_id=? AND resource=? AND call_key LIKE ? "
+                    "AND status IN ('RESERVED','CONSUMED')",
+                    (mission_id, charge.resource, prefix + "%"),
+                ).fetchone()[0]
+                if int(spent) + charge.amount > packet_ceiling:
+                    raise MissionStoreError(f"packet budget exhausted for {charge.resource}")
             ceiling = getattr(limits, f"max_{charge.resource}")
             if ceiling is not None and usage.total(charge.resource) + charge.amount > ceiling:
                 raise MissionStoreError(
@@ -2302,41 +3183,45 @@ class MissionStore:
         now = _now_ms()
 
         def tx() -> int:
-            approvals = self._conn.execute(
-                "SELECT COUNT(*) FROM mission_approvals WHERE mission_id=? AND control_epoch="
-                "(SELECT control_epoch FROM missions WHERE mission_id=?) AND revoked=0 "
-                "AND consumed_at_ms IS NULL AND expires_at_ms>?",
-                (mission_id, mission_id, now),
-            ).fetchone()
-            if not approvals or int(approvals[0]) == 0:
-                return 0
+            epoch = self._epoch_sync(mission_id)
             limits_row = self._conn.execute(
                 "SELECT limits_json FROM missions WHERE mission_id=?", (mission_id,)
             ).fetchone()
             limits = BudgetLimits.model_validate(self._usage_dict(limits_row[0]))
             released = 0
+            # D02: release only the step whose PERSISTED pending digest an
+            # active, current-epoch approval actually names. An unrelated
+            # approval (other step, other action, other epoch) releases
+            # nothing.
             rows = self._conn.execute(
-                "SELECT step_id, attempt_count, state FROM mission_steps "
-                "WHERE mission_id=? AND plan_version=? AND state='BLOCKED'",
-                (mission_id, plan_version),
+                "SELECT s.step_id, s.attempt_count, s.pending_action_digest, "
+                "s.pending_tool FROM mission_steps s "
+                "WHERE s.mission_id=? AND s.plan_version=? AND s.state='BLOCKED' "
+                "AND s.pending_action_digest!='' AND EXISTS ("
+                "  SELECT 1 FROM mission_approvals a WHERE a.mission_id=s.mission_id "
+                "  AND a.action_digest=s.pending_action_digest AND a.control_epoch=? "
+                "  AND a.revoked=0 AND a.consumed_at_ms IS NULL AND a.expires_at_ms>? "
+                "  AND a.target_ref IS s.pending_target_ref)",
+                (mission_id, plan_version, epoch, now),
             ).fetchall()
-            for step_id, attempt_count, _state in rows:
+            for step_id, attempt_count, _digest, _tool in rows:
                 if int(attempt_count) > limits.max_retries:
                     continue
                 self._conn.execute(
                     "UPDATE mission_steps SET state='PENDING', active_execution_id=NULL, "
+                    "pending_action_digest='', pending_tool='', pending_target_ref=NULL, "
                     "updated_at_ms=? WHERE mission_id=? AND plan_version=? AND step_id=?",
                     (now, mission_id, plan_version, str(step_id)),
                 )
                 self._append_event(
                     mission_id=mission_id,
                     plan_version=plan_version,
-                    control_epoch=self._epoch_sync(mission_id),
+                    control_epoch=epoch,
                     step_id=str(step_id),
                     kind="control",
                     payload={
                         "kind": "RESUME",
-                        "reason": "approval present; blocked step re-queued",
+                        "reason": "matching owner approval; blocked step re-queued",
                     },
                     occurred_at_ms=now,
                 )
@@ -2487,8 +3372,12 @@ class MissionStore:
                 kind="verification",
                 payload={
                     "final_review": {
-                        "summary": summary,
-                        "unresolved_issues": unresolved_issues,
+                        # D07: the final-review sink is screened the same way
+                        # as revisions — a canary in review text never lands.
+                        "summary": _screen_private(summary),
+                        "unresolved_issues": [
+                            _screen_private(str(issue))[:200] for issue in unresolved_issues
+                        ],
                     },
                     "advisory": True,
                 },
@@ -2497,26 +3386,81 @@ class MissionStore:
 
         self._tx(tx)
 
+    # -- durable retention holds (D16) -------------------------------------------------
+
+    async def set_retention_hold(self, mission_id: str, *, reason: str) -> None:
+        """Persist an owner investigation hold; it survives restarts."""
+        return await self._run_tx(self._set_retention_hold_sync, mission_id, reason)
+
+    def _set_retention_hold_sync(self, mission_id: str, reason: str) -> None:
+        now = _now_ms()
+
+        def tx() -> None:
+            self._conn.execute(
+                "INSERT INTO mission_retention_holds (mission_id, reason, held_at_ms, "
+                "released_at_ms) VALUES (?, ?, ?, NULL) "
+                "ON CONFLICT(mission_id) DO UPDATE SET reason=excluded.reason, "
+                "held_at_ms=excluded.held_at_ms, released_at_ms=NULL",
+                (mission_id, reason[:400], now),
+            )
+
+        return self._tx(tx)
+
+    async def release_retention_hold(self, mission_id: str) -> None:
+        return await self._run_tx(self._release_retention_hold_sync, mission_id)
+
+    def _release_retention_hold_sync(self, mission_id: str) -> None:
+        now = _now_ms()
+
+        def tx() -> None:
+            self._conn.execute(
+                "UPDATE mission_retention_holds SET released_at_ms=? "
+                "WHERE mission_id=? AND released_at_ms IS NULL",
+                (now, mission_id),
+            )
+
+        return self._tx(tx)
+
+    async def active_retention_holds(self) -> set[str]:
+        """The durable, unreleased hold set (D16)."""
+        return await self._run_tx(self._active_holds_sync)
+
+    def _active_holds_sync(self) -> set[str]:
+        rows = self._conn.execute(
+            "SELECT mission_id FROM mission_retention_holds "
+            "WHERE released_at_ms IS NULL"
+        ).fetchall()
+        return {str(r[0]) for r in rows}
+
     # -- retention (C07/N06) -----------------------------------------------------------
 
-    async def enforce_retention(
-        self, now_ms: int, *, hold_missions: frozenset[str] | set[str] = frozenset()
-    ) -> dict[str, Any]:
-        """Owner-bounded retention sweep over mission evidence.
+    #: D16: the planned metadata policy — terminal mission metadata
+    #: (mission row, events, steps, attempts) older than 30 days is purged
+    #: entirely unless held; evidence expires at creation (7 days for
+    #: screenshot-kind content, 30 days for structured metadata).
+    METADATA_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
-        C07: evidence past its expiry is deleted (row marked deleted, file
-        removed by the EvidenceStore sweep) UNLESS its mission is under an
-        explicit investigation hold; evidence rows whose mission has
-        vanished are orphans and go too. Every deletion writes a tombstone
-        event on the mission's trace (or the retention log for orphans).
-        Trace events themselves are NEVER deleted by this sweep: they are
-        hash-chained, and a silent event delete would be indistinguishable
-        from tampering — metadata expiry beyond evidence is an explicit
-        owner action, not an automatic one.
+    async def enforce_retention(
+        self, now_ms: int, *, hold_missions: set[str] | None = None
+    ) -> dict[str, Any]:
+        """Owner-bounded retention sweep over mission data.
+
+        C07/D16: expired evidence is tombstoned and its files unlinked;
+        DURABLE holds (mission_retention_holds) always win — the optional
+        ``hold_missions`` parameter ADDS transient holds for tests. Evidence
+        rows whose mission has vanished are orphans and go too. Terminal
+        mission METADATA older than the 30-day policy horizon is purged
+        entirely (mission + events + steps + attempts) with a retention-log
+        tombstone — trace data is not preserved indefinitely by calling it
+        audit metadata.
         """
-        return await self._run_tx(self._enforce_retention_sync, now_ms, set(hold_missions))
+        if hold_missions is None:
+            hold_missions = set()
+        return await self._run_tx(self._enforce_retention_sync, now_ms, hold_missions)
 
     def _enforce_retention_sync(self, now_ms: int, holds: set[str]) -> dict[str, Any]:
+        holds = holds | self._active_holds_sync()
+
         def tx() -> dict[str, Any]:
             deleted_by_mission: dict[str, list[str]] = {}
             orphan_paths: list[str] = []
@@ -2545,6 +3489,10 @@ class MissionStore:
                 self._conn.execute(
                     "UPDATE mission_evidence SET deleted=1 WHERE evidence_id=?",
                     (evidence_id,),
+                )
+                self._queue_file_deletion_sync(
+                    path, mission_id=mission_id,
+                    reason="orphan_evidence" if known is None else "retention_expiry",
                 )
                 if known is None:
                     orphan_paths.append(path)
@@ -2575,9 +3523,49 @@ class MissionStore:
                     },
                     occurred_at_ms=now_ms,
                 )
+            # D16: the 30-day metadata policy. Terminal missions whose last
+            # update passed the horizon are purged WHOLE (never partially —
+            # a hash chain must never gain a hole), unless a hold names
+            # them. The purge itself is tombstoned in the retention log.
+            purged_missions: list[str] = []
+            stale = self._conn.execute(
+                "SELECT mission_id FROM missions WHERE status IN "
+                "('COMPLETED','FAILED','CANCELLED') AND updated_at_ms<=? "
+                "AND mission_id NOT IN (SELECT mission_id FROM mission_retention_holds "
+                "WHERE released_at_ms IS NULL)",
+                (now_ms - self.METADATA_RETENTION_MS,),
+            ).fetchall()
+            for (mission_id,) in stale:
+                mission_id = str(mission_id)
+                artifact_rows = self._conn.execute(
+                    "SELECT relative_path FROM mission_evidence "
+                    "WHERE mission_id=? AND relative_path IS NOT NULL",
+                    (mission_id,),
+                ).fetchall()
+                for (relative_path,) in artifact_rows:
+                    self._queue_file_deletion_sync(
+                        str(relative_path), mission_id=mission_id, reason="metadata_purge"
+                    )
+                for table in ("mission_events", "mission_steps", "mission_attempts",
+                              "mission_evidence", "mission_payloads", "mission_approvals",
+                              "mission_budget_reservations", "mission_external_waits",
+                              "mission_provider_requests", "mission_action_ledger",
+                              "mission_plans"):
+                    self._conn.execute(
+                        f"DELETE FROM {table} WHERE mission_id=?", (mission_id,))
+                self._conn.execute(
+                    "DELETE FROM missions WHERE mission_id=?", (mission_id,))
+                self._conn.execute(
+                    "INSERT INTO mission_retention_log (recorded_at_ms, kind, subject_id, "
+                    "detail_json) VALUES (?, 'metadata_purge', ?, ?)",
+                    (now_ms, mission_id,
+                     canonical_json({"policy": "30d", "tombstone": True})),
+                )
+                purged_missions.append(mission_id)
             return {
                 "deleted_evidence": sum(len(v) for v in deleted_by_mission.values()),
                 "orphan_evidence": len(orphan_paths),
+                "purged_missions": purged_missions,
                 "deleted_paths": [
                     str(p)
                     for paths in deleted_by_mission.values()

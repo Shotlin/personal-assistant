@@ -27,12 +27,36 @@ export interface MissionApprovalView {
   expiresAtMs: number;
 }
 
+/** D20: the EXACT pending action identity, from durable state. */
+export interface PendingApprovalView {
+  step_id: string;
+  tool: string;
+  action_digest: string;
+  plan_version: number;
+  control_epoch: number;
+  target_ref: string | null;
+  account_ref: string | null;
+  workspace_ref: string | null;
+  effect_class: "READ_ONLY" | "REPEATABLE_LOCAL" | "EXTERNAL_WRITE" | "DESTRUCTIVE";
+}
+
 interface MissionStatusProps {
   status: MissionStatusValue | string | null;
   verified?: boolean;
   missionId?: string | null;
   approval?: MissionApprovalView | null;
   onControl?: (kind: "PAUSE" | "RESUME" | "CANCEL") => void;
+  /** D10: revision and priority travel the SAME host IPC control path; the
+   * core validates the CAS and screens the revision text. */
+  onRevise?: (revision: string) => void;
+  onSetPriority?: (priority: number) => void;
+  /** D12: owner deletion of this mission's derivative records (identity is
+   * verified core-side; holds are honored there). */
+  onPurge?: () => void;
+  /** D20: the exact pending approvals and the owner's explicit choices. */
+  pendingApprovals?: PendingApprovalView[];
+  onApprove?: (pending: PendingApprovalView) => void;
+  onReject?: (pending: PendingApprovalView) => void;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -92,11 +116,22 @@ export default function MissionStatus({
   missionId = null,
   approval = null,
   onControl,
+  onRevise,
+  onSetPriority,
+  onPurge,
+  pendingApprovals,
+  onApprove,
+  onReject,
 }: MissionStatusProps) {
   if (!status) return null;
 
   const normalized = (STATUS_LABEL[status] ? status : "UNKNOWN") as string;
   const controls = onControl ? CONTROL_WHEN[normalized] ?? [] : [];
+  const revisable =
+    onRevise !== undefined &&
+    ["PLANNED", "RUNNING", "PAUSED", "NEEDS_APPROVAL", "WAITING_EXTERNAL"].includes(normalized);
+  const priorityAdjustable = onSetPriority !== undefined && !["COMPLETED", "FAILED", "CANCELLED"].includes(normalized);
+  const purgable = onPurge !== undefined && ["COMPLETED", "FAILED", "CANCELLED"].includes(normalized);
 
   return (
     <div className={toneFor(normalized)} data-mission-id={missionId ?? undefined}>
@@ -121,6 +156,80 @@ export default function MissionStatus({
           {kind === "PAUSE" ? "Pause" : kind === "RESUME" ? "Resume" : "Cancel"}
         </button>
       ))}
+      {revisable && (
+        <button
+          type="button"
+          className="mission-status__control"
+          onClick={() => {
+            const revision = window.prompt("Revise this task — tell Sani what changed:");
+            const text = (revision ?? "").trim();
+            if (text) onRevise?.(text);
+          }}
+        >
+          Revise
+        </button>
+      )}
+      {pendingApprovals?.map((pending) => (
+        <span key={pending.step_id} className="mission-status__approval">
+          {pending.tool}
+          {pending.target_ref ? ` on ${pending.target_ref}` : ""}
+          {pending.account_ref ? ` · account ${pending.account_ref}` : ""}
+          {pending.workspace_ref ? ` · workspace ${pending.workspace_ref}` : ""}
+          {` · ${pending.effect_class}`}
+          {" · digest "}
+          {pending.action_digest.slice(0, 12)}… · v{pending.plan_version}/e
+          {pending.control_epoch}
+          {onApprove && (
+            <button
+              type="button"
+              className="mission-status__control"
+              onClick={() => onApprove(pending)}
+            >
+              Approve
+            </button>
+          )}
+          {onReject && (
+            <button
+              type="button"
+              className="mission-status__control"
+              onClick={() => onReject(pending)}
+            >
+              Reject
+            </button>
+          )}
+        </span>
+      ))}
+      {purgable && (
+        <button
+          type="button"
+          className="mission-status__control"
+          onClick={() => {
+            if (window.confirm("Delete this task's stored records (evidence files and derived recommendations)? The audit tombstone stays.")) {
+              onPurge?.();
+            }
+          }}
+        >
+          Delete records
+        </button>
+      )}
+      {priorityAdjustable && (
+        <select
+          aria-label="Task priority"
+          className="mission-status__control"
+          defaultValue=""
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value === "") return;
+            onSetPriority?.(Number(value));
+            event.target.value = "";
+          }}
+        >
+          <option value="" disabled>Priority…</option>
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }

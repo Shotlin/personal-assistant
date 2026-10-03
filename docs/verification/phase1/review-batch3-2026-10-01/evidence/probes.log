@@ -1,0 +1,45 @@
+{
+  "sdk_internal_retries": {
+    "probe_error": "ResponseValidationError(message=\"Response validation failed: 1 validation error for Unmarshaller\\nbody.system_fingerprint\\n  Field required [type=missing, input_value={'id': 'fixture-response'...: 2, 'total_tokens': 5}}, input_type=dict]\\n    For further information visit https://errors.pydantic.dev/2.12/v/missing\", status_code=200, body='{\"id\":\"fixture-response\",\"created\":1,\"model\":\"fixture\",\"object\":\"chat.completion\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"fixture response\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2,\"total_tokens\":5}}', headers=Headers({'content-length': '256', 'content-type': 'application/json'}), raw_response=<Response [200 OK]>)",
+    "mock_http_requests": 3
+  },
+  "renderer_approval_target": {
+    "pending_target": "win-7",
+    "renderer_target_sent": null,
+    "released_steps": 0
+  },
+  "single_capture_field": {
+    "passed": false,
+    "reason": "the evidence is not bound to a single window identity"
+  },
+  "focus_without_activation": {
+    "passed": false,
+    "reason": "ordinal activation needs before and after observations"
+  },
+  "wait_secret_key": {
+    "synthetic_canary_in_row": true
+  },
+  "metadata_orphans": {
+    "mission_purged": true,
+    "ledger_rows": 1,
+    "evidence_file_left": true,
+    "evidence_rows": 0
+  },
+  "plan_rate_limit": {
+    "exception": "ExternalWaitRequested",
+    "status": "PLANNED",
+    "wait_count": 0
+  },
+  "harness_transport": {
+    "transport_factory_wired": false,
+    "scope_has_windows": false
+  },
+  "harness_error_false_positive": {
+    "status": "unknown",
+    "completed": false
+  },
+  "blocked_writer": {
+    "finished_after_2_2_seconds": false,
+    "inside_write": true
+  }
+}

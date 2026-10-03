@@ -1,0 +1,2 @@
+tests/e2e/test_sani_voice.py:69: error: Item "None" of "IO[bytes] | None" has no attribute "read"  [union-attr]
+Found 104 errors in 16 files (checked 178 source files)

@@ -1,0 +1,228 @@
+........................................................................ [ 74%]
+...F.....................                                                [100%]
+=================================== FAILURES ===================================
+________________ test_superseded_desktop_lease_refuses_dispatch ________________
+
+self = <assistant.missions.authority.MissionAuthority object at 0x11264e390>
+mission_id = '8ee3a51a-16b0-4364-84cb-2dad78da2d14'
+charge = BudgetCharge(resource='actions', amount=1, call_key='actions:8ee3a51a-16b0-4364-84cb-2dad78da2d14:973ed7e6-753b-4bee-85fc-87fd35e06dc9:d9b7f2d1')
+conservative_unit_cost_microunits = None
+item = BoundedWorkItem(schema_version=1, mission_id='8ee3a51a-16b0-4364-84cb-2dad78da2d14', plan_version=1, control_epoch=1, ...ass='REPEATABLE_LOCAL', deduplication_key='', escalation_conditions=[], driver_generation='', lease_fence='live-fence')
+
+    async def reserve(
+        self,
+        mission_id: str,
+        charge: BudgetCharge,
+        *,
+        conservative_unit_cost_microunits: int | None = None,
+        item: BoundedWorkItem | None = None,
+    ) -> BudgetReservation:
+        """Reserve budget durably before acting.
+    
+        A dollar-capped paid call without a conservative per-unit cost bound
+        is denied outright: an unpriced call can never prove it stays under
+        the cap, and reporting the unknown bill as zero is forbidden.
+        """
+        limits = await self._mission_limits(mission_id)
+        if charge.resource == "paid_units":
+            if charge.amount > limits.max_paid_units:
+                raise AuthorityDenied(
+                    "BUDGET_EXHAUSTED",
+                    "paid external actions have no allowance in this mission",
+                )
+            if limits.max_cost_microunits is not None:
+                if conservative_unit_cost_microunits is None:
+                    raise AuthorityDenied(
+                        "BUDGET_EXHAUSTED",
+                        "the call's price is unknown; a dollar-capped mission "
+                        "cannot bound it, so the call is denied",
+                    )
+                usage = await self._mission_usage(mission_id)
+                known = usage.known_cost_microunits or 0
+                projected = known + charge.amount * conservative_unit_cost_microunits
+                if projected > limits.max_cost_microunits:
+                    raise AuthorityDenied(
+                        "BUDGET_EXHAUSTED",
+                        f"projected cost {projected} exceeds the mission cap "
+                        f"{limits.max_cost_microunits}",
+                    )
+        try:
+>           return await self._store.reserve_budget(mission_id, charge, item=item)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/assistant/missions/authority.py:333: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/assistant/missions/store.py:1706: in reserve_budget
+    return await self._run_tx(self._reserve_budget_sync, mission_id, charge, item)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/assistant/missions/store.py:449: in _run_tx
+    return await asyncio.to_thread(fn, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/assistant/missions/store.py:1793: in _reserve_budget_sync
+    return self._tx(tx)
+           ^^^^^^^^^^^^
+src/assistant/missions/store.py:464: in _tx
+    result = fn()
+             ^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def tx() -> BudgetReservation:
+        row = self._conn.execute(
+            "SELECT limits_json, usage_json FROM missions WHERE mission_id=?",
+            (mission_id,),
+        ).fetchone()
+        if row is None:
+            raise MissionStoreError(f"unknown mission: {mission_id}")
+        limits = BudgetLimits.model_validate(self._usage_dict(row[0]))
+        usage = BudgetUsage.model_validate(self._usage_dict(row[1]))
+        if charge.call_key:
+            existing = self._conn.execute(
+                "SELECT reservation_id, amount, status FROM mission_budget_reservations "
+                "WHERE mission_id=? AND resource=? AND call_key=?",
+                (mission_id, charge.resource, charge.call_key),
+            ).fetchone()
+            if existing is not None:
+                return BudgetReservation(
+                    reservation_id=str(existing[0]),
+                    mission_id=mission_id,
+                    resource=charge.resource,
+                    amount=int(existing[1]),
+                    call_key=charge.call_key,
+                    created_at_ms=now,
+                    consumed=str(existing[2]) == "CONSUMED",
+                )
+        if item is not None:
+            prefix = f"{charge.resource}:{mission_id}:{item.execution_id}:"
+            if item.mission_id != mission_id or not charge.call_key.startswith(prefix):
+                raise MissionStoreError("packet budget charge identity mismatch")
+            step = self._conn.execute(
+                "SELECT s.step_json FROM mission_steps s JOIN mission_attempts a "
+                "ON a.mission_id=s.mission_id AND a.plan_version=s.plan_version "
+                "AND a.step_id=s.step_id WHERE a.execution_id=? AND a.mission_id=?",
+                (item.execution_id, mission_id),
+            ).fetchone()
+            if step is None:
+>               raise UnknownExecution("packet budget has no committed execution")
+E               assistant.missions.store.UnknownExecution: packet budget has no committed execution
+
+src/assistant/missions/store.py:1749: UnknownExecution
+
+The above exception was the direct cause of the following exception:
+
+world = None
+
+    async def test_superseded_desktop_lease_refuses_dispatch(world: None) -> None:
+        """C06/N09: the guard reads CURRENT queue ownership at dispatch. When
+        the recorded fence no longer matches (a stop or newer grant took the
+        desktop), the dispatch refuses — a stored fence string is not authority."""
+    
+        import tempfile
+        from pathlib import Path
+    
+        from assistant.missions.authority import MissionAuthority
+        from assistant.missions.store import MissionStore
+    
+        store = await MissionStore.connect(Path(tempfile.mkdtemp()) / "fence.db")
+        try:
+            await store.setup()
+            authority = MissionAuthority(store)
+            fences: dict[str, str] = {}
+    
+            def probe(mission_id: str) -> tuple[str, int] | None:
+                fence = fences.get(mission_id)
+                return (fence, 1) if fence else None
+    
+            executor, _runtime = _executor(standard_tools(), authority=authority)
+            executor._ownership_probe = probe
+            from assistant.missions.contracts import (
+                BudgetLimits,
+                RequestEnvelope,
+                Scope,
+                new_id,
+            )
+            from tests.unit.test_mission_authority import _Intent
+    
+            request = RequestEnvelope(
+                request_id=new_id(), conversation_id="c", owner_id="owner",
+                input_origin="typed_final", input_revision=1, text="fixture",
+                submitted_at_ms=0,
+            )
+            mission = await store.claim_request(
+                request, "d" * 64, goal="fixture", scope=Scope(owner_id="owner"),
+                limits=BudgetLimits(),
+            )
+            item = _item(mission_id=mission.mission_id, lease_fence="live-fence")
+            fences[item.mission_id] = "live-fence"
+            await _Intent(store).commit(item)
+>           ok = await executor._guard_dispatch(
+                item, "click", {"pid": 4101, "window_id": 771}, CancellationToken()
+            )
+
+tests/unit/test_mission_executor.py:461: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/assistant/missions/executor.py:823: in _guard_dispatch
+    reservation = await self._reserve_for(item, resource)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/assistant/missions/executor.py:578: in _reserve_for
+    return await self._authority.reserve(item.mission_id, charge, item=item)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <assistant.missions.authority.MissionAuthority object at 0x11264e390>
+mission_id = '8ee3a51a-16b0-4364-84cb-2dad78da2d14'
+charge = BudgetCharge(resource='actions', amount=1, call_key='actions:8ee3a51a-16b0-4364-84cb-2dad78da2d14:973ed7e6-753b-4bee-85fc-87fd35e06dc9:d9b7f2d1')
+conservative_unit_cost_microunits = None
+item = BoundedWorkItem(schema_version=1, mission_id='8ee3a51a-16b0-4364-84cb-2dad78da2d14', plan_version=1, control_epoch=1, ...ass='REPEATABLE_LOCAL', deduplication_key='', escalation_conditions=[], driver_generation='', lease_fence='live-fence')
+
+    async def reserve(
+        self,
+        mission_id: str,
+        charge: BudgetCharge,
+        *,
+        conservative_unit_cost_microunits: int | None = None,
+        item: BoundedWorkItem | None = None,
+    ) -> BudgetReservation:
+        """Reserve budget durably before acting.
+    
+        A dollar-capped paid call without a conservative per-unit cost bound
+        is denied outright: an unpriced call can never prove it stays under
+        the cap, and reporting the unknown bill as zero is forbidden.
+        """
+        limits = await self._mission_limits(mission_id)
+        if charge.resource == "paid_units":
+            if charge.amount > limits.max_paid_units:
+                raise AuthorityDenied(
+                    "BUDGET_EXHAUSTED",
+                    "paid external actions have no allowance in this mission",
+                )
+            if limits.max_cost_microunits is not None:
+                if conservative_unit_cost_microunits is None:
+                    raise AuthorityDenied(
+                        "BUDGET_EXHAUSTED",
+                        "the call's price is unknown; a dollar-capped mission "
+                        "cannot bound it, so the call is denied",
+                    )
+                usage = await self._mission_usage(mission_id)
+                known = usage.known_cost_microunits or 0
+                projected = known + charge.amount * conservative_unit_cost_microunits
+                if projected > limits.max_cost_microunits:
+                    raise AuthorityDenied(
+                        "BUDGET_EXHAUSTED",
+                        f"projected cost {projected} exceeds the mission cap "
+                        f"{limits.max_cost_microunits}",
+                    )
+        try:
+            return await self._store.reserve_budget(mission_id, charge, item=item)
+        except MissionStoreError as exc:
+>           raise AuthorityDenied("BUDGET_EXHAUSTED", str(exc)) from exc
+E           assistant.missions.authority.AuthorityDenied: BUDGET_EXHAUSTED: packet budget has no committed execution
+
+src/assistant/missions/authority.py:335: AuthorityDenied
+=========================== short test summary info ============================
+FAILED tests/unit/test_mission_executor.py::test_superseded_desktop_lease_refuses_dispatch

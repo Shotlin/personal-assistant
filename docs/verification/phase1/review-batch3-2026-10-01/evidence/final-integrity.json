@@ -1,0 +1,11 @@
+{
+  "heads": {
+    "/Users/sayan/Documents/personal-assistant": "df04060f189a10bb81baf522a58347cddc6cc915",
+    "/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant": "df04060f189a10bb81baf522a58347cddc6cc915"
+  },
+  "reviewed_source_files": 810,
+  "source_mismatches": [],
+  "patch_sha256": "fd58106c62c11caa05223a1e7b6537d783eeee9beeb5eee7b8497b340af6b81d",
+  "main_tracked_changes": [],
+  "copied_patch_file_entries": 48
+}

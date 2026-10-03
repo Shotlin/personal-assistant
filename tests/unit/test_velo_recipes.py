@@ -402,3 +402,230 @@ async def test_an_action_that_blows_the_task_budget_stops_the_recipe() -> None:
     task.used_actions = 1
     with pytest.raises(TaskCancelled, match="budget"):
         await execute("open_app", task, adapter, app_name="Safari")
+
+
+def _yt_results(order: list[str], extra: list[dict] | None = None) -> dict:
+    labels = {
+        "vegeta": "Vegeta is jealous of Hit by DB Clips 1.2M views 2 days ago 59 seconds",
+        "addiction": "Addiction is very real by Mind Talks 165 views 1 hour ago 4 minutes",
+        "ad": "Sponsored Learn Python fast by CodeCo 3 minutes",
+        "agentic": "Agentic AI Class 4 by AI School 9K views 3 days ago 1 hour, 2 minutes",
+    }
+    elements = [{"role": "AXLink", "label": "Home", "element_token": "nav-1"}]
+    for key in order:
+        # YouTube exposes a thumbnail link AND a title link per video.
+        elements.append({"role": "AXLink", "label": labels[key], "element_token": f"t-{key}"})
+        elements.append({"role": "AXLink", "label": labels[key], "element_token": f"x-{key}"})
+    elements.extend(extra or [])
+    return window_state_payload(elements, pid=9, window_id=2)
+
+
+def _chrome_task() -> TaskState:
+    from assistant.velo.scene import SCENES
+
+    SCENES.clear()
+    task = _task(conversation="conv-1")
+    task.resolved = Target(app=AppIdentity(name="Google Chrome", pid=9, running=True), window_id=2)
+    return task
+
+
+async def test_describe_screen_numbers_items_and_flags_the_ad() -> None:
+    from tests.unit.velo_fakes import SHARED_APPS
+
+    adapter, tools, _log = _adapter()
+    SHARED_APPS["list"] = [app_entry("Google Chrome", pid=9, running=True)]
+    tools["get_window_state"]._respond = lambda k: ("t", _yt_results(["addiction", "vegeta", "ad"]))
+    task = _chrome_task()
+    result = await execute("describe_screen", task, adapter)
+    assert result.state is OutcomeState.CONFIRMED
+    assert "1, Addiction is very real, by Mind Talks" in result.answer
+    assert "2, Vegeta is jealous of Hit" in result.answer
+    assert "3, an advertisement" in result.answer
+
+
+async def test_play_second_clicks_the_second_video_not_the_first() -> None:
+    from tests.unit.velo_fakes import SHARED_APPS
+
+    adapter, tools, _log = _adapter()
+    SHARED_APPS["list"] = [app_entry("Google Chrome", pid=9, running=True)]
+    tools["get_window_state"]._respond = lambda k: ("t", _yt_results(["addiction", "vegeta", "ad"]))
+    task = _chrome_task()
+    await execute("describe_screen", task, adapter)
+
+    # The page reshuffles before the user speaks; "second" is still what they heard.
+    shown = {"order": ["vegeta", "addiction", "ad"]}
+
+    def state(k):
+        if tools["click"].calls:
+            return "t", window_state_payload(
+                [{"role": "AXStaticText", "label": "Vegeta is jealous of Hit - YouTube"}],
+                pid=9, window_id=2,
+            )
+        return "t", _yt_results(shown["order"])
+
+    tools["get_window_state"]._respond = state
+    result = await execute("press_item", task, adapter, index=2)
+    assert result.state is OutcomeState.CONFIRMED
+    assert tools["click"].calls[0]["element_token"] == "t-vegeta"
+
+
+async def test_play_item_refuses_an_advertisement() -> None:
+    from tests.unit.velo_fakes import SHARED_APPS
+
+    adapter, tools, _log = _adapter()
+    SHARED_APPS["list"] = [app_entry("Google Chrome", pid=9, running=True)]
+    tools["get_window_state"]._respond = lambda k: ("t", _yt_results(["addiction", "vegeta", "ad"]))
+    task = _chrome_task()
+    await execute("describe_screen", task, adapter)
+    result = await execute("press_item", task, adapter, index=3)
+    assert result.state is OutcomeState.NO_EFFECT
+    assert "advertisement" in result.answer
+    assert not tools["click"].calls
+
+
+async def test_fill_field_clicks_the_chat_box_types_and_submits() -> None:
+    from tests.unit.velo_fakes import SHARED_APPS
+
+    adapter, tools, _log = _adapter()
+    SHARED_APPS["list"] = [app_entry("Codex", pid=9, running=True)]
+    task = _chrome_task()
+
+    def state(k):
+        submitted = bool(tools["press_key"].calls)
+        elements = [
+            {"role": "AXTextField", "label": "Address and search bar", "element_token": "addr",
+             "frame": {"x": 1, "y": 80, "w": 400, "h": 30}},
+            {"role": "AXTextArea", "label": "Message Codex", "element_token": "box",
+             "value": "make a site" if tools["set_value"].calls else "",
+             "frame": {"x": 1, "y": 900, "w": 800, "h": 60}},
+        ]
+        if submitted:
+            elements.append({"role": "AXStaticText", "label": "Working on it",
+                             "frame": {"x": 1, "y": 500, "w": 100, "h": 20}})
+        return "t", window_state_payload(elements, pid=9, window_id=2)
+
+    tools["get_window_state"]._respond = state
+    result = await execute("fill_field", task, adapter, text="make a site", submit=True)
+    assert result.state is OutcomeState.CONFIRMED
+    assert tools["click"].calls[0]["element_token"] == "box"
+    assert tools["set_value"].calls[0]["value"] == "make a site"
+    assert tools["press_key"].calls[0]["key"] == "Return"
+
+
+async def test_fill_field_without_a_box_asks_instead_of_apologising() -> None:
+    from tests.unit.velo_fakes import SHARED_APPS
+
+    adapter, tools, _log = _adapter()
+    SHARED_APPS["list"] = [app_entry("Codex", pid=9, running=True)]
+    task = _chrome_task()
+    tools["get_window_state"]._respond = lambda k: (
+        "t", window_state_payload([{"role": "AXButton", "label": "Go", "element_token": "g",
+                                    "frame": {"x": 1, "y": 1, "w": 20, "h": 20}}],
+                                   pid=9, window_id=2))
+    result = await execute("fill_field", task, adapter, text="hi")
+    assert result.state is OutcomeState.NO_EFFECT
+    assert "Which box do you mean" in result.answer
+
+
+async def test_download_images_opens_viewer_takes_the_series_item_and_sees_files_land(
+    tmp_path, monkeypatch
+) -> None:
+    from assistant.velo import recipes
+    from tests.unit.velo_fakes import SHARED_APPS
+
+    monkeypatch.setattr(recipes, "_downloads_dir", lambda: tmp_path)
+    adapter, tools, _log = _adapter()
+    SHARED_APPS["list"] = [app_entry("Google Chrome", pid=9, running=True)]
+    task = _chrome_task()
+    ui = {"stage": "page"}
+
+    def frame(y=200):
+        return {"x": 100, "y": y, "w": 200, "h": 40}
+
+    def state(k):
+        els = [{"role": "AXStaticText", "label": "Worked for 1m 46s here", "frame": frame(50)}]
+        if ui["stage"] == "page":
+            els.append({"role": "AXButton", "label": "Generated image 1",
+                        "element_token": "img1", "frame": frame()})
+        else:
+            els.append({"role": "AXPopUpButton", "label": "Download",
+                        "element_token": "dl", "frame": frame(100)})
+            els.append({"role": "AXButton", "label": "Close viewer",
+                        "element_token": "close", "frame": frame(100)})
+        if ui["stage"] == "menu":
+            els.append({"role": "AXMenuItem", "label": "Download image",
+                        "element_token": "one", "frame": frame(300)})
+            els.append({"role": "AXMenuItem", "label": "Download 5 images in this series",
+                        "element_token": "all", "frame": frame(340)})
+        return "t", window_state_payload(els, pid=9, window_id=2)
+
+    def click(k):
+        token = k.get("element_token")
+        if token == "img1":
+            ui["stage"] = "viewer"
+        elif token == "dl":
+            ui["stage"] = "menu"
+        elif token == "all":
+            ui["stage"] = "viewer"
+            for n in range(5):
+                (tmp_path / f"ChatGPT Image {n}.png").write_bytes(b"x")
+        elif token == "close":
+            ui["stage"] = "page"
+        return "ok", {}
+
+    tools["get_window_state"]._respond = state
+    tools["click"]._respond = click
+    monkeypatch.setattr(recipes.asyncio, "sleep", lambda *_a, **_k: _instant())
+    result = await execute("download_images", task, adapter)
+    assert result.state is OutcomeState.CONFIRMED
+    assert "Downloaded 5 images" in result.answer
+    assert [c["element_token"] for c in tools["click"].calls][:3] == ["img1", "dl", "all"]
+
+
+async def _instant() -> None:
+    return None
+
+
+def test_download_phrasings_route_to_download_images() -> None:
+    from assistant.velo.parse import parse
+
+    for text in (
+        "Now you download all image that ChatGPT generate",
+        "save all the images",
+        "download the mockups",
+    ):
+        command = parse(text)
+        assert command is not None and command.recipe == "download_images", text
+
+
+async def test_next_clicks_the_following_numbered_image_and_stops_at_the_last() -> None:
+    from assistant.velo import recipes
+    from tests.unit.velo_fakes import SHARED_APPS
+
+    recipes._IMAGE_CURSOR.clear()
+    adapter, tools, _log = _adapter()
+    SHARED_APPS["list"] = [app_entry("Google Chrome", pid=9, running=True)]
+    task = _chrome_task()
+    shown = {"n": 0}
+
+    def state(k):
+        els = [{"role": "AXCheckBox", "label": f"Show generated image {i}",
+                "element_token": f"t{i}", "frame": {"x": 1, "y": 100 * i, "w": 50, "h": 40}}
+               for i in (1, 2, 3)]
+        els.append({"role": "AXStaticText", "label": f"viewing {shown['n']}",
+                    "frame": {"x": 1, "y": 5, "w": 50, "h": 40}})
+        return "t", window_state_payload(els, pid=9, window_id=2)
+
+    def click(k):
+        shown["n"] = int(k["element_token"][1:])
+        return "ok", {}
+
+    tools["get_window_state"]._respond = state
+    tools["click"]._respond = click
+    for expect in ("t1", "t2", "t3"):
+        result = await execute("step_item", task, adapter, direction="next")
+        assert result.state is OutcomeState.CONFIRMED
+        assert tools["click"].calls[-1]["element_token"] == expect
+    last = await execute("step_item", task, adapter, direction="next")
+    assert last.state is OutcomeState.NO_EFFECT and "last image" in last.answer
+    recipes._IMAGE_CURSOR.clear()

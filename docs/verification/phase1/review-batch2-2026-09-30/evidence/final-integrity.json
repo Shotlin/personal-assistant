@@ -1,0 +1,8 @@
+{
+  "main_head": "df04060f189a10bb81baf522a58347cddc6cc915",
+  "corrective_worktree_head": "df04060f189a10bb81baf522a58347cddc6cc915",
+  "main_source_differences_from_prior_review": [],
+  "corrective_source_differences_from_bound_batch2": [],
+  "input_zip_sha256": "02f61fe139424cce4d36c1ef1444024548dbe558e5d8f9e8c67d06819e8167cc",
+  "scope": "Review documents only; no implementation changes, live actions or agents."
+}

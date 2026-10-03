@@ -1,0 +1,586 @@
+"""Phase 1 acceptance launcher (T12/R01, file 06).
+
+The ONE entry point for Phase 1 acceptance evidence:
+
+    .venv/bin/python scripts/verify_phase1.py --suite desktop \\
+        --config <root>/approved-test-config.json \\
+        --evidence-dir docs/verification/phase1/remediation/live-desktop
+
+R01 contract:
+- suite names resolve to real files (desktop = missions + safety);
+- pytest results are parsed from JUnit XML: an all-skipped or missing-case
+  run is BLOCKED, never PASS;
+- validated config is PROPAGATED to the isolated runner (env), not
+  discarded;
+- fixture environments are isolated (explicit env allowlist, no inherited
+  credentials/profile);
+- source binding hashes tracked AND untracked implementation files plus
+  the actual bundle (file or .app directory manifest).
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import platform
+import subprocess
+import time
+import xml.etree.ElementTree as ET
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+REQUIRED_CONFIG_FIELDS = (
+    "schema_version",
+    "authorization_id",
+    "expires_at",
+    "repo_sha",
+    "dirty_diff_sha256",
+    "bundle_path",
+    "bundle_sha256",
+    "data_root",
+    "artifact_root",
+    "allowed_apps",
+    "allowed_windows",
+    "allowed_origins",
+    "account_ref",
+    "workspace_ref",
+    "allowed_effects",
+    "max_deep_calls",
+    "max_jev_calls",
+    "max_paid_units",
+    "audio_allowed",
+    "network_policy",
+    "cleanup_manifest",
+)
+
+#: Field types for strict config validation (missing keys fail first).
+CONFIG_FIELD_TYPES: dict[str, tuple[type, ...]] = {
+    "schema_version": (int,),
+    "authorization_id": (str,),
+    "expires_at": (str, int, float),
+    "repo_sha": (str,),
+    "dirty_diff_sha256": (str,),
+    "bundle_path": (str,),
+    "bundle_sha256": (str,),
+    "data_root": (str,),
+    "artifact_root": (str,),
+    "allowed_apps": (list,),
+    "allowed_windows": (list,),
+    "allowed_origins": (list,),
+    "account_ref": (str, type(None)),
+    "workspace_ref": (str, type(None)),
+    "allowed_effects": (list,),
+    "max_deep_calls": (int,),
+    "max_jev_calls": (int,),
+    "max_paid_units": (int,),
+    "audio_allowed": (bool,),
+    "network_policy": (str,),
+    "cleanup_manifest": (dict,),
+}
+
+#: Suite name -> (environment kind, test file list). Fixture suites set
+#: kind F; live suites run under L/V with a validated config.
+SUITE_FILES: dict[str, tuple[str, list[str]]] = {
+    "unit": ("F", ["tests/unit"]),
+    "integration": (
+        "F",
+        [
+            "tests/integration/test_mission_sqlite.py",
+            "tests/integration/test_mission_policy.py",
+            "tests/integration/test_mission_core.py",
+            "tests/integration/test_mission_ipc.py",
+            "tests/integration/test_mission_restart.py",
+            "tests/integration/test_mission_desktop_control.py",
+            "tests/integration/test_mission_observability.py",
+            # N12/C01: the composition cases are part of the normal gate —
+            # the earlier list omitted them, which is exactly how a suite
+            # count drifts from the prose claim (639 vs 647).
+            "tests/integration/test_mission_composition.py",
+            "tests/integration/test_phase1_corrective_boundaries.py",
+        ],
+    ),
+    "performance": ("F", ["tests/performance"]),
+    "rust": ("F", ["sani/src-tauri"]),
+    "renderer": ("F", ["sani"]),
+    "desktop": ("L", ["tests/e2e/test_sani_missions.py", "tests/e2e/test_sani_safety.py"]),
+    "voice": ("V", ["tests/e2e/test_sani_voice.py"]),
+    "packaging": ("L", ["tests/e2e/test_sani_packaging.py"]),
+}
+
+FIXTURE_SUITES = ("unit", "integration", "performance", "rust", "renderer")
+LIVE_SUITES = ("desktop", "voice", "packaging")
+
+#: The case inventory each live suite owes (N12/C01). A run that does not
+#: produce every named case in its own fresh JUnit is BLOCKED, even when a
+#: previous report in the same directory looks green.
+EXPECTED_LIVE_CASES: dict[str, tuple[str, ...]] = {
+    "desktop": (
+        "test_live_mission_end_to_end",
+        "test_live_multi_step_fixture",
+        "test_live_stop_during_work",
+        "test_live_wrong_focus_is_blocked",
+        "test_live_wrong_account_is_blocked",
+        "test_live_emergency_stop",
+    ),
+    "voice": (
+        "test_live_voice_round_trip",
+        "test_live_speech_stop_and_stt_coexistence",
+    ),
+    "packaging": (
+        "test_live_bundle_install_and_rollback",
+        "test_live_offline_voice_output",
+    ),
+}
+
+
+def git_sha() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+    )
+    return result.stdout.strip()
+
+
+#: Output directories excluded from the SOURCE binding: evidence files are
+#: generated by the runs themselves and would change the hash between runs,
+#: defeating the binding. Source binding covers code/config/docs inputs only.
+MANIFEST_EXCLUDED_PREFIXES = (
+    "docs/verification/",
+    "var/",
+)
+
+#: Applied to untracked file hashing for the same reason.
+DIRTY_HASH_EXCLUDED_PREFIXES = MANIFEST_EXCLUDED_PREFIXES
+
+
+def _manifestable(relative: str) -> bool:
+    return not any(relative.startswith(prefix) for prefix in MANIFEST_EXCLUDED_PREFIXES)
+
+
+def source_manifest() -> dict[str, str]:
+    """Content hash of every tracked AND untracked (non-ignored) source file.
+
+    A tracked diff hash alone excludes new implementation modules; this
+    manifest binds evidence to the entire SOURCE snapshot (evidence output
+    directories excluded so the binding is stable across runs).
+    """
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    untracked = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    manifest: dict[str, str] = {}
+    for relative in sorted(set(tracked) | set(untracked)):
+        if not _manifestable(relative):
+            continue
+        path = REPO_ROOT / relative
+        if not path.is_file() or path.is_symlink():
+            continue
+        manifest[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return manifest
+
+
+def source_manifest_sha256() -> str:
+    manifest = source_manifest()
+    canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def dirty_diff_sha256() -> str:
+    """Tracked diff PLUS untracked file contents: the full dirty identity."""
+    diff = subprocess.run(
+        ["git", "diff", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+    ).stdout
+    digest = hashlib.sha256(diff.encode("utf-8")).hexdigest()
+    untracked = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    if not untracked:
+        return digest
+    combined = [digest]
+    for relative in sorted(untracked):
+        if not _manifestable(relative):
+            continue
+        path = REPO_ROOT / relative
+        if path.is_file() and not path.is_symlink():
+            combined.append(
+                f"{relative}:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+            )
+    return hashlib.sha256("\n".join(combined).encode("utf-8")).hexdigest()
+
+
+def bundle_manifest(bundle_path: Path) -> dict[str, str]:
+    """Manifest of an actual bundle: a file's hash, or a directory tree."""
+    if bundle_path.is_file():
+        return {bundle_path.name: hashlib.sha256(bundle_path.read_bytes()).hexdigest()}
+    if bundle_path.is_dir():
+        manifest: dict[str, str] = {}
+        for path in sorted(bundle_path.rglob("*")):
+            if path.is_file() and not path.is_symlink():
+                manifest[str(path.relative_to(bundle_path))] = (
+                    hashlib.sha256(path.read_bytes()).hexdigest()
+                )
+        return manifest
+    return {}
+
+
+def bundle_manifest_sha256(bundle_path: Path) -> str:
+    manifest = bundle_manifest(bundle_path)
+    canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _fail(message: str) -> None:
+    print(json.dumps({"status": "BLOCKED", "reason": message}))
+    raise SystemExit(2)
+
+
+def validate_config(config_path: Path) -> dict[str, Any]:
+    """Strict config validation; any gap is a BLOCKED, not a degraded run."""
+    if not config_path.exists():
+        _fail(f"approved-test-config.json not found: {config_path}")
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        _fail(f"config is not valid JSON: {exc}")
+    if not isinstance(config, dict):
+        _fail("config must be a JSON object")
+    missing = [field for field in REQUIRED_CONFIG_FIELDS if field not in config]
+    if missing:
+        _fail(f"config is missing required fields: {missing}")
+    unknown = [key for key in config if key not in REQUIRED_CONFIG_FIELDS]
+    if unknown:
+        _fail(f"config has unknown fields (strict schema): {unknown}")
+    for field, expected_types in CONFIG_FIELD_TYPES.items():
+        if not isinstance(config[field], expected_types):
+            _fail(
+                f"config field {field} has wrong type; expected one of "
+                f"{[t.__name__ for t in expected_types]}"
+            )
+    if config["schema_version"] != 1:
+        _fail(f"config schema_version must be 1, got {config['schema_version']!r}")
+    if config["max_paid_units"] != 0:
+        _fail("Phase 1 acceptance runs with max_paid_units=0; refused otherwise")
+    if config["max_deep_calls"] < 0 or config["max_jev_calls"] < 0:
+        _fail("call budgets must be nonnegative")
+    expires = config["expires_at"]
+    if isinstance(expires, str):
+        expires = datetime.fromisoformat(expires).timestamp()
+    if expires <= time.time():
+        _fail("the authorization window has expired")
+    for scope_field in ("allowed_apps", "allowed_windows", "allowed_origins"):
+        values = config[scope_field]
+        if not isinstance(values, list) or not values:
+            _fail(f"{scope_field} must be a nonempty explicit list (no wildcards)")
+        if any(v in {"*", "**", ""} or "*" in str(v) or "?" in str(v) for v in values):
+            _fail(f"{scope_field} contains a wildcard; exact fixtures only")
+        if any(not isinstance(v, str) for v in values):
+            _fail(f"{scope_field} entries must be strings")
+    if config.get("network_policy") == "open":
+        _fail("network_policy must not be 'open' for acceptance runs")
+    if config["repo_sha"] != git_sha():
+        _fail(
+            f"config repo_sha {config['repo_sha']!r} does not match the working tree "
+            f"HEAD {git_sha()!r}; re-issue the authorization for this revision"
+        )
+    if config["dirty_diff_sha256"] != dirty_diff_sha256():
+        _fail(
+            "config dirty_diff_sha256 does not match the current tracked+untracked "
+            "source; the authorization is bound to a different source snapshot"
+        )
+    bundle = Path(config["bundle_path"]).expanduser()
+    if not bundle.exists():
+        _fail(f"bundle_path does not exist: {bundle}")
+    actual_bundle = bundle_manifest_sha256(bundle)
+    if actual_bundle != config["bundle_sha256"]:
+        _fail("bundle_sha256 does not match the actual bundle manifest (stale bundle)")
+    for root_field in ("data_root", "artifact_root"):
+        root = Path(config[root_field]).expanduser().resolve()
+        if root == Path.home() or Path.home() in root.parents and root.parent == Path.home():
+            _fail(f"{root_field} must be an isolated fixture directory, not home")
+        if "sani" in root.parts[-1:]:
+            _fail(f"{root_field} must not be the application data directory itself")
+        if root.is_symlink():
+            _fail(f"{root_field} must not be a symlink")
+    return config
+
+
+def _fixture_env(config_path: Path | None) -> dict[str, str]:
+    """Isolated fixture environment: explicit allowlist, never inherited."""
+    env: dict[str, str] = {
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "PYTHONPATH": f"{REPO_ROOT / 'src'}:{REPO_ROOT}",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "CUA_ENABLED": "false",
+        "OPENROUTER_API_KEY": "fixture-not-a-secret",
+        "CUA_CAPABILITY_MANIFEST_PATH": str(REPO_ROOT / "config" / "cua-capabilities.yaml"),
+        "SANI_DATA_DIR": str(REPO_ROOT / "var" / "fixture-data"),
+        "HOME": os.environ.get("HOME", str(Path.home())),
+    }
+    if config_path is not None:
+        env["PHASE1_APPROVED_TEST_CONFIG"] = str(config_path)
+    return env
+
+
+def _live_env(config_path: Path) -> dict[str, str]:
+    """Live environment: inherited but with the authorization propagated."""
+    env = dict(os.environ)
+    env["PHASE1_APPROVED_TEST_CONFIG"] = str(config_path)
+    env["PHASE1_LIVE_AUTHORIZED"] = "1"
+    return env
+
+
+def _run_pytest_junit(
+    command: list[str], env: dict[str, str], junit_path: Path
+) -> tuple[int, dict[str, int], str, str]:
+    """Run pytest with JUnit output; return (exit_code, counts, stdout, stderr)."""
+    full_command = [
+        *command,
+        "--junitxml",
+        str(junit_path),
+        "-p",
+        "no:cacheprovider",
+    ]
+    result = subprocess.run(full_command, cwd=REPO_ROOT, capture_output=True, text=True, env=env)
+    counts = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+    if junit_path.exists():
+        try:
+            suite = ET.parse(junit_path).getroot().find("testsuite")
+            if suite is not None:
+                for key in counts:
+                    counts[key] = int(suite.get(key) or 0)
+        except ET.ParseError:
+            pass
+    return result.returncode, counts, result.stdout, result.stderr
+
+
+def _evaluate_pytest_status(counts: dict[str, int]) -> tuple[str, str]:
+    """Semantic status: PASS requires zero failures/errors/skips.
+
+    An all-skipped or partially skipped required suite is BLOCKED (the
+    acceptance questions were not answered), never PASS.
+    """
+    if counts["failures"] or counts["errors"]:
+        return "FAIL", f"{counts['failures']} failures, {counts['errors']} errors"
+    if counts["skipped"]:
+        return "BLOCKED", f"{counts['skipped']} case(s) skipped; acceptance not answered"
+    if counts["tests"] == 0:
+        return "BLOCKED", "no test cases ran; the required cases are missing"
+    return "PASS", f"{counts['tests']} cases, none skipped"
+
+
+def _junit_case_names(junit_path: Path) -> list[str]:
+    """The leaf case names a JUnit report actually contains."""
+    try:
+        root = ET.parse(junit_path).getroot()
+    except ET.ParseError:
+        return []
+    names: list[str] = []
+    for case in root.iter("testcase"):
+        classname = str(case.get("classname") or "")
+        name = str(case.get("name") or "")
+        names.append(f"{classname}::{name}" if classname else name)
+    return names
+
+
+def run_suite(
+    name: str,
+    command: list[str],
+    *,
+    environment_kind: str,
+    evidence_dir: Path | None,
+    env: dict[str, str] | None = None,
+    status_override: str | None = None,
+    reason: str = "",
+    config: dict[str, Any] | None = None,
+    expected_cases: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    started_at = datetime.now(UTC).isoformat()
+    record: dict[str, Any] = {
+        "case_id": f"verify-{name}",
+        "git_sha": git_sha(),
+        "dirty_diff_sha256": dirty_diff_sha256(),
+        "source_manifest_sha256": source_manifest_sha256(),
+        "bundle_manifest_sha256": "",
+        "os_arch": f"{platform.system()}-{platform.machine()}",
+        "environment_kind": environment_kind,
+        "fixture_seed": "",
+        "started_at": started_at,
+        "command": " ".join(command),
+        "exit_code": None,
+        "status": status_override or "NOT_RUN",
+        "expected": "suite completes with its documented oracle",
+        "observed": reason or "",
+        "evidence_refs": [],
+        "model_driver_call_counts": {},
+        "cost_known_or_unknown": "no paid calls",
+        "cleanup_result": "no live resources used" if environment_kind == "F" else "pending",
+    }
+    if config is not None:
+        bundle = Path(config["bundle_path"])
+        record["bundle_manifest_sha256"] = bundle_manifest_sha256(bundle)
+        record["fixture_seed"] = config["authorization_id"]
+    if status_override is not None:
+        return record
+
+    # N12/C01 (NP12): a report from a PREVIOUS run must never be read as
+    # this run's result. The report path is cleared first; a suite whose
+    # JUnit does not reappear cannot pass, and a nonzero process exit is a
+    # FAIL no matter what any XML on disk claims. pytest is recognized only
+    # by a REAL pytest invocation (-m pytest, or a pytest executable in the
+    # head position) — a bare "pytest" token elsewhere in a command is not
+    # one, so a non-pytest child can never inherit JUnit semantics.
+    is_pytest = (
+        any(command[i] == "-m" and command[i + 1] == "pytest"
+            for i in range(len(command) - 1))
+        or Path(command[0]).name == "pytest"
+    )
+    junit_path = (evidence_dir or Path("/tmp")) / f"{name}.xml"
+    junit_path.parent.mkdir(parents=True, exist_ok=True)
+    junit_path.unlink(missing_ok=True)
+    run_env = env if env is not None else dict(os.environ)
+    result_stdout = ""
+    result_stderr = ""
+    if is_pytest:
+        exit_code, counts, result_stdout, result_stderr = _run_pytest_junit(
+            command, run_env, junit_path
+        )
+        if exit_code != 0:
+            status = "FAIL"
+            observed = (
+                f"process exited {exit_code} "
+                f"(junit: {counts['tests']} cases, {counts['failures']} failures, "
+                f"{counts['errors']} errors, {counts['skipped']} skipped)"
+            )
+        elif not junit_path.exists():
+            status, observed = "FAIL", "pytest exited 0 but wrote no JUnit report"
+        else:
+            status, observed = _evaluate_pytest_status(counts)
+        record["case_counts"] = counts
+    else:
+        result = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, env=run_env)
+        exit_code = result.returncode
+        status = "PASS" if exit_code == 0 else "FAIL"
+        result_stdout, result_stderr = result.stdout, result.stderr
+        observed = (
+            result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+        )
+    # Expected case inventory: the suite must answer the questions it is
+    # named for. A green report missing required cases is BLOCKED, not PASS.
+    if status == "PASS" and expected_cases:
+        present = {
+            case_name.split("::")[-1]
+            for case_name in _junit_case_names(junit_path)
+        }
+        missing = [case for case in expected_cases if case not in present]
+        if missing:
+            status = "BLOCKED"
+            observed = f"required cases missing from the fresh report: {missing}"
+    record["exit_code"] = exit_code
+    record["status"] = status
+    record["observed"] = observed
+    if evidence_dir is not None:
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        log_path = evidence_dir / f"{name}.log"
+        if junit_path.exists():
+            record["evidence_refs"].append(str(junit_path))
+        record["evidence_refs"].append(str(log_path))
+        log_path.write_text(
+            "--- stdout ---\n" + result_stdout + "\n--- stderr ---\n" + result_stderr,
+            encoding="utf-8",
+        )
+    return record
+
+
+def _capture_run_output(command: list[str], env: dict[str, str]) -> tuple[int, str, str]:
+    result = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, env=env)
+    return result.returncode, result.stdout, result.stderr
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Phase 1 acceptance launcher")
+    parser.add_argument("--suite", required=True, choices=sorted(SUITE_FILES))
+    parser.add_argument("--config", type=Path, help="approved-test-config.json (live suites)")
+    parser.add_argument("--evidence-dir", type=Path, default=None)
+    parser.add_argument(
+        "--allow-live", action="store_true",
+        help="acknowledge the live authorization recorded in --config",
+    )
+    args = parser.parse_args()
+
+    environment_kind, test_paths = SUITE_FILES[args.suite]
+
+    # Rust and renderer are build/test commands, not pytest.
+    if args.suite == "rust":
+        record = run_suite(
+            "rust",
+            ["cargo", "test", "--offline", "--locked", "--manifest-path",
+             "sani/src-tauri/Cargo.toml"],
+            environment_kind="F",
+            evidence_dir=args.evidence_dir,
+        )
+        print(json.dumps(record, indent=1))
+        return 0 if record["status"] == "PASS" else 1
+    if args.suite == "renderer":
+        record = run_suite(
+            "renderer", ["npm", "--prefix", "sani", "run", "build"],
+            environment_kind="F", evidence_dir=args.evidence_dir,
+        )
+        print(json.dumps(record, indent=1))
+        return 0 if record["status"] == "PASS" else 1
+
+    if environment_kind == "F":
+        missing = [p for p in test_paths if not (REPO_ROOT / p).exists()]
+        if missing:
+            _fail(f"fixture suite {args.suite!r} references missing files: {missing}")
+        record = run_suite(
+            args.suite,
+            [".venv/bin/python", "-m", "pytest", *test_paths, "-q"],
+            environment_kind="F",
+            evidence_dir=args.evidence_dir,
+            env=_fixture_env(None),
+        )
+        print(json.dumps(record, indent=1))
+        return 0 if record["status"] == "PASS" else 1
+
+    # Live suites: config + --allow-live are mandatory; a missing one is an
+    # honest BLOCKED, never a skip converted to success.
+    if args.config is None:
+        _fail(
+            f"live suite {args.suite!r} requires --config approved-test-config.json "
+            "with an owner-issued authorization"
+        )
+    config = validate_config(args.config)
+    if not args.allow_live:
+        _fail(
+            "the config validated, but --allow-live was not passed; the live "
+            "authorization must be explicitly acknowledged for every run"
+        )
+    record = run_suite(
+        args.suite,
+        [".venv/bin/python", "-m", "pytest", *test_paths, "-q"],
+        environment_kind=environment_kind,
+        evidence_dir=args.evidence_dir,
+        env=_live_env(args.config),
+        config=config,
+        expected_cases=EXPECTED_LIVE_CASES.get(args.suite, ()),
+    )
+    print(json.dumps(record, indent=1))
+    return 0 if record["status"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,34 @@
+...........FF                                                            [100%]
+=================================== FAILURES ===================================
+___________________ test_engine_error_identifies_queue_entry ___________________
+
+tts = <module 'sani_tts_test' from '/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/sani/src-tauri/python/sani_tts.py'>
+
+    def test_engine_error_identifies_queue_entry(tts: Any) -> None:
+        events = _serve(tts, [{"type": "request", "request": _request_payload()}],
+                        engine=tts.UnspecifiedEngine())
+        error = next(e for e in events if e["event"] == "error")
+>       assert error["utterance_id"] == "utt-1"
+               ^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'utterance_id'
+
+tests/unit/test_sani_tts_worker.py:196: KeyError
+_____________ test_streaming_long_speech_is_not_lifetime_buffered ______________
+
+tts = <module 'sani_tts_test' from '/Users/sayan/.codex/worktrees/phase1-corrections/personal-assistant/sani/src-tauri/python/sani_tts.py'>
+
+    def test_streaming_long_speech_is_not_lifetime_buffered(tts: Any) -> None:
+        class LongEngine(tts.SilenceEngine):
+            def synthesize(self, text: str, utterance_id: str, generation: int):
+                for _ in range(200):
+                    yield (24000, b"\x00" * (12000 * 4))
+        events = _serve(tts, [{"type": "request", "request": _request_payload()}],
+                        engine=LongEngine())
+>       assert not any(e["event"] == "error" for e in events)
+E       assert not True
+E        +  where True = any(<generator object test_streaming_long_speech_is_not_lifetime_buffered.<locals>.<genexpr> at 0x10c8ef030>)
+
+tests/unit/test_sani_tts_worker.py:207: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_sani_tts_worker.py::test_engine_error_identifies_queue_entry
+FAILED tests/unit/test_sani_tts_worker.py::test_streaming_long_speech_is_not_lifetime_buffered

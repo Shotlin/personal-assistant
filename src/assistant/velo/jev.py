@@ -72,9 +72,8 @@ class TypeSafeJevService(JevDecisionService):
                 "decision API only and never falls back to a free-form LLM, "
                 "the Deep Agent, or any other model"
             )
-        from langchain_typesafe import TypeSafeClassifier
-
         from langchain_core._api import LangChainBetaWarning
+        from langchain_typesafe import TypeSafeClassifier
 
         with warnings.catch_warnings():
             # The pinned integration is marked beta upstream; the contract

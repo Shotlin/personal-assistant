@@ -1,0 +1,61 @@
+{
+ "final-unit": {
+  "tests": 625,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0
+ },
+ "final-integration": {
+  "tests": 96,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "note": "inventory of 12 files including 3 new boundary suites (owner_controls, scope_outcomes, provider_privacy)"
+ },
+ "final-performance": {
+  "tests": 7,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0
+ },
+ "final-rust": {
+  "passed": 121,
+  "failed": 0,
+  "ignored": 2,
+  "note": "2 ignored are the documented physical-environment cases; offline --locked"
+ },
+ "final-renderer": {
+  "exit_code": 0
+ },
+ "red-baseline": {
+  "note": "new boundary suites run against base df04060 + previous batch patch only (disposable copy)",
+  "owner_controls": "collection ERROR (contracts absent) - RED",
+  "scope_outcomes": "7 of 8 failed - RED (bootstrap positive already satisfied)",
+  "provider_privacy": "6 of 6 failed - RED",
+  "worker_d09": "3 of 3 failed - RED"
+ },
+ "mutations": {
+  "guards_tested": 4,
+  "meaningful_assertion_failures": 4,
+  "copies_only": true,
+  "names": [
+   "approval-release",
+   "origin-readonly",
+   "stop-noop",
+   "sink-screening"
+  ]
+ },
+ "static": {
+  "mypy_errors": 91,
+  "ruff_src_tests": 42,
+  "normalized_diagnostic_multisets_unchanged": true,
+  "mypy_clean": false,
+  "ruff_clean": false
+ },
+ "oracle_updates": [
+  "tests/unit/test_mission_store.py migration inventory [1,2,3] -> [1,2,3,4] (additive migration 4)",
+  "tests/integration/test_mission_sqlite.py same migration inventory update",
+  "tests/integration/test_mission_desktop_control.py idle-stop oracle pinned the D08 no-op generation bump; updated to assert the generation does not move",
+  "tests/unit/test_mission_evidence.py _candidate() fixed January 2026 timestamp -> now (creation-time expiry makes stale captures expired evidence by the store's own contract)"
+ ]
+}

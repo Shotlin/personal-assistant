@@ -1,0 +1,20 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+____________________________ test_idle_stop_is_safe ____________________________
+
+    async def test_idle_stop_is_safe() -> None:
+        """D08: a stop naming nothing is a NO-OP — it must not increment the
+        shared generation. The old oracle (generation >= 2) pinned the bug
+        where a no-op stop invalidated an unrelated valid lease."""
+        queue = DesktopQueue(timeout_seconds=2)
+        report = await queue.stop_owner(None)
+        assert report == {"stopped": False, "owner": None, "certain": True}
+>       assert queue.generation == 0, "a no-op stop must not move the generation"
+E       AssertionError: a no-op stop must not move the generation
+E       assert 1 == 0
+E        +  where 1 = <assistant.runtime.desktop_queue.DesktopQueue object at 0x10a57b500>.generation
+
+tests/integration/test_mission_desktop_control.py:146: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integration/test_mission_desktop_control.py::test_idle_stop_is_safe
+1 failed, 1 passed in 0.05s

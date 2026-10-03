@@ -109,6 +109,18 @@ class Settings(BaseSettings):
     # An ordinary local command is one action, not a 13-minute campaign:
     # Route A/B tasks carry their own, much shorter deadline.
     velo_command_deadline_seconds: int = 90
+    # The Deep reasoning loop is bounded too: observation-only loops never
+    # spend the mutating-action budget, so steps and wall-clock cap them.
+    # Planner: one short model call turns a multi-step request into typed steps
+    # that run on the deterministic recipes (never free-form actions).
+    velo_planner_enabled: bool = True
+    # Vision rung: one screenshot sent to the model ONLY when the accessibility
+    # tree cannot name a control. Empty model = the reasoning model (images
+    # are supported by the default, z-ai/glm-5.3-flash).
+    velo_vision_enabled: bool = True
+    velo_vision_model: str = ""
+    deep_max_tool_steps: int = 25
+    deep_run_deadline_seconds: int = 90
 
     # Jarvis Phase 1 (docs/astra/jarvis-next-2026-09-27-58dac9c, file 03 §11).
     # Both capabilities ship default-off: the host turns them on only for an

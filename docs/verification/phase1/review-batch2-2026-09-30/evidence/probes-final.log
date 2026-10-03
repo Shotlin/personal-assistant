@@ -1,0 +1,65 @@
+Error in LedgerCallbackHandler.on_llm_end callback: RuntimeError('provider request ceiling exceeded (3 > 2) for mission 78270bd1-b0c8-46bf-8c87-c7fbeb3042a2')
+Error in LedgerCallbackHandler.on_llm_end callback: RuntimeError('provider request ceiling exceeded (4 > 2) for mission 78270bd1-b0c8-46bf-8c87-c7fbeb3042a2')
+Error in LedgerCallbackHandler.on_llm_end callback: RuntimeError('provider request ceiling exceeded (5 > 2) for mission 78270bd1-b0c8-46bf-8c87-c7fbeb3042a2')
+{
+  "provider_callback_ceiling": {
+    "configured_limit": 2,
+    "completed_requests": 5,
+    "durable_rows": 5,
+    "callback_raise_error": false
+  },
+  "provider_storage_failure": {
+    "provider_response_returned": true
+  },
+  "cross_mission_deletion": {
+    "target": "79cfc9c5-48c5-4475-85da-5da216a232a3",
+    "other": "fb69a508-b2e0-4ae2-b179-5bfbff0abfc3",
+    "target_file_exists": false,
+    "other_file_exists": false,
+    "other_row_deleted": 0,
+    "report": {
+      "evidence_files_deleted": 2,
+      "recommendations_deleted": []
+    }
+  },
+  "multi_step_approval": {
+    "status": "RUNNING",
+    "pending_target_ref": null,
+    "resume": "RESUME requires PAUSED/NEEDS_APPROVAL, got RUNNING"
+  },
+  "wrong_ordinal_verified": {
+    "passed": true,
+    "reason": "control 'unrelated-first' gained focused"
+  },
+  "wrong_window_field_verified": {
+    "passed": true,
+    "reason": "the resolved payload is in the focused field"
+  },
+  "wait_canary_persistence": {
+    "synthetic_canary_in_row": true
+  },
+  "approval_pause_resume_stranded": {
+    "status": "RUNNING",
+    "states": {
+      "s1": "BLOCKED"
+    },
+    "pending_count": 0
+  },
+  "wait_reclaims_unknown_effect": {
+    "waiting_status": "WAITING_EXTERNAL",
+    "old_effect_outcome": "UNKNOWN",
+    "new_attempt": 2
+  },
+  "unfenced_old_cleanup": {
+    "old_fence": "f405b8773ad24bb0917bdcb7b27eb0a9",
+    "new_fence": "842378a6dd6f437f85dd76c556290c67",
+    "current_owner": null,
+    "new_lease_usable": false
+  },
+  "worker_full_queue_shutdown": {
+    "still_running_after_shutdown": true,
+    "pending_queue_size": 4,
+    "shutdown_flag": true,
+    "still_running_after_engine_release": false
+  }
+}

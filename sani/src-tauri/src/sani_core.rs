@@ -526,7 +526,27 @@ pub(crate) fn running_from_bundle() -> bool {
     })
 }
 
+/// A newer frozen core installed beside the app data by `scripts/update-core.sh`.
+///
+/// macOS ties Accessibility/Screen Recording to the signed app executable, so
+/// reinstalling the whole bundle to ship a Python change silently revokes both.
+/// A core placed here changes only the sidecar, never the app's identity. It is
+/// the owner's own local directory (same trust as the app data), is logged
+/// loudly when used, and is ignored unless the executable exists.
+fn override_core(app: &AppHandle) -> Option<PathBuf> {
+    let path = app
+        .path()
+        .app_data_dir()
+        .ok()?
+        .join("core-override/sani-core-runtime/sani-core");
+    path.is_file().then_some(path)
+}
+
 fn packaged_core(app: &AppHandle) -> Option<PathBuf> {
+    if let Some(path) = override_core(app) {
+        log::warn!("sani-core: using the local core override at {}", path.display());
+        return Some(path);
+    }
     // Frozen Python is a directory runtime on macOS so every dylib can be
     // signed inside Sani.app.  Keep the older external-binary lookup as a
     // development/upgrade fallback only.

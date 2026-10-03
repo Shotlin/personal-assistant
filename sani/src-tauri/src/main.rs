@@ -368,6 +368,7 @@ struct AppStateOut {
     agent_online: Option<bool>,
     partial: String,
     mic_permission: String,
+    active_conversation_id: String,
 }
 
 #[tauri::command]
@@ -392,6 +393,10 @@ fn get_state(app: tauri::AppHandle) -> AppStateOut {
         agent_online: None,
         partial,
         mic_permission: permissions::status().as_str().to_string(),
+        active_conversation_id: app_state::settings(&app)
+            .read()
+            .active_conversation_id
+            .clone(),
     }
 }
 

@@ -28,6 +28,7 @@
     ],
     "resources": {
       "python/sani_stt.py": "python/sani_stt.py",
+      "binaries/sani-tts-python": "sani-tts-python",
       "../../config/cua-capabilities.yaml": "config/cua-capabilities.yaml",
       "../../src/assistant/skills": "skills",
       "release-manifest.json": "release-manifest.json",

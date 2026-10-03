@@ -1,0 +1,109 @@
+{
+  "duplicate_timeout": {
+    "owner": null,
+    "original_handle_usable": false,
+    "log": [
+      {
+        "event": "granted",
+        "run_id": "same",
+        "at": 683.764863041,
+        "generation": 1,
+        "fence": "d0b1348f7c52493d8b6b282bd0b1ed56",
+        "queued": false
+      },
+      {
+        "event": "waiting",
+        "run_id": "same",
+        "at": 683.764871291,
+        "owner": "same",
+        "position": 1
+      },
+      {
+        "event": "released",
+        "run_id": "same",
+        "at": 683.766094541,
+        "reason": "timeout_released_grant"
+      }
+    ]
+  },
+  "duplicate_cancel": {
+    "owner": null,
+    "original_handle_usable": false,
+    "log": [
+      {
+        "event": "granted",
+        "run_id": "same",
+        "at": 683.766122416,
+        "generation": 1,
+        "fence": "619fb3aed2fa41f097435408a335c4d9",
+        "queued": false
+      },
+      {
+        "event": "waiting",
+        "run_id": "same",
+        "at": 683.766145208,
+        "owner": "same",
+        "position": 1
+      },
+      {
+        "event": "released",
+        "run_id": "same",
+        "at": 683.766169583,
+        "reason": "cancelled_released_grant"
+      }
+    ]
+  },
+  "handoff_barge": {
+    "C_returned_usable": true,
+    "B_returned_usable": true,
+    "C_now_usable": false,
+    "owner": "B",
+    "log": [
+      {
+        "event": "granted",
+        "run_id": "A",
+        "at": 683.76619075,
+        "generation": 1,
+        "fence": "c0f20baae3044497a39464428f66493a",
+        "queued": false
+      },
+      {
+        "event": "waiting",
+        "run_id": "B",
+        "at": 683.76621075,
+        "owner": "A",
+        "position": 1
+      },
+      {
+        "event": "released",
+        "run_id": "A",
+        "at": 683.766215291,
+        "reason": "normal_release"
+      },
+      {
+        "event": "granted",
+        "run_id": "B",
+        "at": 683.766216416,
+        "generation": 1,
+        "fence": "",
+        "note": "handoff_pending"
+      },
+      {
+        "event": "granted",
+        "run_id": "C",
+        "at": 683.766220333,
+        "generation": 2,
+        "fence": "99113dbac1d248d7917b1ea24f6cd234",
+        "queued": false
+      },
+      {
+        "event": "granted",
+        "run_id": "B",
+        "at": 683.766241875,
+        "generation": 3,
+        "fence": "e8044e969b804f0886a7e8936670f021",
+        "queued": true
+      }
+    ]
+  }
+}

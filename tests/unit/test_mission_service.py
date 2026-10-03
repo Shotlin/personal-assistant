@@ -283,7 +283,9 @@ async def test_recovery_only_on_structured_exception(
     invoke = _planned_invocation(plan)
     service, _runtime = _service(store, invoke=invoke)
     mission = await service.submit(
-        _request("press the missing button in safari"),
+        # Not a "click <name>" shape: that now resolves on the local fast path
+        # (an honest "I can't see it"), which is not what this test exercises.
+        _request("locate the missing control in safari"),
         cancel=CancellationToken(),
         invoke=invoke,
     )
@@ -603,7 +605,7 @@ async def test_np04_recovery_uses_reserved_transport(store: MissionStore) -> Non
         failure_category="STALE_TARGET",
     )
     await service._escalate(mission.mission_id, item, result)
-    assert ("RECOVER", "submit_mission_response") in scripted.calls, (
+    assert ("RECOVER", "submit_recovery_decision") in scripted.calls, (
         "recovery must invoke the real transport, not record a no-transport pause"
     )
     settled = await store.get_mission(mission.mission_id)

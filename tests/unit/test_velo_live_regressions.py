@@ -199,12 +199,12 @@ async def test_route_b_without_jev_defers_to_the_reasoning_executor() -> None:
         jev_factory=lambda: None,
     )
     result = await entry.run(
-        "No chatgpt input box inside write hi",
+        "No chatgpt summarize my day for me",
         thread_id="conv-1",
         on_event=EventLog(),
         cancel_check=lambda: False,
     )
-    assert deep.runs == ["No chatgpt input box inside write hi"]
+    assert deep.runs == ["No chatgpt summarize my day for me"]
     assert result["response"] == "did it"
     assert result["route"] == "plan"
     assert "deferred" in result["route_note"]

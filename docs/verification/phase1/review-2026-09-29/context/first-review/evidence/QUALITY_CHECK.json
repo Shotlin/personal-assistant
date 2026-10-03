@@ -1,0 +1,14 @@
+{
+  "review_only": true,
+  "source_files_verified_unchanged": 346,
+  "tracked_diff_unchanged": true,
+  "head": "58dac9c88018674c2e780086953902f1ea135308",
+  "original_gates_unchanged": true,
+  "jar_rows": 24,
+  "tc_rows": 36,
+  "original_tasks": 12,
+  "repair_tasks": 12,
+  "reproduced_boundary_defects": 12,
+  "links_and_fences": "PASS",
+  "permission_to_implement": "AWAITING_OWNER"
+}

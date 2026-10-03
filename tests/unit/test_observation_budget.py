@@ -47,8 +47,8 @@ async def test_window_state_defaults_applied():
     await wrapped[0].ainvoke({"pid": 1})
     call = captured[0]
     assert call["include_screenshot"] is False
-    assert call["max_elements"] == 120
-    assert call["max_depth"] == 12
+    assert call["max_elements"] == 1500
+    assert call["max_depth"] == 30
 
 
 async def test_an_explicit_screenshot_request_goes_to_the_model(tmp_path) -> None:

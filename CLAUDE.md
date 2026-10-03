@@ -101,15 +101,38 @@ file 03 is the architecture; `docs/verification/phase1/` holds evidence):
 - The Controller is the EXISTING Deep Agent in role-scoped invocations
   (PLAN/RECOVER/REVIEW/CHAT). It proposes, never grants scope; a raw CUA
   call from a Controller role is refused. No per-click model calls.
-- `SANI_TTS_ENABLED=false` by default; `sani/src-tauri/python/sani_tts.py`
-  is the output worker (framed stdio, no credentials, no egress). Engine
-  selection is pending owner audition (`docs/verification/phase1/VOICE_SELECTION.md`).
+- Spoken replies: the host speaks every completed turn through the local
+  `sani_tts.py` worker. On macOS it is ON by default with the `macos-say`
+  engine (`SANI_TTS_ENABLED=0` turns it off; `SANI_TTS_ENGINE` overrides). The
+  worker has no credentials and no egress; replies are trimmed to ~500 chars
+  of plain speech. A different engine is still pending owner audition
+  (`docs/verification/phase1/VOICE_SELECTION.md`).
 - `RSI_MODE` is immutable `observation_only`: the Observer
   (`missions/observer.py`) is read-only with a separate recommendation
   sink; no experiment runner exists.
 - Phase 1 acceptance evidence: `.venv/bin/python scripts/verify_phase1.py
   --suite <unit|integration|performance|rust|renderer|desktop|voice>`.
   Live suites need an owner-issued `approved-test-config.json` + `--allow-live`.
+
+## Velo: plan -> typed steps -> sight (added 2026-10-01)
+
+- `velo/planner.py`: ONE short model call turns a multi-step request into typed
+  steps from a CLOSED recipe set (`STEP_SCHEMA`); unknown recipe/arg/type or >8 steps
+  is rejected and the request falls back to Deep. The model never clicks.
+- Steps run on the deterministic recipes (`recipes.py`). A step whose own check
+  cannot confirm it may be judged by JEV with a closed yes/no (`step_ok` /
+  `step_failed`, screen facts as evidence); JEV is still a classifier. A failed
+  step re-plans only the remainder from the real screen, max `MAX_REPLANS`=2.
+- `velo/sight.py` + `vision.py` + `uimemory.py`: when the accessibility tree cannot
+  name a control, ONE screenshot goes to the vision model (default = reasoning
+  model; `velo_vision_model` overrides, `velo_vision_enabled` turns it off).
+  Found controls are remembered per site/app in `ui-memory.db` (label, role,
+  relative position, window size, 64-bit pixel hash; NO screenshots, NO typed
+  text) and reused only when the window size and pixels still match; every click
+  is verified by the screen changing.
+- `scene.safe_text` keeps secrets out of spoken descriptions and model views.
+- Python-only changes ship with `sani/scripts/update-core.sh` (local core override),
+  which does NOT reset macOS permissions; a full `install-app.sh` does.
 
 ## Conventions
 
