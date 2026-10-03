@@ -1,17 +1,21 @@
+import { CheckCircle2, CircleAlert, Lock, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { SettingsGroup, SettingsRow } from "@/components/settings-rows";
 import {
   openPermissionSettings,
   requestAccessibility,
   requestScreenRecording,
   restartSani,
   type ComputerControlSnapshot,
-} from "../lib/tauri";
+} from "@/lib/tauri";
 
 export type ControlTone = "ok" | "warn" | "bad";
 
 /**
  * The one place that decides how each computer-control state looks. The page and
- * the Settings card both render this component, because the two used to disagree
- * with each other about the same facts.
+ * Settings both render this component, because the two used to disagree with
+ * each other about the same facts. Waiting states are neutral with a lock;
+ * red is reserved for real failures (DESIGN C5).
  */
 const PRESENTATION: Record<string, { label: string; tone: ControlTone }> = {
   ready: { label: "Ready", tone: "ok" },
@@ -28,19 +32,13 @@ const PRESENTATION: Record<string, { label: string; tone: ControlTone }> = {
 export const controlPresentation = (status?: string): { label: string; tone: ControlTone } =>
   (status && PRESENTATION[status]) || { label: "Checking…", tone: "warn" };
 
-const phrase = (value: string) => value.replaceAll("_", " ");
+const phrase = (value: string) => {
+  const text = value.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
 
 const permissionLabel = (value?: string) =>
-  value === "granted" ? "Granted" : value === "denied" ? "Not granted" : value ? phrase(value) : "checking";
-
-function Row({ label, value, title }: { label: string; value: string; title?: string }) {
-  return (
-    <div className="cc-row">
-      <dt>{label}</dt>
-      <dd title={title ?? value}>{value}</dd>
-    </div>
-  );
-}
+  value === "granted" ? "Granted" : value === "denied" ? "Not granted" : value ? phrase(value) : "Checking…";
 
 /**
  * Live status of macOS permissions, Sani's embedded driver and the assistant
@@ -48,107 +46,103 @@ function Row({ label, value, title }: { label: string; value: string; title?: st
  *
  * Nothing here is inferred in the renderer: every value is read by Sani and
  * pushed or pulled. Sani's grants also cover the driver, because the driver runs
- * inside Sani's own macOS responsibility chain — so there is deliberately one
+ * inside Sani's own macOS responsibility chain, so there is deliberately one
  * pair of permission rows, not two that can contradict each other.
  */
 export default function ComputerControlStatus({
   snapshot,
   onRefresh,
-  compact = false,
 }: {
   snapshot: ComputerControlSnapshot | null;
   onRefresh: () => void;
+  /** Kept for existing callers; the layout is already compact. */
   compact?: boolean;
 }) {
   const { label, tone } = controlPresentation(snapshot?.status);
   const granted = snapshot ? snapshot.accessibility === "granted" && snapshot.screen_recording === "granted" : false;
   const endpoint = snapshot?.driver_endpoint || "";
-  // Only the part that identifies the endpoint: the full path stays in the
-  // tooltip, and a wrapped absolute path made the driver column ragged.
   const shortEndpoint = endpoint.split("/").filter(Boolean).slice(-2).join("/");
+  const Icon = tone === "ok" ? CheckCircle2 : tone === "warn" ? Lock : CircleAlert;
 
   return (
-    <section className={`cc-card cc-tone-${tone}`} aria-label="Computer control status">
-      <header className="cc-banner">
-        <span className={`cc-pill cc-pill-${tone}`}>{label}</span>
-        <p className="cc-message">
-          {snapshot?.message ?? "Reading macOS permissions and Sani’s runtime status…"}
-        </p>
-        <button className="cc-refresh" onClick={onRefresh} type="button">
+    <div aria-label="Computer control status" className="flex flex-col">
+      <div className="mb-5 flex items-start gap-3 rounded-xl border border-border bg-card px-3.5 py-3">
+        <Icon
+          className={tone === "bad" ? "mt-0.5 size-4 shrink-0 text-destructive" : "mt-0.5 size-4 shrink-0 text-muted-foreground"}
+          aria-hidden="true"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-foreground">{label}</div>
+          <p className="text-sm text-muted-foreground">
+            {snapshot?.message ?? "Reading macOS permissions and Sani’s runtime status…"}
+          </p>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={onRefresh} className="shrink-0 text-muted-foreground">
+          <RefreshCw className="size-3.5" aria-hidden="true" />
           Refresh
-        </button>
-      </header>
-
-      <div className={`cc-grid${compact ? " cc-grid-compact" : ""}`}>
-        <div className="cc-group">
-          <h3>macOS permissions</h3>
-          <dl>
-            <Row label="Accessibility" value={permissionLabel(snapshot?.accessibility)} />
-            <Row label="Screen Recording" value={permissionLabel(snapshot?.screen_recording)} />
-          </dl>
-          {snapshot && <p className="cc-note">{phrase(snapshot.permission_authority)}</p>}
-        </div>
-
-        <div className="cc-group">
-          <h3>Driver</h3>
-          <dl>
-            <Row
-              label="Process"
-              value={snapshot ? (snapshot.driver_running ? `running · pid ${snapshot.driver_pid ?? "?"}` : "not running") : "checking"}
-            />
-            <Row label="Mode" value={snapshot ? phrase(snapshot.driver_mode) : "checking"} />
-            <Row label="Endpoint" value={snapshot ? shortEndpoint || "—" : "checking"} title={endpoint} />
-            <Row label="Driver probe" value={snapshot ? phrase(snapshot.driver_probe) : "checking"} />
-            <Row
-              label="Active sessions"
-              value={
-                snapshot
-                  ? snapshot.active_sessions === null
-                    ? "unknown"
-                    : String(snapshot.active_sessions)
-                  : "checking"
-              }
-            />
-          </dl>
-          {snapshot?.driver_detail && <code className="cc-detail">{snapshot.driver_detail}</code>}
-        </div>
-
-        <div className="cc-group">
-          <h3>Assistant runtime</h3>
-          <dl>
-            <Row label="Status" value={snapshot ? phrase(snapshot.runtime) : "checking"} />
-            <Row label="App being checked" value={snapshot?.app_path ?? "checking"} title={snapshot?.app_path} />
-          </dl>
-        </div>
+        </Button>
       </div>
 
-      <div className="cc-actions">
-        {!granted && (
-          <>
-            <button type="button" onClick={() => void requestAccessibility().then(onRefresh)}>
-              Request Accessibility
-            </button>
-            <button type="button" onClick={() => void requestScreenRecording().then(onRefresh)}>
-              Request Screen Recording
-            </button>
-          </>
-        )}
-        <button type="button" onClick={() => openPermissionSettings("accessibility")}>
-          Open Accessibility settings
-        </button>
-        <button type="button" onClick={() => openPermissionSettings("screen_recording")}>
-          Open Screen Recording settings
-        </button>
-        {snapshot?.restart_required && (
-          <button type="button" className="cc-primary" onClick={() => void restartSani()}>
-            Restart Sani
-          </button>
-        )}
-      </div>
-      <p className="cc-hint">
-        macOS grants permissions to this app by code identity, so a rebuilt Sani asks once again. The driver
-        shares Sani’s grants and needs none of its own.
-      </p>
-    </section>
+      <SettingsGroup title="macOS permissions">
+        <SettingsRow label="Accessibility" state={permissionLabel(snapshot?.accessibility)}>
+          {snapshot?.accessibility !== "granted" ? (
+            <Button size="sm" variant="outline" onClick={() => void requestAccessibility().then(onRefresh)}>
+              Request access
+            </Button>
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={() => void openPermissionSettings("accessibility")}>
+            Open settings
+          </Button>
+        </SettingsRow>
+        <SettingsRow label="Screen Recording" state={permissionLabel(snapshot?.screen_recording)}>
+          {snapshot?.screen_recording !== "granted" ? (
+            <Button size="sm" variant="outline" onClick={() => void requestScreenRecording().then(onRefresh)}>
+              Request access
+            </Button>
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={() => void openPermissionSettings("screen_recording")}>
+            Open settings
+          </Button>
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup title="Driver">
+        <SettingsRow
+          label="Process"
+          state={snapshot ? (snapshot.driver_running ? `Running · pid ${snapshot.driver_pid ?? "?"}` : "Not running") : "Checking…"}
+        />
+        <SettingsRow label="Mode" state={snapshot ? phrase(snapshot.driver_mode) : "Checking…"} />
+        <SettingsRow label="Endpoint" state={snapshot ? shortEndpoint || "—" : "Checking…"} />
+        <SettingsRow label="Driver probe" state={snapshot ? phrase(snapshot.driver_probe) : "Checking…"} />
+        <SettingsRow
+          label="Active sessions"
+          state={snapshot ? (snapshot.active_sessions === null ? "Unknown" : String(snapshot.active_sessions)) : "Checking…"}
+        />
+        {snapshot?.driver_detail ? (
+          <div className="px-3.5 py-2.5">
+            <code className="block font-mono text-xs break-words text-muted-foreground select-text">
+              {snapshot.driver_detail}
+            </code>
+          </div>
+        ) : null}
+      </SettingsGroup>
+
+      <SettingsGroup title="Assistant runtime">
+        <SettingsRow label="Status" state={snapshot ? phrase(snapshot.runtime) : "Checking…"} />
+        <SettingsRow label="App being checked" state={snapshot?.app_path ?? "Checking…"} />
+      </SettingsGroup>
+
+      {snapshot?.restart_required ? (
+        <div className="flex justify-end">
+          <Button onClick={() => void restartSani()}>Restart Sani</Button>
+        </div>
+      ) : null}
+      {!granted && snapshot ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          macOS grants permissions by code identity, so a rebuilt Sani asks once again. The driver shares
+          Sani’s grants.
+        </p>
+      ) : null}
+    </div>
   );
 }

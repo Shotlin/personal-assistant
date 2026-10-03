@@ -1,0 +1,128 @@
+/* The running-work mark used to advance these frames with a React interval,
+   causing every mounted loader to commit about five times per second. Opacity
+   animation keeps the same four frames on the compositor instead. */
+.sani-dot-matrix-dot {
+  animation-duration: 720ms;
+  animation-iteration-count: infinite;
+  animation-timing-function: step-end;
+}
+
+.sani-dot-matrix-on {
+  opacity: 0.9;
+}
+
+.sani-dot-matrix-off {
+  opacity: 0.25;
+}
+
+@keyframes sani-dot-matrix-a {
+  0%,
+  75%,
+  100% {
+    opacity: 0.9;
+  }
+  25%,
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes sani-dot-matrix-b {
+  0%,
+  50% {
+    opacity: 0.25;
+  }
+  25%,
+  75%,
+  100% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes sani-dot-matrix-c {
+  0%,
+  25%,
+  75%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes sani-dot-matrix-d {
+  0%,
+  25%,
+  100% {
+    opacity: 0.9;
+  }
+  50%,
+  75% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes sani-dot-matrix-e {
+  0%,
+  50%,
+  75%,
+  100% {
+    opacity: 0.9;
+  }
+  25% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes sani-dot-matrix-f {
+  0%,
+  75%,
+  100% {
+    opacity: 0.25;
+  }
+  25%,
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes sani-dot-matrix-g {
+  0%,
+  25%,
+  75%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.sani-dot-matrix-frame-a {
+  animation-name: sani-dot-matrix-a;
+}
+.sani-dot-matrix-frame-b {
+  animation-name: sani-dot-matrix-b;
+}
+.sani-dot-matrix-frame-c {
+  animation-name: sani-dot-matrix-c;
+}
+.sani-dot-matrix-frame-d {
+  animation-name: sani-dot-matrix-d;
+}
+.sani-dot-matrix-frame-e {
+  animation-name: sani-dot-matrix-e;
+}
+.sani-dot-matrix-frame-f {
+  animation-name: sani-dot-matrix-f;
+}
+.sani-dot-matrix-frame-g {
+  animation-name: sani-dot-matrix-g;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sani-dot-matrix-dot {
+    animation: none;
+  }
+}

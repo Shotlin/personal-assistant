@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
-import { computerControlSnapshot, coreStatus, recentRunTiming, type ComputerControlSnapshot, type TimingRecord } from "../lib/tauri";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { SettingsGroup, SettingsRow } from "@/components/settings-rows";
+import { computerControlSnapshot, coreStatus, recentRunTiming, type ComputerControlSnapshot, type TimingRecord } from "@/lib/tauri";
 
+/** Local operational evidence only. Sani never records content or credentials here. */
 export default function DiagnosticsPage() {
   const [timings, setTimings] = useState<TimingRecord[]>([]);
   const [control, setControl] = useState<ComputerControlSnapshot | null>(null);
@@ -11,5 +15,31 @@ export default function DiagnosticsPage() {
     void coreStatus().then(() => setRuntime("Available")).catch(() => setRuntime("Unavailable"));
   };
   useEffect(refresh, []);
-  return <section className="diagnostics-page"><header><div><h1>Diagnostics</h1><p>Local operational evidence only. Sani never records content or credentials here.</p></div><button onClick={refresh}>Refresh</button></header><div className="diagnostic-grid"><article><h2>Runtime</h2><p>{runtime}</p></article><article><h2>Computer control</h2><p>{control?.message ?? "Not measured"}</p></article></div><h2>Recent measured stages</h2>{timings.length === 0 ? <p className="settings-muted">Not measured — complete a Sani run to collect local timing evidence.</p> : <div className="timing-list">{timings.map((timing) => <article key={`${timing.run_id}-${timing.stage}`}><strong>{timing.stage.replaceAll("_", " ")}</strong><span>{timing.elapsed_ms} ms · {timing.status}</span></article>)}</div>}</section>;
+  return (
+    <div>
+      <div className="mb-4 flex justify-end">
+        <Button variant="ghost" size="sm" onClick={refresh} className="text-muted-foreground">
+          <RefreshCw className="size-3.5" aria-hidden="true" />
+          Refresh
+        </Button>
+      </div>
+      <SettingsGroup title="Status">
+        <SettingsRow label="Runtime" state={runtime} />
+        <SettingsRow label="Computer control" state={control?.message ?? "Not measured"} />
+      </SettingsGroup>
+      <SettingsGroup title="Recent measured stages">
+        {timings.length === 0 ? (
+          <SettingsRow label="Nothing measured yet" state="Complete a run to collect local timing evidence" />
+        ) : (
+          timings.map((timing) => (
+            <SettingsRow
+              key={`${timing.run_id}-${timing.stage}`}
+              label={timing.stage.replaceAll("_", " ")}
+              state={`${timing.elapsed_ms} ms · ${timing.status}`}
+            />
+          ))
+        )}
+      </SettingsGroup>
+    </div>
+  );
 }
