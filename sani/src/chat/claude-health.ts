@@ -2,10 +2,10 @@ import type { ClaudeCodeStatus } from "@/lib/tauri";
 
 /**
  * One answer to "is Claude Code working for Sani?", shown as a dot:
- * green = ready to use, red = something needs fixing, grey = off by choice,
+ * green = ready to use, amber = signed in, one setup step left, red = something needs fixing, grey = off by choice,
  * busy = a sign-in is in progress. The words say what to do about red.
  */
-export type HealthTone = "green" | "red" | "grey" | "busy";
+export type HealthTone = "green" | "amber" | "red" | "grey" | "busy";
 
 export interface ClaudeHealth {
   tone: HealthTone;
@@ -33,7 +33,7 @@ export function claudeHealth(status: ClaudeCodeStatus | null, loading = false): 
     return { tone: "grey", title: "Signed in, switched off", detail: "Turn it on to let Sani use it." };
   }
   if (status.folders.length === 0) {
-    return { tone: "red", title: "Add a project folder", detail: "Sani only works in folders you choose." };
+    return { tone: "amber", title: "Signed in — add a project folder", detail: "Sani only works in folders you choose." };
   }
   return { tone: "green", title: "Connected", detail: "Signed in and ready." };
 }

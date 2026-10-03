@@ -700,6 +700,9 @@ fn ensure_active_conversation(app: &AppHandle) -> String {
 /// input) or validated the voice-finalization state.  `already_claimed` must
 /// remain true only for `claim_text_turn`; keeping the voice path unchanged
 /// preserves its cancellation-generation guard.
+/// Whether the turn in flight came from voice, and so gets a spoken reply.
+static SPEAK_REPLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
 fn begin_turn(app: &AppHandle, final_text: String, already_claimed: bool, input_origin: &'static str) {
     let state = app.state::<SaniState>();
     if !already_claimed && matches!(current_state(app), UiState::Working) {
@@ -738,7 +741,13 @@ fn begin_turn(app: &AppHandle, final_text: String, already_claimed: bool, input_
     if !already_claimed {
         set_state(app, UiState::Working);
     }
-    let _ = windows::show_panel(app);
+    // A message typed in the main window stays in the main window: no floating
+    // panel and no spoken reply. Only voice turns surface the panel and speak.
+    let spoken_turn = input_origin != "typed_final";
+    SPEAK_REPLY.store(spoken_turn, std::sync::atomic::Ordering::SeqCst);
+    if spoken_turn {
+        let _ = windows::show_panel(app);
+    }
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -904,7 +913,7 @@ pub fn agent_finished(
     if status == "completed" || status == "failed" {
         let tts = app.try_state::<crate::tts::TtsState>();
         if let Some(state) = tts {
-            if state.supervisor.is_enabled() {
+            if state.supervisor.is_enabled() && SPEAK_REPLY.load(std::sync::atomic::Ordering::SeqCst) {
                 // Speak what the screen shows; only a turn with no text at all gets the generic line.
                 let spoken = if !text.trim().is_empty() {
                     text

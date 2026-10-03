@@ -45,7 +45,7 @@ import json, pathlib, sys, datetime
 out, revision = sys.argv[1:]
 pathlib.Path(out).write_text(json.dumps({
     "revision": revision,
-    "built_at": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+    "built_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
 }, indent=2) + "\n")
 PY
 (cd "$HERE" && npm run tauri -- build)

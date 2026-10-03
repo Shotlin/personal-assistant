@@ -1,0 +1,9 @@
+([('base_library.zip',
+   '/Users/sayan/Documents/personal-assistant/sani/.tts-build/work/sani-tts-python/base_library.zip',
+   'DATA'),
+  ('libpython3.12.dylib',
+   '/Users/sayan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/libpython3.12.dylib',
+   'BINARY'),
+  ('sani-tts-python',
+   '/Users/sayan/Documents/personal-assistant/sani/.tts-build/work/sani-tts-python/sani-tts-python',
+   'EXECUTABLE')],)

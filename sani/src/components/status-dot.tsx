@@ -8,10 +8,11 @@ export function StatusDot({ tone, className, label }: { tone: HealthTone; classN
   return (
     <span
       role="img"
-      aria-label={label ?? { green: "On", red: "Problem", grey: "Off" }[tone]}
+      aria-label={label ?? { green: "On", amber: "Almost ready", red: "Problem", grey: "Off" }[tone]}
       className={cn(
         "inline-block size-2.5 shrink-0 rounded-full",
         tone === "green" && "bg-green-9 ring-4 ring-green-a4",
+        tone === "amber" && "bg-amber-9 ring-4 ring-amber-a4",
         tone === "red" && "bg-red-9 ring-4 ring-red-a4",
         tone === "grey" && "bg-slate-8 ring-4 ring-slate-a3",
         className,
