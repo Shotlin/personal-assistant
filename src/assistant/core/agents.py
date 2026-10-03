@@ -29,6 +29,7 @@ from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import Any
 
+from assistant.claude_code import context as claude_context
 from assistant.core.desktop import system_status
 from assistant.core.identity import engine_identity
 from assistant.core.protocol import AGENT_PROGRESS, AGENT_TOKEN
@@ -53,9 +54,11 @@ class RuntimeProvider:
         settings: Settings,
         *,
         agent_builder: Callable[[], Awaitable[Any]] | None = None,
+        claude_code: Any | None = None,
     ) -> None:
         self._settings = settings
         self._builder = agent_builder
+        self._claude_code = claude_code
         self._lock = asyncio.Lock()
         self._runtime: SaniRuntime | None = None
         self._cm: Any = None
@@ -67,7 +70,11 @@ class RuntimeProvider:
             if self._builder is not None:
                 self._runtime = SaniRuntime.open_with_agent(await self._builder(), self._settings)
                 return self._runtime
-            self._cm = SaniRuntime.open(self._settings)
+            self._cm = (
+                SaniRuntime.open(self._settings, claude_code=self._claude_code)
+                if self._claude_code is not None
+                else SaniRuntime.open(self._settings)
+            )
             try:
                 self._runtime = await self._cm.__aenter__()
             except BaseException:
@@ -202,6 +209,36 @@ class DeepAgentEntry:
         token: CancellationToken,
         usage_recorder: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
+        """Bind the run's event channel and conversation for the Claude Code tool.
+
+        A tool call happens deep inside the graph, so it reads these from context
+        variables rather than being handed them. They are reset when the run ends.
+        """
+        sink_token = claude_context.event_sink.set(on_event)
+        conversation_token = claude_context.conversation_id.set(thread_id.strip())
+        try:
+            return await self._run_inner(
+                text,
+                thread_id=thread_id,
+                on_event=on_event,
+                cancel_check=cancel_check,
+                token=token,
+                usage_recorder=usage_recorder,
+            )
+        finally:
+            claude_context.event_sink.reset(sink_token)
+            claude_context.conversation_id.reset(conversation_token)
+
+    async def _run_inner(
+        self,
+        text: str,
+        *,
+        thread_id: str,
+        on_event: Callable[[str, dict[str, Any]], Awaitable[None]],
+        cancel_check: Callable[[], bool],
+        token: CancellationToken,
+        usage_recorder: Callable[[str, dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
         runtime = await self._provider.runtime()
         from langchain_core.messages import AIMessage, HumanMessage
 
@@ -230,14 +267,20 @@ class DeepAgentEntry:
         order: list[str] = []
         tool_backed: set[str] = set()
         announced_tools: set[str] = set()
+        # A coding run is minutes of real work, not a stuck reasoning loop, so
+        # the deadline stretches when (and only when) the Claude Code tool is
+        # bound. It stays under the 13 minute core ceiling.
+        deadline = getattr(self._settings, "deep_run_deadline_seconds", 180)
+        if getattr(runtime, "claude_code_enabled", False):
+            deadline = max(deadline, int(self._settings.claude_code_run_seconds) + 60)
         guard = _LoopGuard(
             max_steps=getattr(self._settings, "deep_max_tool_steps", 40),
-            deadline_seconds=getattr(self._settings, "deep_run_deadline_seconds", 180),
+            deadline_seconds=deadline,
         )
         stopped_reason: str | None = None
         counted_calls: set[tuple[str, int]] = set()
 
-        hard_limit = getattr(self._settings, "deep_run_deadline_seconds", 180) + 30
+        hard_limit = deadline + 30
         async with runtime.run_scope(
             f"core-{uuid.uuid4().hex[:8]}", conversation=conversation
         ) as budget:
@@ -395,6 +438,9 @@ class CoreResources:
     deep: DeepAgentEntry
     registry: AgentRegistry
     mission_entry: MissionEntry | None = None
+    #: Always built (cheap): the UI asks whether Claude Code is installed and
+    #: signed in even while the feature is off. The tool is bound only when enabled.
+    claude_code: Any = None
     _service_lock: asyncio.Lock = dataclass_field(default_factory=asyncio.Lock)
     _service: Any = None
     _store: Any = None
@@ -418,8 +464,11 @@ class CoreResources:
 
 def build_core_resources(settings: Settings) -> CoreResources:
     """Compose the process-wide resource graph (registry + mission IPC)."""
+    from assistant.claude_code.toolkit import ClaudeCodeToolkit
+
     registry = AgentRegistry()
-    provider = RuntimeProvider(settings)
+    claude_code = ClaudeCodeToolkit(settings)
+    provider = RuntimeProvider(settings, claude_code=claude_code)
     deep = DeepAgentEntry(settings, provider=provider)
 
     def jev_factory() -> Any:
@@ -429,7 +478,13 @@ def build_core_resources(settings: Settings) -> CoreResources:
 
         return TypeSafeJevService.from_settings(settings)
 
-    resources = CoreResources(settings=settings, provider=provider, deep=deep, registry=registry)
+    resources = CoreResources(
+        settings=settings,
+        provider=provider,
+        deep=deep,
+        registry=registry,
+        claude_code=claude_code,
+    )
 
     registry.register(deep)
     if getattr(settings, "jarvis_missions_enabled", False):

@@ -147,6 +147,7 @@ class SaniCoreApp:
         status_provider: Callable[[], Awaitable[dict[str, Any]]] | None = None,
         run_wall_clock_seconds: float = RUN_WALL_CLOCK_SECONDS,
         mission_provider: Callable[[], Awaitable[Any]] | None = None,
+        claude_code_provider: Callable[[], Awaitable[dict[str, Any]]] | None = None,
     ) -> None:
         if max_concurrent_runs < 1:
             raise ValueError("max_concurrent_runs must be at least 1")
@@ -159,6 +160,8 @@ class SaniCoreApp:
         # Jarvis Phase 1 (T07): the mission.* surface exists only when the
         # factory is wired; agents.list advertises the feature honestly.
         self._mission_provider = mission_provider
+        # Claude Code companion status: installed, signed in, folders, usage.
+        self._claude_code_provider = claude_code_provider
 
     async def _missions(self) -> Any:
         if self._mission_provider is None:
@@ -206,6 +209,8 @@ class SaniCoreApp:
             return self._handle_run_cancel
         if method == "system.status":
             return self._handle_system_status
+        if method == "claude_code.status":
+            return self._handle_claude_code_status
         if method in _MISSION_METHODS:
             return getattr(self, _MISSION_METHODS[method])
         return None
@@ -217,6 +222,15 @@ class SaniCoreApp:
             )
             return
         result = await self._status_provider()
+        await session.send(response_from_request(request, result).to_frame())
+
+    async def _handle_claude_code_status(self, session: _Session, request: Request) -> None:
+        if self._claude_code_provider is None:
+            await session.send(
+                error_from_request(request, "claude code status is not available").to_frame()
+            )
+            return
+        result = await self._claude_code_provider()
         await session.send(response_from_request(request, result).to_frame())
 
     async def _handle_agents_list(self, session: _Session, request: Request) -> None:

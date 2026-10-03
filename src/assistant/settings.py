@@ -122,6 +122,21 @@ class Settings(BaseSettings):
     deep_max_tool_steps: int = 25
     deep_run_deadline_seconds: int = 90
 
+    # Claude Code companion: Sani drives the user's own, already signed-in
+    # Claude Code (`claude -p`) the way a person would. Default off. There is no
+    # API key anywhere in this path; the child process never receives one.
+    claude_code_enabled: bool = False
+    # Empty = look on PATH, the standard install folders, then the Claude desktop app.
+    claude_code_binary: str = ""
+    # Project folders Sani may work in, separated by ":" (like PATH). Nothing
+    # outside them is ever opened, and a symlink out of one does not count.
+    claude_code_dirs: str = ""
+    # The most a run may be allowed to do: read | edit | run (edit files and run commands).
+    claude_code_permission: str = "edit"
+    claude_code_max_turns: int = 30
+    # One Claude Code call. Kept under the Deep deadline and the 13 minute core ceiling.
+    claude_code_run_seconds: int = 600
+
     # Jarvis Phase 1 (docs/astra/jarvis-next-2026-09-27-58dac9c, file 03 §11).
     # Both capabilities ship default-off: the host turns them on only for an
     # isolated acceptance instance. Enabling missions composes durable
@@ -173,6 +188,17 @@ class Settings(BaseSettings):
             )
         if self.model_max_tokens < 200:
             errors.append(f"MODEL_MAX_TOKENS must be >= 200, got {self.model_max_tokens}")
+        if self.claude_code_permission not in {"read", "edit", "run"}:
+            errors.append(
+                f"CLAUDE_CODE_PERMISSION must be one of [read, edit, run], "
+                f"got {self.claude_code_permission!r}"
+            )
+        if not 1 <= self.claude_code_max_turns <= 200:
+            errors.append(f"CLAUDE_CODE_MAX_TURNS must be 1-200, got {self.claude_code_max_turns}")
+        if not 30 <= self.claude_code_run_seconds <= 720:
+            errors.append(
+                f"CLAUDE_CODE_RUN_SECONDS must be 30-720, got {self.claude_code_run_seconds}"
+            )
 
         if self.memory_backend not in {"postgres", "sqlite"}:
             errors.append(

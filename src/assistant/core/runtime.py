@@ -25,6 +25,7 @@ from typing import Any
 
 from assistant.agent.build import build_agent
 from assistant.agent.context import RunBudget
+from assistant.agent.system_prompt import SYSTEM_PROMPT
 from assistant.memory.local import open_local_memory_resources
 from assistant.memory.postgres import open_memory_resources
 from assistant.models import build_chat_model
@@ -87,6 +88,9 @@ class SaniRuntime:
     #: drives these same objects, so the gate, targeting and budget it passes
     #: through are exactly the agent's own.
     cua_tools: dict[str, Any] = field(default_factory=dict)
+    #: True when the `claude_code` tool is bound; the Deep entry then allows the
+    #: longer run a coding task needs.
+    claude_code_enabled: bool = False
 
     @property
     def tool_names(self) -> list[str]:
@@ -96,7 +100,9 @@ class SaniRuntime:
 
     @classmethod
     @contextlib.asynccontextmanager
-    async def open(cls, settings: Settings) -> AsyncIterator[SaniRuntime]:
+    async def open(
+        cls, settings: Settings, *, claude_code: Any | None = None
+    ) -> AsyncIterator[SaniRuntime]:
         stack = contextlib.AsyncExitStack()
         try:
             if settings.memory_backend == "sqlite":
@@ -127,6 +133,12 @@ class SaniRuntime:
                 from assistant.missions.submission import build_submission_tools
 
                 extra_tools = [*extra_tools, *build_submission_tools()]
+            build_kwargs: dict[str, Any] = {}
+            if claude_code is not None and settings.claude_code_enabled:
+                from assistant.claude_code.toolkit import GUIDE
+
+                extra_tools = [*extra_tools, claude_code.as_tool()]
+                build_kwargs["system_prompt"] = SYSTEM_PROMPT + GUIDE
             keepalive = asyncio.create_task(
                 _driver_keepalive(connection), name="sani-core-cua-keepalive"
             )
@@ -143,6 +155,7 @@ class SaniRuntime:
                 store=resources.store,
                 skills_root=_SKILLS_ROOT,
                 extra_tools=extra_tools,
+                **build_kwargs,
             )
         except BaseException:
             await stack.aclose()
@@ -153,7 +166,10 @@ class SaniRuntime:
             desktop_sessions=desktop_sessions if settings.cua_enabled else None,
             artifact_dir=str(Path(settings.cua_artifact_dir).resolve()),
             cua_enabled=settings.cua_enabled,
-            cua_tools={tool.name: tool for tool in extra_tools},
+            cua_tools={
+                tool.name: tool for tool in extra_tools if tool.name != "claude_code"
+            },
+            claude_code_enabled=bool(build_kwargs),
         )
         await stack.aclose()
 

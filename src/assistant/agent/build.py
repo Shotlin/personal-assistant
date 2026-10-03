@@ -128,6 +128,7 @@ def build_agent(
     store: BaseStore,
     skills_root: Path,
     extra_tools: Sequence[BaseTool] = (),
+    system_prompt: str = SYSTEM_PROMPT,
 ) -> AgentBundle:
     """Build exactly one Deep Agent (no subagents, no host shell)."""
     profile_keys = register_single_agent_profile(model)
@@ -140,7 +141,7 @@ def build_agent(
         backend=backend,
         skills=[SKILLS_ROUTE],
         memory=MEMORY_FILES,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         middleware=[trim_middleware],
         checkpointer=checkpointer,
         store=store,
