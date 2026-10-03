@@ -224,7 +224,15 @@ export interface ClaudeCodeRate {
 }
 
 /** What Sani knows about the user's own Claude Code. No secrets, no API key. */
+export interface ClaudeCodeLogin {
+  state: "idle" | "waiting" | "succeeded" | "failed" | "cancelled";
+  /** Anthropic's sign-in page, once Claude Code has printed it. */
+  url: string;
+  message: string;
+}
+
 export interface ClaudeCodeStatus {
+  login?: ClaudeCodeLogin;
   enabled: boolean;
   permission: ClaudeCodePermission;
   folders: string[];
@@ -252,6 +260,10 @@ export interface ClaudeCodeStatus {
 }
 
 export const claudeCodeStatus = () => invoke<ClaudeCodeStatus>("claude_code_status_cmd");
+export const claudeCodeAuth = (action: "login" | "code" | "cancel" | "logout", code?: string) =>
+  invoke<ClaudeCodeStatus & { error?: string }>("claude_code_auth_cmd", { action, code });
+export const openSignInLink = (url: string) => invoke<void>("open_sign_in_link_cmd", { url });
+export const focusMain = () => invoke<void>("focus_main_cmd");
 export const applyClaudeCodeSettings = (patch: {
   enabled?: boolean;
   dirs?: string[];

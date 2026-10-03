@@ -2088,6 +2088,58 @@ pub async fn claude_code_status_cmd(app: AppHandle) -> Result<Value, String> {
     route_mission_request(&app, "claude_code.status", json!({})).await
 }
 
+/// Sign in or out of the user's Claude Code, and answer a sign-in code. Only a
+/// fixed set of actions is accepted; the code is passed through to Claude Code
+/// and never stored or logged here.
+#[tauri::command]
+pub async fn claude_code_auth_cmd(
+    app: AppHandle,
+    action: String,
+    code: Option<String>,
+) -> Result<Value, String> {
+    let method = claude_code_auth_method(&action)?;
+    let params = match code {
+        Some(code) if action == "code" => json!({ "code": code }),
+        _ => json!({}),
+    };
+    route_mission_request(&app, method, params).await
+}
+
+fn claude_code_auth_method(action: &str) -> Result<&'static str, String> {
+    match action {
+        "login" => Ok("claude_code.login_start"),
+        "code" => Ok("claude_code.login_code"),
+        "cancel" => Ok("claude_code.login_cancel"),
+        "logout" => Ok("claude_code.logout"),
+        _ => Err("unknown Claude Code action".into()),
+    }
+}
+
+/// Open the Anthropic sign-in page in the user's browser, for the case where the
+/// automatic browser launch did not happen. Only Anthropic's own sign-in pages.
+#[tauri::command]
+pub fn open_sign_in_link_cmd(url: String) -> Result<(), String> {
+    if !is_sign_in_url(&url) {
+        return Err("That isn't a Claude sign-in link.".into());
+    }
+    std::process::Command::new("/usr/bin/open")
+        .arg(&url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+}
+
+fn is_sign_in_url(url: &str) -> bool {
+    (url.starts_with("https://claude.com/") || url.starts_with("https://claude.ai/"))
+        && !url.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+/// Bring Sani's main window to the front (used when a browser sign-in finishes).
+#[tauri::command]
+pub fn focus_main_cmd(app: AppHandle) -> Result<(), String> {
+    crate::windows::show_main(&app).map_err(|err| err.to_string())
+}
+
 /// Read one mission's durable record (UI status truth; read-only).
 #[tauri::command]
 pub async fn mission_get_cmd(app: AppHandle, mission_id: String) -> Result<Value, String> {
@@ -2388,6 +2440,32 @@ pub fn start_at_startup(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_anthropic_sign_in_links_may_be_opened() {
+        use super::is_sign_in_url as ok;
+        assert!(ok(
+            "https://claude.com/cai/oauth/authorize?code=true&state=abc"
+        ));
+        assert!(ok("https://claude.ai/login"));
+        assert!(!ok("http://claude.com/login"));
+        assert!(!ok("https://claude.com.evil.example/x"));
+        assert!(!ok("https://evil.example/https://claude.com/"));
+        assert!(!ok("file:///etc/passwd"));
+        assert!(!ok("https://claude.com/a b"));
+        assert!(!ok("https://claude.com/a\nb"));
+    }
+
+    #[test]
+    fn only_known_claude_code_actions_map_to_core_methods() {
+        use super::claude_code_auth_method as m;
+        assert_eq!(m("login").unwrap(), "claude_code.login_start");
+        assert_eq!(m("code").unwrap(), "claude_code.login_code");
+        assert_eq!(m("cancel").unwrap(), "claude_code.login_cancel");
+        assert_eq!(m("logout").unwrap(), "claude_code.logout");
+        assert!(m("mission.purge").is_err());
+        assert!(m("").is_err());
+    }
+
     use super::*;
     use std::io::Cursor;
     use std::time::{SystemTime, UNIX_EPOCH};

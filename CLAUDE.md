@@ -160,6 +160,7 @@ user's OWN Claude Code, the way a person would. Product rules:
 - Steps reach the UI as `agent.progress` frames carrying an optional `step`
   (id, label, status, tool, duration_ms, detail); the host bounds them and stores
   finished ones in `run_activity` (in-place migration).
+- Sign-in is a button in Settings → Claude Code (`auth.py`): it runs `claude auth login --claudeai`, shows the sign-in link, accepts a pasted code, can be cancelled, and signs out with `claude auth logout`. Sani never sees a password or token. A green dot means installed, signed in, switched on and a folder added; red means something to fix; grey means off by choice.
 - Sessions: one Claude Code session per (chat, folder) in `sani.db`
   (`claude_code_sessions`). Sessions started with `-p` do not appear in
   Claude Code's own picker; resume them by id.

@@ -22,6 +22,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, Field
 
 from assistant.claude_code import context
+from assistant.claude_code.auth import SUCCEEDED, LoginSession, sign_out
 from assistant.claude_code.events import (
     ClaudeEvent,
     Final,
@@ -155,6 +156,7 @@ class ClaudeCodeToolkit:
         self._locks: dict[str, asyncio.Lock] = {}
         self._rates: dict[str, dict[str, Any]] = {}
         self._last_run: dict[str, Any] = {}
+        self._login = LoginSession()
 
     # -- configuration -------------------------------------------------------
 
@@ -255,13 +257,44 @@ class ClaudeCodeToolkit:
 
     async def status_report(self) -> dict[str, Any]:
         status = await self.claude_status(fresh=True)
+        # A finished sign-in is re-read from Claude Code itself, never assumed.
+        if self._login.view().state == SUCCEEDED and not status.signed_in:
+            status = await self.claude_status(fresh=True)
         return {
+            "login": self._login.view().as_dict(),
             "enabled": self._settings.claude_code_enabled,
             "permission": self._settings.claude_code_permission,
             "folders": [str(root) for root in self.allowed_dirs()],
             "claude": status.as_dict(),
             "usage": await self.usage_state(),
         }
+
+    # -- sign in / out (buttons in Settings) --------------------------------------
+
+    async def handle_action(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """``claude_code.login_start`` / ``login_code`` / ``login_cancel`` / ``logout``."""
+        binary = self._locator(override=self._settings.claude_code_binary)
+        if method == "claude_code.login_start":
+            if binary is None:
+                return {"error": "Claude Code isn't installed."}
+            self._status = None
+            await self._login.start(binary)
+        elif method == "claude_code.login_code":
+            await self._login.submit_code(str(params.get("code") or ""))
+        elif method == "claude_code.login_cancel":
+            await self._login.cancel()
+        elif method == "claude_code.logout":
+            if binary is None:
+                return {"error": "Claude Code isn't installed."}
+            await self._login.cancel()
+            ok, message = await sign_out(binary)
+            self._status = None
+            if not ok:
+                return {"error": message}
+        else:
+            return {"error": "unknown action"}
+        self._status = None
+        return await self.status_report()
 
     # -- the tool -----------------------------------------------------------
 

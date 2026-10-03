@@ -1,14 +1,25 @@
 import { useState } from "react";
-import { Check, Copy, FolderPlus, Lock, RefreshCw, X } from "lucide-react";
+import { Check, Copy, ExternalLink, FolderPlus, Lock, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ChoiceMenu } from "@/components/ui/choice-menu";
 import { SettingsGroup, SettingsRow } from "@/components/settings-rows";
+import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { StatusDot } from "@/components/status-dot";
+import { claudeHealth } from "@/chat/claude-health";
 import { useClaudeCode } from "@/chat/use-claude-code";
-import { pickFolder, type ClaudeCodePermission } from "@/lib/tauri";
+import { openSignInLink, pickFolder, type ClaudeCodePermission } from "@/lib/tauri";
 import { useSettings } from "./SettingsContext";
-
-const LOGIN_COMMAND = "claude auth login";
 
 const PERMISSIONS: Array<{ value: ClaudeCodePermission; label: string }> = [
   { value: "read", label: "Look only" },
@@ -49,21 +60,132 @@ function folderParts(path: string): { name: string; parent: string } {
   return { name: parts[parts.length - 1] ?? path, parent: "/" + parts.slice(0, -1).join("/") };
 }
 
+function ClaudeAccount({ code }: { code: ReturnType<typeof useClaudeCode> }) {
+  const { status, loading, error, act } = code;
+  const [pasted, setPasted] = useState("");
+  const [confirmOut, setConfirmOut] = useState(false);
+  const health = claudeHealth(status, loading);
+  const claude = status?.claude;
+  const login = status?.login;
+  const waiting = login?.state === "waiting";
+  const signedIn = Boolean(claude?.installed && claude.signed_in);
+
+  return (
+    <div className="mb-6 rounded-xl border border-border bg-card px-4 py-3.5">
+      <div className="flex items-center gap-3">
+        <StatusDot tone={health.tone} />
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-foreground">{health.title}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {signedIn && health.tone !== "busy"
+              ? `Claude Code ${claude?.version ?? ""} · ${claude?.auth_method === "claude.ai" ? "your Claude account" : claude?.auth_method}`
+              : health.detail}
+          </div>
+        </div>
+        {claude?.installed && !signedIn && !waiting ? (
+          <Button size="sm" onClick={() => void act("login")}>
+            Sign in
+          </Button>
+        ) : null}
+        {waiting ? (
+          <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => void act("cancel")}>
+            Cancel
+          </Button>
+        ) : null}
+        {signedIn && !waiting ? (
+          <Button size="sm" variant="outline" onClick={() => setConfirmOut(true)}>
+            Sign out
+          </Button>
+        ) : null}
+      </div>
+
+      {claude && !claude.installed ? (
+        <div className="mt-3 border-t border-border pt-3">
+          <div className="mb-2 text-xs text-muted-foreground">Install Claude Code, then come back and sign in.</div>
+          <CopyCommand command="curl -fsSL https://claude.ai/install.sh | bash" />
+        </div>
+      ) : null}
+
+      {waiting ? (
+        <div className="mt-3 flex flex-col gap-3 border-t border-border pt-3">
+          <p className="text-sm text-foreground">Your browser opened the Claude sign-in page. Finish there and Sani continues by itself.</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {login?.url ? (
+              <Button size="sm" variant="outline" onClick={() => void openSignInLink(login.url).catch(() => undefined)}>
+                <ExternalLink className="size-3.5" aria-hidden="true" />
+                Open the sign-in page again
+              </Button>
+            ) : null}
+          </div>
+          <form
+            className="flex flex-col gap-1.5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (pasted.trim()) void act("code", pasted.trim()).then(() => setPasted(""));
+            }}
+          >
+            <label htmlFor="claude-sign-in-code" className="text-xs text-muted-foreground">
+              Browser showing a code instead? Paste it here.
+            </label>
+            <div className="flex gap-2">
+              <Input
+                id="claude-sign-in-code"
+                autoComplete="off"
+                spellCheck={false}
+                value={pasted}
+                onChange={(event) => setPasted(event.target.value)}
+                placeholder="Paste the code"
+                className="font-mono text-xs"
+              />
+              <Button type="submit" variant="outline" disabled={!pasted.trim()}>
+                Continue
+              </Button>
+            </div>
+          </form>
+          {login?.message ? <p className="text-xs text-muted-foreground">{login.message}</p> : null}
+        </div>
+      ) : null}
+
+      {login?.state === "failed" || error ? (
+        <p className="mt-3 text-sm text-destructive" role="alert">
+          {error || login?.message}
+        </p>
+      ) : null}
+
+      <AlertDialog open={confirmOut} onOpenChange={setConfirmOut}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out of Claude Code?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This signs out the Claude Code on this Mac that Sani uses. You can sign in again any time.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Stay signed in</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmOut(false);
+                void act("logout");
+              }}
+            >
+              Sign out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 export default function ClaudeCodeSettings() {
   const { snapshot, saveClaudeCode, error } = useSettings();
-  const { status, loading, refresh } = useClaudeCode(15_000);
+  const code = useClaudeCode(15_000);
+  const { status } = code;
   const [pickError, setPickError] = useState("");
   if (!snapshot) return null;
 
   const claude = status?.claude;
   const ready = Boolean(claude?.installed && claude.signed_in);
-  const statusText = !status
-    ? "Checking…"
-    : !claude?.installed
-      ? "Not installed"
-      : claude.signed_in
-        ? `Signed in · version ${claude.version || "unknown"}`
-        : "Not signed in";
 
   const addFolder = async () => {
     setPickError("");
@@ -78,29 +200,8 @@ export default function ClaudeCodeSettings() {
 
   return (
     <>
+      <ClaudeAccount code={code} />
       <SettingsGroup>
-        <SettingsRow label="Your Claude Code" state={statusText}>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-muted-foreground"
-            disabled={loading}
-            onClick={() => void refresh()}
-          >
-            <RefreshCw className="size-3.5" aria-hidden="true" />
-            Check
-          </Button>
-        </SettingsRow>
-        {claude && !claude.installed ? (
-          <SettingsRow label="Install Claude Code" state="Then sign in once" stack>
-            <CopyCommand command="curl -fsSL https://claude.ai/install.sh | bash" />
-          </SettingsRow>
-        ) : null}
-        {claude?.installed && !claude.signed_in ? (
-          <SettingsRow label="Sign in once in Terminal" state="It opens your browser" stack>
-            <CopyCommand command={LOGIN_COMMAND} />
-          </SettingsRow>
-        ) : null}
         <SettingsRow label="Let Sani use Claude Code" state={ready ? undefined : "Needs sign-in first"}>
           <Switch
             aria-label="Let Sani use Claude Code"

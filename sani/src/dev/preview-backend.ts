@@ -152,6 +152,8 @@ export function install(scenario: string): void {
   let uiState = "idle";
   let activeConversation = scenario === "empty" ? "" : "c1";
   const sent: Array<{ id: string; text: string }> = [];
+  let signedIn = scenario !== "signedout";
+  let login: { state: string; url: string; message: string } = { state: "idle", url: "", message: "" };
 
   const emit = (event: string, payload: unknown) => {
     const map = listeners.get(event);
@@ -568,7 +570,39 @@ export function install(scenario: string): void {
       else simulateTurn(text);
       return undefined;
     },
-    claude_code_status_cmd: () => claudeStatus(scenario !== "signedout"),
+    claude_code_status_cmd: () => ({ ...claudeStatus(signedIn), login }),
+    claude_code_auth_cmd: (args) => {
+      const action = String(args.action);
+      if (action === "login") {
+        login = {
+          state: "waiting",
+          url: "https://claude.com/cai/oauth/authorize?code=true&state=demo",
+          message: "Finish signing in in your browser.",
+        };
+        // The browser finishes the sign-in by itself a few seconds later.
+        window.setTimeout(() => {
+          if (login.state === "waiting") {
+            signedIn = true;
+            login = { state: "succeeded", url: "", message: "Signed in." };
+          }
+        }, 5000);
+      } else if (action === "code") {
+        if (String(args.code) === "DEMO") {
+          signedIn = true;
+          login = { state: "succeeded", url: "", message: "Signed in." };
+        } else {
+          login = { ...login, message: "That code didn't work. Check it and try again." };
+        }
+      } else if (action === "cancel") {
+        login = { state: "cancelled", url: "", message: "Sign-in cancelled." };
+      } else if (action === "logout") {
+        signedIn = false;
+        login = { state: "idle", url: "", message: "" };
+      }
+      return { ...claudeStatus(signedIn), login };
+    },
+    open_sign_in_link_cmd: () => undefined,
+    focus_main_cmd: () => undefined,
     apply_claude_code_settings: (args) => {
       const patch = (args.patch ?? {}) as Json;
       if (typeof patch.enabled === "boolean") settings.claude_code_enabled = patch.enabled;

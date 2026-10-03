@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MessageSquarePlus, Monitor, MoreHorizontal, Settings, Trash2 } from "lucide-react";
+import { MessageSquarePlus, Monitor, MoreHorizontal, Settings, SquareTerminal, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -20,6 +20,9 @@ import {
 import { cn } from "@/lib/utils";
 import { computerControlSnapshot, onComputerControlChange, type Conversation } from "@/lib/tauri";
 import { useConversations } from "@/chat/use-conversations";
+import { useClaudeCode } from "@/chat/use-claude-code";
+import { claudeHealth } from "@/chat/claude-health";
+import { StatusDot } from "@/components/status-dot";
 
 export type Section = "chat" | "control" | "settings";
 
@@ -96,10 +99,14 @@ function NavRow({
 export function Sidebar({
   section,
   onSection,
+  onOpenClaudeCode,
 }: {
   section: Section;
   onSection: (section: Section) => void;
+  onOpenClaudeCode: () => void;
 }) {
+  const claude = useClaudeCode();
+  const health = claudeHealth(claude.status, claude.loading);
   const { conversations, activeId, open, create, remove } = useConversations();
   const groups = useMemo(() => groupConversations(conversations), [conversations]);
   const controlReady = useControlReady();
@@ -192,6 +199,13 @@ export function Sidebar({
               </span>
             )
           }
+        />
+        <NavRow
+          icon={<SquareTerminal className="size-4" />}
+          label="Claude Code"
+          selected={false}
+          onClick={onOpenClaudeCode}
+          trailing={<StatusDot tone={health.tone} label={`Claude Code: ${health.title}`} />}
         />
         <NavRow
           icon={<Settings className="size-4" />}

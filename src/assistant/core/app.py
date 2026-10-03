@@ -57,6 +57,17 @@ _MISSION_METHODS = {
 }
 
 
+#: Sign-in controls for the user's Claude Code (buttons in Settings).
+_CLAUDE_CODE_ACTIONS = frozenset(
+    {
+        "claude_code.login_start",
+        "claude_code.login_code",
+        "claude_code.login_cancel",
+        "claude_code.logout",
+    }
+)
+
+
 def _now_ms() -> int:
     import time
 
@@ -148,6 +159,8 @@ class SaniCoreApp:
         run_wall_clock_seconds: float = RUN_WALL_CLOCK_SECONDS,
         mission_provider: Callable[[], Awaitable[Any]] | None = None,
         claude_code_provider: Callable[[], Awaitable[dict[str, Any]]] | None = None,
+        claude_code_actions: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
+        | None = None,
     ) -> None:
         if max_concurrent_runs < 1:
             raise ValueError("max_concurrent_runs must be at least 1")
@@ -162,6 +175,7 @@ class SaniCoreApp:
         self._mission_provider = mission_provider
         # Claude Code companion status: installed, signed in, folders, usage.
         self._claude_code_provider = claude_code_provider
+        self._claude_code_actions = claude_code_actions
 
     async def _missions(self) -> Any:
         if self._mission_provider is None:
@@ -211,6 +225,8 @@ class SaniCoreApp:
             return self._handle_system_status
         if method == "claude_code.status":
             return self._handle_claude_code_status
+        if method in _CLAUDE_CODE_ACTIONS:
+            return self._handle_claude_code_action
         if method in _MISSION_METHODS:
             return getattr(self, _MISSION_METHODS[method])
         return None
@@ -231,6 +247,13 @@ class SaniCoreApp:
             )
             return
         result = await self._claude_code_provider()
+        await session.send(response_from_request(request, result).to_frame())
+
+    async def _handle_claude_code_action(self, session: _Session, request: Request) -> None:
+        if self._claude_code_actions is None:
+            await session.send(error_from_request(request, "not available").to_frame())
+            return
+        result = await self._claude_code_actions(request.method, request.params)
         await session.send(response_from_request(request, result).to_frame())
 
     async def _handle_agents_list(self, session: _Session, request: Request) -> None:
