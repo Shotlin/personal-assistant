@@ -26,6 +26,7 @@ import {
 import ComputerControlStatus from "../ComputerControlStatus";
 import DiagnosticsPage from "../DiagnosticsPage";
 import ClaudeCodeSettings from "./ClaudeCodeSettings";
+import { PREVIEW_BUILD } from "../../dev/enabled";
 import OverlayLayoutEditor from "../OverlayLayoutEditor";
 import { useSettings } from "./SettingsContext";
 
@@ -94,7 +95,13 @@ export default function SettingsPage({ initialCategory = "General" }: { initialC
     useVoice,
     removeVoice,
   } = useSettings();
-  const [category, setCategory] = useState<SettingsCategory>(initialCategory);
+  const [category, setCategory] = useState<SettingsCategory>(() => {
+    // Preview only: `?category=Claude Code` opens that page directly.
+    const wanted = PREVIEW_BUILD ? new URLSearchParams(window.location.search).get("category") : null;
+    return (SETTINGS_CATEGORIES as readonly string[]).includes(wanted ?? "")
+      ? (wanted as SettingsCategory)
+      : initialCategory;
+  });
   const [keyCandidate, setKeyCandidate] = useState("");
   const [voiceBusy, setVoiceBusy] = useState("");
   const [removeTarget, setRemoveTarget] = useState("");

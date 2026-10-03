@@ -7,12 +7,20 @@ import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./settings/SettingsPage";
 import ComputerControlPage from "./ComputerControlPage";
 import { SettingsProvider } from "./settings/SettingsContext";
+import { PREVIEW_BUILD } from "../dev/enabled";
 import "../styles/app.css";
 // Legacy rules still used by the overlay layout editor until it is rebuilt.
 import "../styles/main.css";
 
+/** Preview only: `?open=settings` / `?open=control` lands on that page. */
+function initialSection(): Section {
+  if (!PREVIEW_BUILD) return "chat";
+  const open = new URLSearchParams(window.location.search).get("open");
+  return open === "settings" || open === "control" ? open : "chat";
+}
+
 function MainContents() {
-  const [section, setSection] = useState<Section>("chat");
+  const [section, setSection] = useState<Section>(initialSection);
   const openSettings = useCallback(() => setSection("settings"), []);
   useChatEvents(openSettings);
 

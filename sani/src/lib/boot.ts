@@ -2,6 +2,7 @@ import { StrictMode, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import type { ReactNode } from "react";
 import { emit } from "@tauri-apps/api/event";
+import { PREVIEW_BUILD } from "../dev/enabled";
 
 /**
  * Called once React has really mounted a window's root (from a child effect,
@@ -47,7 +48,7 @@ export function installErrorBridge(which: string): void {
  * browser. Compiled out of production builds by the DEV guard.
  */
 async function installPreviewIfRequested(): Promise<void> {
-  if (!import.meta.env.DEV) return;
+  if (!PREVIEW_BUILD) return;
   const params = new URLSearchParams(window.location.search);
   if (!params.has("preview") || "__TAURI_INTERNALS__" in window) return;
   const { install } = await import("../dev/preview-backend");

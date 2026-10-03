@@ -6,6 +6,8 @@ import { resolve } from "path";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   clearScreen: false,
+  // The shareable preview build escapes non-ASCII so every file is plain text.
+  esbuild: process.env.VITE_SANI_PREVIEW === "1" ? { charset: "ascii" } : undefined,
   resolve: {
     alias: { "@": resolve(__dirname, "src") },
   },

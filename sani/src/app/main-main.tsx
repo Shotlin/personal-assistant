@@ -1,5 +1,6 @@
 import MainApp from "./MainApp";
 import { mountApp } from "../lib/boot";
+import { PREVIEW_BUILD } from "../dev/enabled";
 
 /**
  * `?control-states` shows every computer-control state at once, through the same
@@ -14,7 +15,7 @@ import { mountApp } from "../lib/boot";
 const params = new URLSearchParams(window.location.search);
 const inBrowser = !("__TAURI_INTERNALS__" in window);
 const GALLERY = params.has("control-states") && inBrowser;
-const PREVIEW = import.meta.env.DEV && params.has("preview") && inBrowser;
+const PREVIEW = PREVIEW_BUILD && params.has("preview") && inBrowser;
 
 async function start() {
   if (GALLERY) {

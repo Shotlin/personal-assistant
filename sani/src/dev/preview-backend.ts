@@ -390,4 +390,14 @@ export function install(scenario: string): void {
     },
   };
   (window as unknown as { __saniPreview: unknown }).__saniPreview = { emit, sent };
+
+  // `?autorun=code` plays a Claude Code turn by itself, so a screenshot or a
+  // shared preview link shows the live steps without anyone typing.
+  const autorun = new URLSearchParams(window.location.search).get("autorun");
+  if (autorun === "code") {
+    window.setTimeout(
+      () => simulateCoding("Fix the cart total bug in my shop app and run the tests"),
+      1800,
+    );
+  }
 }
