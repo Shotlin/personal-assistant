@@ -5,6 +5,7 @@ import { ApprovalCard, MissionBar } from "@/components/chat/mission-bar";
 import { VoiceDraft } from "@/components/chat/voice-draft";
 import { useChatStore } from "@/chat/store";
 import { useMission } from "@/chat/use-mission";
+import { useClaudeCode } from "@/chat/use-claude-code";
 import { useSettings } from "@/app/settings/SettingsContext";
 import { pressEscape, startListening, stopListening, submitText } from "@/lib/tauri";
 
@@ -19,6 +20,7 @@ export default function ChatPage() {
   const partial = useChatStore((state) => state.partial);
   const { snapshot, agents, agentsAvailable, selectAgent } = useSettings();
   const mission = useMission(items);
+  const claudeCode = useClaudeCode();
 
   const capturing = uiState === "listening" || uiState === "preparing" || uiState === "finalizing";
   const working = uiState === "working";
@@ -50,6 +52,7 @@ export default function ChatPage() {
       onMic={onMic}
       onStop={() => void pressEscape()}
       autoFocus
+      claudeCode={claudeCode.status}
     />
   );
 

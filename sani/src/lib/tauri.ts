@@ -36,6 +36,8 @@ export interface ActivityEvent {
   tool?: string;
   duration_ms?: number;
   detail?: string;
+  /** Stable id of the step, so a finished row replaces its live "running" one. */
+  step_id?: string | null;
 }
 export interface TimingRecord { run_id: string; stage: string; elapsed_ms: number; status: string; }
 
@@ -135,6 +137,9 @@ export interface FullSettingsSnapshot extends SettingsShape {
   screen_recording_permission: string;
   storage_path: string;
   technical_retention_days: number;
+  claude_code_enabled: boolean;
+  claude_code_dirs: string[];
+  claude_code_permission: ClaudeCodePermission;
 }
 
 // ------------------------------------------------------- overlay layout editor
@@ -204,6 +209,54 @@ export interface OverlayEditorState {
   preview_active: boolean;
   limits: OverlayLimits;
 }
+
+// ------------------------------------------------------- Claude Code companion
+
+export type ClaudeCodePermission = "read" | "edit" | "run";
+
+export interface ClaudeCodeRate {
+  status?: string;
+  resets_at?: number | null;
+  used_percent?: number | null;
+  seen_at?: number;
+}
+
+/** What Sani knows about the user's own Claude Code. No secrets, no API key. */
+export interface ClaudeCodeStatus {
+  enabled: boolean;
+  permission: ClaudeCodePermission;
+  folders: string[];
+  claude: {
+    installed: boolean;
+    path: string;
+    version: string;
+    signed_in: boolean;
+    auth_method: string;
+    detail: string;
+  };
+  usage: {
+    rates: Record<string, ClaudeCodeRate>;
+    last_run: {
+      conversation?: string;
+      session_id?: string;
+      context_tokens?: number | null;
+      context_window?: number | null;
+      cost_usd?: number | null;
+      turns?: number;
+      at?: number;
+    };
+    context_percent: number | null;
+  };
+}
+
+export const claudeCodeStatus = () => invoke<ClaudeCodeStatus>("claude_code_status_cmd");
+export const applyClaudeCodeSettings = (patch: {
+  enabled?: boolean;
+  dirs?: string[];
+  permission?: ClaudeCodePermission;
+}) => invoke<FullSettingsSnapshot>("apply_claude_code_settings", { patch });
+/** Native folder chooser; null when the user cancels. */
+export const pickFolder = () => invoke<string | null>("pick_folder_cmd");
 
 // ---------------------------------------------------------------- events
 

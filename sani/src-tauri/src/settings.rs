@@ -137,6 +137,20 @@ pub struct Settings {
     /// before the layout editor existed, which resolves to the defaults.
     #[serde(default)]
     pub overlay_layout: Option<OverlayLayoutSettings>,
+    /// Claude Code companion: Sani drives the user's own Claude Code. Off by
+    /// default; no API key is involved. `claude_code_dirs` are the only folders
+    /// it may work in, `claude_code_permission` is the most a run may do
+    /// (read, edit, or run = edit + run commands).
+    #[serde(default)]
+    pub claude_code_enabled: bool,
+    #[serde(default)]
+    pub claude_code_dirs: Vec<String>,
+    #[serde(default = "default_claude_code_permission")]
+    pub claude_code_permission: String,
+}
+
+fn default_claude_code_permission() -> String {
+    "edit".into()
 }
 
 fn default_agent_mode() -> String {
@@ -266,7 +280,9 @@ pub fn load(app: &tauri::AppHandle) -> Settings {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default();
             let canonical = canonical_agent_mode(persisted);
-            if object.get("agent_mode").and_then(serde_json::Value::as_str) != Some(canonical.as_str()) {
+            if object.get("agent_mode").and_then(serde_json::Value::as_str)
+                != Some(canonical.as_str())
+            {
                 object.insert("agent_mode".into(), serde_json::Value::String(canonical));
                 match serde_json::to_string_pretty(&value) {
                     Ok(updated) => {

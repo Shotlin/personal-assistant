@@ -25,12 +25,14 @@ import {
 } from "@/lib/tauri";
 import ComputerControlStatus from "../ComputerControlStatus";
 import DiagnosticsPage from "../DiagnosticsPage";
+import ClaudeCodeSettings from "./ClaudeCodeSettings";
 import OverlayLayoutEditor from "../OverlayLayoutEditor";
 import { useSettings } from "./SettingsContext";
 
 export const SETTINGS_CATEGORIES = [
   "General",
   "Models",
+  "Claude Code",
   "Voice",
   "Computer control",
   "Appearance",
@@ -231,6 +233,8 @@ export default function SettingsPage({ initialCategory = "General" }: { initialC
               </SettingsRow>
             </SettingsGroup>
           ) : null}
+
+          {category === "Claude Code" ? <ClaudeCodeSettings /> : null}
 
           {category === "Voice" ? (
             <>

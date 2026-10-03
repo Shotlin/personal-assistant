@@ -123,7 +123,11 @@ fn parse_process_rows(output: &str) -> Vec<ProcessRow> {
             Some(ProcessRow {
                 pid,
                 ppid,
-                args: line.split_whitespace().skip(2).collect::<Vec<_>>().join(" "),
+                args: line
+                    .split_whitespace()
+                    .skip(2)
+                    .collect::<Vec<_>>()
+                    .join(" "),
             })
         })
         .collect()
@@ -265,7 +269,6 @@ fn live_driver_pids() -> Vec<ProcessRow> {
         }
     }
 }
-
 
 /// A filesystem entry at the private endpoint is not enough: a crashed CUA
 /// daemon can leave its Unix socket behind.  Treat the driver as live only
@@ -451,6 +454,21 @@ impl SaniCoreConfig {
         if !settings.reasoning_model.trim().is_empty() {
             env.push(("MODEL_NAME".to_string(), settings.reasoning_model.clone()));
         }
+        // Claude Code companion: non-secret configuration only. The child that
+        // eventually runs `claude` is given a scrubbed environment by the core.
+        if settings.claude_code_enabled {
+            env.push(("CLAUDE_CODE_ENABLED".to_string(), "1".to_string()));
+        }
+        if !settings.claude_code_dirs.is_empty() {
+            env.push((
+                "CLAUDE_CODE_DIRS".to_string(),
+                settings.claude_code_dirs.join(":"),
+            ));
+        }
+        env.push((
+            "CLAUDE_CODE_PERMISSION".to_string(),
+            settings.claude_code_permission.clone(),
+        ));
         // Credentials go to the child's environment only -- never argv, never
         // the log. Only the variable name is ever written out.
         let openrouter = crate::settings::secret_read(crate::onboarding::OPENROUTER_KEY_SERVICE);
@@ -544,7 +562,10 @@ fn override_core(app: &AppHandle) -> Option<PathBuf> {
 
 fn packaged_core(app: &AppHandle) -> Option<PathBuf> {
     if let Some(path) = override_core(app) {
-        log::warn!("sani-core: using the local core override at {}", path.display());
+        log::warn!(
+            "sani-core: using the local core override at {}",
+            path.display()
+        );
         return Some(path);
     }
     // Frozen Python is a directory runtime on macOS so every dylib can be
@@ -572,11 +593,17 @@ pub enum DriverProbe {
         screen_recording: bool,
     },
     /// The daemon refused on policy grounds before it evaluated permissions.
-    PolicyLocked { detail: String },
+    PolicyLocked {
+        detail: String,
+    },
     /// Nothing answered: not started, socket dead, or it exited mid-probe.
-    Unreachable { detail: String },
+    Unreachable {
+        detail: String,
+    },
     Timeout,
-    Malformed { detail: String },
+    Malformed {
+        detail: String,
+    },
 }
 
 impl DriverProbe {
@@ -658,7 +685,12 @@ fn read_driver_session_count(app: &AppHandle) -> Option<usize> {
     let cua = SaniCoreConfig::resolve(app).ok()?.cua?;
     let run = run_driver_cli(
         &cua.command,
-        &["sessions", "--json", "--socket", cua.socket.to_string_lossy().as_ref()],
+        &[
+            "sessions",
+            "--json",
+            "--socket",
+            cua.socket.to_string_lossy().as_ref(),
+        ],
         DRIVER_PERMISSION_TIMEOUT,
     )
     .ok()?;
@@ -744,7 +776,10 @@ pub async fn driver_probe(app: AppHandle) -> DriverProbe {
 }
 
 fn read_driver_probe(app: &AppHandle) -> DriverProbe {
-    let Some(cua) = SaniCoreConfig::resolve(app).ok().and_then(|config| config.cua) else {
+    let Some(cua) = SaniCoreConfig::resolve(app)
+        .ok()
+        .and_then(|config| config.cua)
+    else {
         return DriverProbe::Unreachable {
             detail: "Sani's packaged computer-control driver is missing".to_string(),
         };
@@ -1060,9 +1095,10 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> CoreTransport<R, W> {
         deadline: tokio::time::Instant,
         mut cancel: watch::Receiver<bool>,
         mut control_rx: Option<
-            tokio::sync::mpsc::Receiver<
-                (Value, tokio::sync::oneshot::Sender<Result<Value, String>>),
-            >,
+            tokio::sync::mpsc::Receiver<(
+                Value,
+                tokio::sync::oneshot::Sender<Result<Value, String>>,
+            )>,
         >,
     ) -> Result<Value, String> {
         let id = next_request_id();
@@ -1255,9 +1291,10 @@ impl SaniCoreClient {
         on_event: impl FnMut(Value) + Send,
         cancel: watch::Receiver<bool>,
         control_rx: Option<
-            tokio::sync::mpsc::Receiver<
-                (Value, tokio::sync::oneshot::Sender<Result<Value, String>>),
-            >,
+            tokio::sync::mpsc::Receiver<(
+                Value,
+                tokio::sync::oneshot::Sender<Result<Value, String>>,
+            )>,
         >,
     ) -> Result<Value, String> {
         if self.streaming {
@@ -1388,9 +1425,9 @@ pub struct SaniCoreState {
     /// R08: mission controls emitted while a run streams. The run loop
     /// writes them on the same stream and routes responses back by id.
     mission_controls: Mutex<
-        Option<tokio::sync::mpsc::Sender<
-            (Value, tokio::sync::oneshot::Sender<Result<Value, String>>),
-        >>,
+        Option<
+            tokio::sync::mpsc::Sender<(Value, tokio::sync::oneshot::Sender<Result<Value, String>>)>,
+        >,
     >,
 }
 
@@ -1450,7 +1487,10 @@ async fn stop_embedded_cua_driver(driver: EmbeddedCuaDriver) {
     if let Err(err) = child.kill().await {
         log::debug!("embedded CUA driver was already stopped: {err}");
     }
-    if tokio::time::timeout(DRIVER_STOP_WAIT, child.wait()).await.is_err() {
+    if tokio::time::timeout(DRIVER_STOP_WAIT, child.wait())
+        .await
+        .is_err()
+    {
         log::warn!("embedded CUA driver did not exit within the stop budget");
     }
     remove_driver_socket(&socket);
@@ -1586,7 +1626,8 @@ async fn ensure_embedded_cua_driver(
         // endpoint after the next restart and carries the old code identity.
         // Signal it directly: Sani's daemon shares this socket, so a polite
         // endpoint-level `stop` would tear down the healthy generation instead.
-        let foreign = foreign_driver_pids(&live_driver_pids(), &config.socket, owned_driver_pid(app));
+        let foreign =
+            foreign_driver_pids(&live_driver_pids(), &config.socket, owned_driver_pid(app));
         if !foreign.is_empty() {
             let (reclaimed, surviving) =
                 reclaim_socket_endpoint(&config.command, &config.socket, &foreign, false, false)
@@ -1618,10 +1659,7 @@ async fn ensure_embedded_cua_driver(
         .lock()
         .map_err(|_| "embedded CUA driver state poisoned".to_string())?
         .replace(driver);
-    log::info!(
-        "embedded {} CUA driver started",
-        config.mode.as_str()
-    );
+    log::info!("embedded {} CUA driver started", config.mode.as_str());
     Ok(())
 }
 
@@ -1634,8 +1672,8 @@ pub async fn recover_embedded_cua_driver(app: &AppHandle) -> Result<(), String> 
         .cua
         .as_ref()
         .ok_or_else(|| "Sani’s packaged computer-control driver is missing".to_string())?;
-    let driver_was_live = owned_driver_pid(app).is_some()
-        && embedded_driver_socket_ready(&cua.socket).await;
+    let driver_was_live =
+        owned_driver_pid(app).is_some() && embedded_driver_socket_ready(&cua.socket).await;
     ensure_embedded_cua_driver(app, cua).await?;
     // Un-latch the boot failure. A daemon that missed its 10-second window at
     // login used to leave the sidecar running with CUA disabled forever: this
@@ -1795,7 +1833,9 @@ async fn list_agents_with_recovery(app: &AppHandle) -> Result<Vec<Value>, String
     stop_unlocked(app).await;
     start_unlocked(app).await?;
     match list_agents_once(app).await {
-        Ok(agents) if agents.is_empty() => Err("sani-core registry returned no agents after recovery".into()),
+        Ok(agents) if agents.is_empty() => {
+            Err("sani-core registry returned no agents after recovery".into())
+        }
         Ok(agents) => {
             RECOVERY.lock().succeeded();
             Ok(agents)
@@ -1906,7 +1946,9 @@ pub async fn run_turn(
         .map(|stop| stop.is_latched())
         .unwrap_or(false)
     {
-        return Err("emergency stop is latched; new runs are refused until it is reset".to_string());
+        return Err(
+            "emergency stop is latched; new runs are refused until it is reset".to_string(),
+        );
     }
     let _operation = operation_guard(app).await;
     // C06/N09: the latch is RE-CHECKED after the operation lock admits this
@@ -1917,7 +1959,9 @@ pub async fn run_turn(
         .map(|stop| stop.is_latched())
         .unwrap_or(false)
     {
-        return Err("emergency stop is latched; new runs are refused until it is reset".to_string());
+        return Err(
+            "emergency stop is latched; new runs are refused until it is reset".to_string(),
+        );
     }
     let mut client = take_client(app)?.ok_or_else(|| "sani-core is not running".to_string())?;
     // T08: the caller's stable message id IS the request identity, so the
@@ -2035,6 +2079,13 @@ pub async fn mission_control_cmd(
     params: Value,
 ) -> Result<Value, String> {
     route_mission_request(&app, &method, params).await
+}
+
+/// Is Claude Code installed and signed in, which folders and limits apply, and
+/// the last usage numbers it reported (read-only).
+#[tauri::command]
+pub async fn claude_code_status_cmd(app: AppHandle) -> Result<Value, String> {
+    route_mission_request(&app, "claude_code.status", json!({})).await
 }
 
 /// Read one mission's durable record (UI status truth; read-only).
@@ -2173,8 +2224,8 @@ pub fn spawn_supervisor(app: AppHandle) {
     std::thread::spawn(move || {
         let mut last_online: Option<bool> = None;
         let mut tick = 0usize;
-        let core_every = (SUPERVISOR_INTERVAL.as_secs() / DRIVER_WATCHDOG_INTERVAL.as_secs())
-            .max(1) as usize;
+        let core_every =
+            (SUPERVISOR_INTERVAL.as_secs() / DRIVER_WATCHDOG_INTERVAL.as_secs()).max(1) as usize;
         loop {
             std::thread::sleep(DRIVER_WATCHDOG_INTERVAL);
             tick += 1;
@@ -2277,10 +2328,7 @@ async fn driver_watchdog_tick(app: AppHandle) -> Result<Option<String>, String> 
             .state::<SaniCoreState>()
             .core_has_cua
             .load(Ordering::Relaxed);
-        if !CORE_STARTED_ONCE.load(Ordering::Relaxed)
-            || !core_without_cua
-            || !allow_recovery()
-        {
+        if !CORE_STARTED_ONCE.load(Ordering::Relaxed) || !core_without_cua || !allow_recovery() {
             return Ok(None);
         }
         recover_embedded_cua_driver(&app).await?;
@@ -2295,9 +2343,9 @@ async fn driver_watchdog_tick(app: AppHandle) -> Result<Option<String>, String> 
                 "the embedded driver is not live (child running: {child_alive}, \
                  endpoint accepting: {endpoint_ready}); reclaiming Sani's private socket"
             );
-            recover_embedded_cua_driver(&app)
-                .await
-                .map(|_| Some("reclaimed the endpoint and started a replacement driver".to_string()))
+            recover_embedded_cua_driver(&app).await.map(|_| {
+                Some("reclaimed the endpoint and started a replacement driver".to_string())
+            })
         }
     }
 }
@@ -2385,10 +2433,7 @@ mod tests {
     #[test]
     fn the_watchdog_recovers_a_dead_driver_but_never_interferes_with_a_live_turn() {
         use DriverWatchdogAction::{Leave, Recover, Skip};
-        assert_eq!(
-            driver_watchdog_action(false, true, true, false),
-            Skip
-        );
+        assert_eq!(driver_watchdog_action(false, true, true, false), Skip);
         assert_eq!(driver_watchdog_action(true, true, true, false), Leave);
         // Either half failing means no usable daemon: both are recoveries.
         assert_eq!(driver_watchdog_action(true, false, true, false), Recover);
@@ -2419,7 +2464,11 @@ mod tests {
 
     #[test]
     fn an_orphaned_driver_on_the_same_socket_is_detected_as_foreign() {
-        let foreign = foreign_driver_pids(&parse_process_rows(PS_SAMPLE), &sample_socket(), Some(39344));
+        let foreign = foreign_driver_pids(
+            &parse_process_rows(PS_SAMPLE),
+            &sample_socket(),
+            Some(39344),
+        );
         assert_eq!(foreign, vec![38668]);
     }
 
@@ -2444,7 +2493,11 @@ mod tests {
 
     #[test]
     fn permission_probe_keeps_a_policy_lockout_apart_from_a_denial() {
-        let locked = read_probe_text("Policy loading error: capability manifest idle timeout exceeded\n", "", 2);
+        let locked = read_probe_text(
+            "Policy loading error: capability manifest idle timeout exceeded\n",
+            "",
+            2,
+        );
         assert!(matches!(locked, DriverProbe::PolicyLocked { .. }));
         let dead = read_probe_text("", "connect to /x/cua-driver.sock: No such file\n", 1);
         assert!(matches!(dead, DriverProbe::Unreachable { .. }));
@@ -2469,9 +2522,13 @@ mod tests {
 
     fn driver_config(mode: CuaPermissionMode) -> EmbeddedCuaConfig {
         EmbeddedCuaConfig {
-            command: PathBuf::from("/Applications/Sani.app/Contents/Resources/CuaDriver.app/Contents/MacOS/cua-driver"),
+            command: PathBuf::from(
+                "/Applications/Sani.app/Contents/Resources/CuaDriver.app/Contents/MacOS/cua-driver",
+            ),
             socket: sample_socket(),
-            manifest: PathBuf::from("/Applications/Sani.app/Contents/Resources/config/cua-capabilities.yaml"),
+            manifest: PathBuf::from(
+                "/Applications/Sani.app/Contents/Resources/config/cua-capabilities.yaml",
+            ),
             mode,
         }
     }
@@ -2487,7 +2544,10 @@ mod tests {
             parse_permission_mode("  permission mode: standard (built_in_default)\n"),
             Some("standard".to_string())
         );
-        assert_eq!(parse_permission_mode("Cua Driver daemon is not running\n"), None);
+        assert_eq!(
+            parse_permission_mode("Cua Driver daemon is not running\n"),
+            None
+        );
         assert_eq!(parse_permission_mode("permission mode:\n"), None);
     }
 
@@ -2580,7 +2640,10 @@ mod tests {
         let (reclaimed, surviving) =
             reclaim_socket_endpoint(&config.command, &socket, &foreign, true, true).await;
         assert_eq!(reclaimed, foreign);
-        assert!(surviving.is_empty(), "a daemon survived every shutdown rung");
+        assert!(
+            surviving.is_empty(),
+            "a daemon survived every shutdown rung"
+        );
         assert!(
             !embedded_driver_socket_ready(&socket).await,
             "the endpoint should be gone after reclaim"
@@ -2955,7 +3018,10 @@ mod tests {
 
         let pid = *pid.lock().unwrap();
         assert!(pid > 0, "the stand-in daemon reported a pid");
-        assert!(!socket.exists(), "the endpoint file must be cleared on stop");
+        assert!(
+            !socket.exists(),
+            "the endpoint file must be cleared on stop"
+        );
         let still_alive = std::process::Command::new("/bin/kill")
             .args(["-0", &pid.to_string()])
             .stdout(std::process::Stdio::null())

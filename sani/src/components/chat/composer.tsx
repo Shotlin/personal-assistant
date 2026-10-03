@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { AgentDescriptor, UiState } from "@/lib/tauri";
+import type { AgentDescriptor, ClaudeCodeStatus, UiState } from "@/lib/tauri";
+import { UsageMeter } from "./usage-meter";
 
 const MAX_HEIGHT_PX = 220;
 
@@ -25,6 +26,8 @@ export interface ComposerProps {
   onMic: () => void;
   onStop: () => void;
   autoFocus?: boolean;
+  /** Claude Code usage facts, when the companion is on and reporting. */
+  claudeCode?: ClaudeCodeStatus | null;
 }
 
 /** One quiet key hint, shown as a chord only (DESIGN T5). */
@@ -46,6 +49,7 @@ export function Composer({
   onMic,
   onStop,
   autoFocus,
+  claudeCode = null,
 }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -138,6 +142,7 @@ export function Composer({
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+          <UsageMeter status={claudeCode} />
         </div>
 
         <div className="flex items-center gap-1.5">

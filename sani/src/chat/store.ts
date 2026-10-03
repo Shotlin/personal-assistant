@@ -53,7 +53,8 @@ function toStepStatus(value: string): StepStatus {
 export function stepFromActivity(event: ActivityEvent): StepPart {
   return {
     type: "step",
-    id: `${event.run_id}:${event.sequence}`,
+    // A structured step keeps its own id so the finished row replaces the live one.
+    id: event.step_id ? `${event.run_id}:${event.step_id}` : `${event.run_id}:${event.sequence}`,
     label: event.label,
     status: toStepStatus(event.status),
     tool: event.tool,

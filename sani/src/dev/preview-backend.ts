@@ -6,7 +6,9 @@
  * card can be reached without the Rust host, the sidecar, or any credentials.
  * It is only imported behind `import.meta.env.DEV`, so it never ships.
  *
- * Scenarios (`?preview&scenario=...`): `empty`, `history` (default), `approval`.
+ * Scenarios (`?preview&scenario=...`): `empty`, `history` (default), `approval`,
+ * `signedout` (Claude Code installed but not signed in). Typing a message with a coding
+ * word (fix, bug, build, test, code, app) plays a Claude Code turn.
  */
 type Json = Record<string, unknown>;
 
@@ -69,7 +71,32 @@ const settings = {
   screen_recording_permission: "granted",
   storage_path: "/Users/you/Library/Application Support/Sani",
   technical_retention_days: 14,
+  claude_code_enabled: true,
+  claude_code_dirs: ["/Users/you/Projects/shop-app"],
+  claude_code_permission: "edit",
 };
+
+const claudeStatus = (signedIn: boolean) => ({
+  enabled: settings.claude_code_enabled,
+  permission: settings.claude_code_permission,
+  folders: settings.claude_code_dirs,
+  claude: {
+    installed: true,
+    path: "/Users/you/.local/bin/claude",
+    version: "2.1.286",
+    signed_in: signedIn,
+    auth_method: signedIn ? "claude.ai" : "none",
+    detail: signedIn ? "" : "Not signed in. Run `claude auth login` once in Terminal.",
+  },
+  usage: {
+    rates: {
+      five_hour: { status: "allowed", resets_at: Date.now() / 1000 + 5400, used_percent: 61 },
+      seven_day: { status: "allowed", resets_at: Date.now() / 1000 + 400000, used_percent: 23 },
+    },
+    last_run: { context_tokens: 94000, context_window: 200000, turns: 6 },
+    context_percent: 47,
+  },
+});
 
 const control = {
   status: "ready",
@@ -193,6 +220,53 @@ export function install(scenario: string): void {
     });
   };
 
+  /** A Claude Code turn: real-looking steps that start running, then finish. */
+  const simulateCoding = (text: string) => {
+    const userId = `u${Date.now()}`;
+    const runId = `run${Date.now()}`;
+    emit("sani://message", { id: userId, role: "user", text, created_at: Date.now() });
+    setState("working");
+    let t = 200;
+    const at = (ms: number, fn: () => void) => window.setTimeout(fn, (t += ms));
+    at(0, () => emit("sani://agent-start", { message_id: userId, run_id: runId, agent_id: "deep", agent_name: "Deep Agent" }));
+    const step = (id: string, label: string, status: string, extra: Json = {}) =>
+      emit("sani://activity", {
+        sequence: 0, run_id: runId, agent_id: "deep", event_type: "agent.step",
+        timestamp: Date.now(), label, status, step_id: id, ...extra,
+      });
+    at(300, () => step("cc:open", "Opened Claude Code in shop-app", "info"));
+    at(500, () => step("cc:1", "Read src/cart.ts", "running", { tool: "Read" }));
+    at(800, () => step("cc:1", "Read src/cart.ts", "complete", { tool: "Read", duration_ms: 310 }));
+    at(300, () => step("cc:2", "Edited src/cart.ts", "running", { tool: "Edit" }));
+    at(900, () =>
+      step("cc:2", "Edited src/cart.ts", "complete", {
+        tool: "Edit", duration_ms: 880,
+        detail: "- const total = items.reduce((s, i) => s + i.price, 0)\n+ const total = items.reduce((s, i) => s + i.price * i.qty, 0)",
+      }),
+    );
+    at(300, () => step("cc:3", "Ran `npm test`", "running", { tool: "Bash" }));
+    at(1400, () =>
+      step("cc:3", "Ran `npm test`", "failed", {
+        tool: "Bash", duration_ms: 6400,
+        detail: "npm test\n\n→ FAIL src/cart.test.ts\n  expected 30, received 20",
+      }),
+    );
+    at(300, () => step("cc:4", "Edited src/cart.test.ts", "running", { tool: "Edit" }));
+    at(700, () => step("cc:4", "Edited src/cart.test.ts", "complete", { tool: "Edit", duration_ms: 540 }));
+    at(300, () => step("cc:5", "Ran `npm test`", "running", { tool: "Bash" }));
+    at(1200, () => step("cc:5", "Ran `npm test`", "complete", { tool: "Bash", duration_ms: 5200 }));
+    const answer =
+      "Fixed the cart total: it ignored quantity, so a line with 2 items was counted once.\n\n- Changed `src/cart.ts` to multiply price by quantity\n- Updated the matching test\n\nThe first test run failed, then passed after the test fix. All 14 tests pass.";
+    at(300, () => {
+      emit("sani://agent-done", {
+        message_id: userId, run_id: runId, ok: true, status: "completed", error: "",
+        agent_id: "deep", agent_name: "Deep Agent", assistant_message_id: `a${Date.now()}`,
+        text: answer, created_at: Date.now(),
+      });
+      setState("idle");
+    });
+  };
+
   const handlers: Record<string, (args: Json) => unknown> = {
     get_state: () => ({
       state: uiState,
@@ -233,9 +307,21 @@ export function install(scenario: string): void {
     core_status: () => ({ ok: true }),
     main_ready: () => undefined,
     submit_text_cmd: (args) => {
-      simulateTurn(String(args.text));
+      const text = String(args.text);
+      if (/\b(code|fix|bug|build|test|app)\b/i.test(text)) simulateCoding(text);
+      else simulateTurn(text);
       return undefined;
     },
+    claude_code_status_cmd: () => claudeStatus(scenario !== "signedout"),
+    apply_claude_code_settings: (args) => {
+      const patch = (args.patch ?? {}) as Json;
+      if (typeof patch.enabled === "boolean") settings.claude_code_enabled = patch.enabled;
+      if (Array.isArray(patch.dirs)) settings.claude_code_dirs = patch.dirs as string[];
+      if (typeof patch.permission === "string") settings.claude_code_permission = patch.permission;
+      emit("settings://changed", settings);
+      return settings;
+    },
+    pick_folder_cmd: () => "/Users/you/Projects/blog",
     escape_cmd: () => {
       setState("idle");
       return undefined;

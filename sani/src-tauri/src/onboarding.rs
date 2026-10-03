@@ -219,6 +219,9 @@ pub struct FullSettingsSnapshot {
     pub screen_recording_permission: String,
     pub storage_path: String,
     pub technical_retention_days: u32,
+    pub claude_code_enabled: bool,
+    pub claude_code_dirs: Vec<String>,
+    pub claude_code_permission: String,
 }
 
 fn full_settings_snapshot(app: &AppHandle) -> FullSettingsSnapshot {
@@ -257,6 +260,9 @@ fn full_settings_snapshot(app: &AppHandle) -> FullSettingsSnapshot {
         screen_recording_permission: system_permissions::screen_recording().as_str().into(),
         storage_path,
         technical_retention_days: s.technical_retention_days,
+        claude_code_enabled: s.claude_code_enabled,
+        claude_code_dirs: s.claude_code_dirs,
+        claude_code_permission: s.claude_code_permission,
     }
 }
 
@@ -342,6 +348,140 @@ pub async fn apply_ai_settings(
     Ok(full_settings_snapshot(&app))
 }
 
+/// What the user may change about the Claude Code companion.
+#[derive(Deserialize, Default)]
+pub struct ClaudeCodePatch {
+    pub enabled: Option<bool>,
+    pub dirs: Option<Vec<String>>,
+    pub permission: Option<String>,
+}
+
+const CLAUDE_CODE_MAX_DIRS: usize = 12;
+
+/// Normalise the folder list: absolute, existing, resolved through symlinks,
+/// never the whole disk or the whole home folder, no duplicates. The core
+/// re-checks every one of these at run time; this keeps bad values out of the
+/// settings file and the user's screen.
+pub(crate) fn clean_claude_code_dirs(
+    dirs: &[String],
+    home: Option<&std::path::Path>,
+) -> Result<Vec<String>, String> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in dirs {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            continue;
+        }
+        if raw.contains(':') {
+            return Err(format!(
+                "{raw}: folder names with a colon are not supported."
+            ));
+        }
+        let path = std::path::Path::new(raw);
+        if !path.is_absolute() {
+            return Err(format!("{raw} isn't a full folder path."));
+        }
+        let resolved = std::fs::canonicalize(path)
+            .map_err(|_| format!("{raw} isn't a folder on this Mac."))?;
+        if !resolved.is_dir() {
+            return Err(format!("{raw} isn't a folder."));
+        }
+        if resolved.parent().is_none() {
+            return Err("Choose a project folder, not the whole disk.".into());
+        }
+        if home.is_some_and(|home| std::fs::canonicalize(home).ok().as_deref() == Some(&resolved)) {
+            return Err("Choose a project folder, not your whole home folder.".into());
+        }
+        let text = resolved.to_string_lossy().into_owned();
+        if !out.contains(&text) {
+            out.push(text);
+        }
+    }
+    if out.len() > CLAUDE_CODE_MAX_DIRS {
+        return Err(format!("At most {CLAUDE_CODE_MAX_DIRS} project folders."));
+    }
+    Ok(out)
+}
+
+fn validate_claude_code_patch(patch: &ClaudeCodePatch) -> Result<Option<Vec<String>>, String> {
+    if let Some(permission) = &patch.permission {
+        if !matches!(permission.as_str(), "read" | "edit" | "run") {
+            return Err("Permission must be read, edit or run.".into());
+        }
+    }
+    match &patch.dirs {
+        Some(dirs) => {
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            clean_claude_code_dirs(dirs, home.as_deref()).map(Some)
+        }
+        None => Ok(None),
+    }
+}
+
+/// Persist the Claude Code companion settings and restart the sidecar so it
+/// sees them, with the same honest ready / failed-to-apply states as the AI
+/// settings. Refused while a task is running.
+#[tauri::command]
+pub async fn apply_claude_code_settings(
+    app: AppHandle,
+    patch: ClaudeCodePatch,
+) -> Result<FullSettingsSnapshot, String> {
+    let dirs = validate_claude_code_patch(&patch)?;
+    if crate::sani_core::is_run_live(&app) {
+        return Err("Finish the current task before changing these settings.".into());
+    }
+    {
+        let settings_arc = app_state::settings(&app);
+        let mut s = settings_arc.write();
+        if let Some(enabled) = patch.enabled {
+            s.claude_code_enabled = enabled;
+        }
+        if let Some(dirs) = dirs {
+            s.claude_code_dirs = dirs;
+        }
+        if let Some(permission) = patch.permission {
+            s.claude_code_permission = permission;
+        }
+        settings::save(&app, &s)?;
+    }
+    set_apply_status(&app, ApplyStatus::Saved);
+    emit_settings_changed(&app);
+    set_apply_status(&app, ApplyStatus::Applying);
+    emit_settings_changed(&app);
+    match crate::sani_core::reload_for_settings(app.clone()).await {
+        Ok(()) => set_apply_status(&app, ApplyStatus::Ready),
+        Err(error) => {
+            log::warn!("claude code settings failed to apply: {}", error);
+            set_apply_status(&app, ApplyStatus::FailedToApply);
+        }
+    }
+    emit_settings_changed(&app);
+    Ok(full_settings_snapshot(&app))
+}
+
+/// Native folder chooser (macOS), so the user never types a path. Returns
+/// `None` when they cancel.
+#[tauri::command]
+pub async fn pick_folder_cmd() -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let output = std::process::Command::new("/usr/bin/osascript")
+            .args([
+                "-e",
+                "POSIX path of (choose folder with prompt \"Choose a project folder for Claude Code\")",
+            ])
+            .output()
+            .map_err(|err| err.to_string())?;
+        if !output.status.success() {
+            // Cancel exits non-zero; that is a choice, not an error.
+            return Ok(None);
+        }
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok((!text.is_empty()).then(|| text.trim_end_matches('/').to_string()))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 #[tauri::command]
 pub async fn save_ai_config(app: AppHandle, patch: AiConfigPatch) -> Result<AiConfig, String> {
     apply_ai_settings(app.clone(), patch).await?;
@@ -369,7 +509,9 @@ pub async fn store_provider_key(
     }
     let trimmed = key.trim();
     if trimmed.is_empty() {
-        return Err("Enter a replacement key. Removing a saved key is a separate confirmed action.".into());
+        return Err(
+            "Enter a replacement key. Removing a saved key is a separate confirmed action.".into(),
+        );
     }
     let stored = settings::secret_write(service, trimmed);
     if !stored {
@@ -797,9 +939,7 @@ pub async fn computer_control_snapshot(app: AppHandle) -> ComputerControlSnapsho
 
 #[cfg(test)]
 mod control_tests {
-    use super::{
-        control_state_of, runtime_word, status_word, ControlState,
-    };
+    use super::{control_state_of, runtime_word, status_word, ControlState};
     use crate::sani_core::DriverProbe;
 
     fn answered(a: bool, s: bool) -> DriverProbe {
@@ -840,14 +980,8 @@ mod control_tests {
 
     #[test]
     fn only_a_denial_the_driver_itself_answered_reads_as_not_authorized() {
-        assert_eq!(
-            healthy(answered(false, true)),
-            ControlState::NotAuthorized
-        );
-        assert_eq!(
-            healthy(answered(true, false)),
-            ControlState::NotAuthorized
-        );
+        assert_eq!(healthy(answered(false, true)), ControlState::NotAuthorized);
+        assert_eq!(healthy(answered(true, false)), ControlState::NotAuthorized);
     }
 
     #[test]
@@ -857,7 +991,10 @@ mod control_tests {
         });
         assert_eq!(locked, ControlState::PolicyLocked);
         assert_eq!(status_word(locked), "policy_locked");
-        assert_ne!(runtime_word(locked), runtime_word(ControlState::NotAuthorized));
+        assert_ne!(
+            runtime_word(locked),
+            runtime_word(ControlState::NotAuthorized)
+        );
     }
 
     #[test]
@@ -877,7 +1014,10 @@ mod control_tests {
             assert!(!status_word(state).is_empty());
             assert!(!runtime_word(state).is_empty());
             assert_eq!(
-                states.iter().filter(|other| runtime_word(**other) == runtime_word(state)).count(),
+                states
+                    .iter()
+                    .filter(|other| runtime_word(**other) == runtime_word(state))
+                    .count(),
                 1,
                 "{state:?} shares its runtime word"
             );
@@ -893,7 +1033,10 @@ mod control_tests {
             runtime_word(ControlState::PermissionRequired),
             runtime_word(ControlState::NotAuthorized)
         );
-        assert_eq!(status_word(ControlState::PermissionRequired), "permission_required");
+        assert_eq!(
+            status_word(ControlState::PermissionRequired),
+            "permission_required"
+        );
     }
 
     #[test]
@@ -905,7 +1048,15 @@ mod control_tests {
             ControlState::RestartRequired
         );
         assert_eq!(
-            control_state_of(false, false, false, false, false, false, &DriverProbe::Timeout),
+            control_state_of(
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                &DriverProbe::Timeout
+            ),
             ControlState::PermissionRequired
         );
         assert_eq!(
@@ -1056,5 +1207,67 @@ pub fn final_health(app: AppHandle) -> FinalHealth {
         local_healthy,
         network_only_issue: !creds,
         checks,
+    }
+}
+
+#[cfg(test)]
+mod claude_code_tests {
+    use super::*;
+
+    fn temp_dir() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("sani-cc-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        std::fs::canonicalize(dir).expect("canonical")
+    }
+
+    #[test]
+    fn real_project_folders_are_kept_once_and_resolved() {
+        let project = temp_dir();
+        let text = project.to_string_lossy().into_owned();
+        let cleaned = clean_claude_code_dirs(&[text.clone(), text.clone(), "  ".into()], None)
+            .expect("valid");
+        assert_eq!(cleaned, vec![text]);
+    }
+
+    #[test]
+    fn symlinks_are_resolved_so_a_link_cannot_hide_its_target() {
+        let project = temp_dir();
+        let link = temp_dir().join("link");
+        std::os::unix::fs::symlink(&project, &link).expect("symlink");
+        let cleaned =
+            clean_claude_code_dirs(&[link.to_string_lossy().into_owned()], None).expect("valid");
+        assert_eq!(cleaned, vec![project.to_string_lossy().into_owned()]);
+    }
+
+    #[test]
+    fn the_disk_the_home_folder_and_non_folders_are_refused() {
+        assert!(clean_claude_code_dirs(&["/".into()], None).is_err());
+        let home = temp_dir();
+        assert!(clean_claude_code_dirs(
+            &[home.to_string_lossy().into_owned()],
+            Some(home.as_path())
+        )
+        .is_err());
+        assert!(clean_claude_code_dirs(&["relative/path".into()], None).is_err());
+        assert!(clean_claude_code_dirs(&["/no/such/folder/here".into()], None).is_err());
+        let file = temp_dir().join("a.txt");
+        std::fs::write(&file, "x").expect("file");
+        assert!(clean_claude_code_dirs(&[file.to_string_lossy().into_owned()], None).is_err());
+    }
+
+    #[test]
+    fn permission_must_be_one_of_the_three_presets() {
+        let bad = ClaudeCodePatch {
+            permission: Some("root".into()),
+            ..Default::default()
+        };
+        assert!(validate_claude_code_patch(&bad).is_err());
+        for ok in ["read", "edit", "run"] {
+            let patch = ClaudeCodePatch {
+                permission: Some(ok.into()),
+                ..Default::default()
+            };
+            assert!(validate_claude_code_patch(&patch).is_ok());
+        }
     }
 }

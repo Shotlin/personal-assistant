@@ -48,6 +48,18 @@ pub struct ActivityRecord {
     pub timestamp: i64,
     pub label: String,
     pub status: String,
+    /// Stable id of the step this row finishes (a tool call), so the renderer
+    /// can match it to the live "running" row it replaces.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<i64>,
+    /// Already screened for secrets and capped by the core and the host; shown
+    /// only behind the quiet "Technical details" affordance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -76,17 +88,30 @@ pub type SharedHistory = Arc<History>;
 /// Add a column to `messages` only if it is missing, so reopening an existing
 /// database is a no-op and never rewrites or drops rows.
 fn ensure_column(conn: &Connection, name: &str, declaration: &str) -> Result<(), String> {
+    ensure_table_column(conn, "messages", name, declaration)
+}
+
+/// Add a column in place when an older database lacks it. `table` is always a
+/// literal from this file, never user input.
+fn ensure_table_column(
+    conn: &Connection,
+    table: &str,
+    name: &str,
+    declaration: &str,
+) -> Result<(), String> {
     let mut stmt = conn
-        .prepare("SELECT 1 FROM pragma_table_info('messages') WHERE name = ?1")
+        .prepare(&format!(
+            "SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?1"
+        ))
         .map_err(|e| e.to_string())?;
     let present: bool = stmt.exists([name]).map_err(|e| e.to_string())?;
     if !present {
         conn.execute(
-            &format!("ALTER TABLE messages ADD COLUMN {name} {declaration}"),
+            &format!("ALTER TABLE {table} ADD COLUMN {name} {declaration}"),
             [],
         )
         .map_err(|e| e.to_string())?;
-        log::info!("[history] migrated: added messages.{name}");
+        log::info!("[history] migrated: added {table}.{name}");
     }
     Ok(())
 }
@@ -145,6 +170,12 @@ impl History {
         // C08/N10: mission correlation on the message row itself, so history
         // and reopen keep showing the same mission truth the live run had.
         ensure_column(&conn, "mission_id", "TEXT")?;
+        // Steps with a duration and detail (Claude Code companion). Rows written
+        // before this simply have none of them and render as plain activity.
+        ensure_table_column(&conn, "run_activity", "step_id", "TEXT")?;
+        ensure_table_column(&conn, "run_activity", "tool", "TEXT")?;
+        ensure_table_column(&conn, "run_activity", "duration_ms", "INTEGER")?;
+        ensure_table_column(&conn, "run_activity", "detail", "TEXT")?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -294,16 +325,16 @@ impl History {
         // under the connection mutex is monotonic across restarts.
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT INTO run_activity (sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status)
-             VALUES ((SELECT COALESCE(MAX(sequence), 0) + 1 FROM run_activity), ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![record.conversation_id, record.run_id, record.agent_id, record.event_type, record.timestamp, record.label, record.status],
+            "INSERT INTO run_activity (sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status, step_id, tool, duration_ms, detail)
+             VALUES ((SELECT COALESCE(MAX(sequence), 0) + 1 FROM run_activity), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![record.conversation_id, record.run_id, record.agent_id, record.event_type, record.timestamp, record.label, record.status, record.step_id, record.tool, record.duration_ms, record.detail],
         ).map_err(|e| e.to_string())?;
         Ok(conn.last_insert_rowid())
     }
 
     pub fn activity(&self, conversation_id: &str) -> Result<Vec<ActivityRecord>, String> {
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare("SELECT sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status FROM run_activity WHERE conversation_id = ?1 ORDER BY sequence ASC").map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status, step_id, tool, duration_ms, detail FROM run_activity WHERE conversation_id = ?1 ORDER BY sequence ASC").map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![conversation_id], |row| {
                 Ok(ActivityRecord {
@@ -315,6 +346,10 @@ impl History {
                     timestamp: row.get(5)?,
                     label: row.get(6)?,
                     status: row.get(7)?,
+                    step_id: row.get(8)?,
+                    tool: row.get(9)?,
+                    duration_ms: row.get(10)?,
+                    detail: row.get(11)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -373,5 +408,75 @@ pub fn title_from_text(text: &str) -> String {
         "New conversation".into()
     } else {
         title
+    }
+}
+
+#[cfg(test)]
+mod step_tests {
+    use super::*;
+
+    fn record(step_id: Option<&str>, detail: Option<&str>) -> ActivityRecord {
+        ActivityRecord {
+            sequence: 0,
+            conversation_id: "c1".into(),
+            run_id: "r1".into(),
+            agent_id: "deep".into(),
+            event_type: "agent.step".into(),
+            timestamp: 10,
+            label: "Edited src/a.ts".into(),
+            status: "complete".into(),
+            step_id: step_id.map(String::from),
+            tool: Some("Edit".into()),
+            duration_ms: Some(840),
+            detail: detail.map(String::from),
+        }
+    }
+
+    #[test]
+    fn a_step_round_trips_with_its_duration_and_detail() {
+        let dir = std::env::temp_dir().join(format!("sani-hist-{}", uuid::Uuid::new_v4()));
+        let history = History::open(dir.join("h.db")).expect("open");
+        history.create_conversation("c1", "t", 1).expect("conv");
+        history
+            .append_activity(&record(Some("cc:1"), Some("- a\n+ b")))
+            .expect("append");
+        let rows = history.activity("c1").expect("rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].step_id.as_deref(), Some("cc:1"));
+        assert_eq!(rows[0].duration_ms, Some(840));
+        assert_eq!(rows[0].detail.as_deref(), Some("- a\n+ b"));
+    }
+
+    #[test]
+    fn a_database_from_before_steps_is_upgraded_in_place() {
+        let dir = std::env::temp_dir().join(format!("sani-hist-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let path = dir.join("old.db");
+        {
+            let conn = Connection::open(&path).expect("raw open");
+            conn.execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL,
+                    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+                 CREATE TABLE messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);
+                 CREATE TABLE run_activity (sequence INTEGER PRIMARY KEY,
+                    conversation_id TEXT NOT NULL, run_id TEXT NOT NULL, agent_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL, timestamp INTEGER NOT NULL, label TEXT NOT NULL,
+                    status TEXT NOT NULL);
+                 INSERT INTO conversations VALUES ('c1', 't', 1, 1);
+                 INSERT INTO run_activity VALUES (1, 'c1', 'r0', 'velo', 'agent.progress', 5,
+                    'Opened Chrome', 'info');",
+            )
+            .expect("old schema");
+        }
+        let history = History::open(path).expect("upgrade");
+        let rows = history.activity("c1").expect("rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].label, "Opened Chrome");
+        assert!(rows[0].step_id.is_none() && rows[0].detail.is_none());
+        history
+            .append_activity(&record(Some("cc:2"), None))
+            .expect("new row");
+        assert_eq!(history.activity("c1").expect("rows").len(), 2);
     }
 }

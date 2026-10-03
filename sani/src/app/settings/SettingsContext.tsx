@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   applyAiSettings,
+  applyClaudeCodeSettings,
   getFullSettings,
   listMics,
   coreAgents,
@@ -29,6 +30,7 @@ interface SettingsContextValue {
   saveGeneral: (patch: Parameters<typeof saveSettings>[0]) => Promise<void>;
   saveAi: (patch: Parameters<typeof applyAiSettings>[0]) => Promise<void>;
   saveProviderKey: (provider: "openrouter", candidate: string) => Promise<void>;
+  saveClaudeCode: (patch: Parameters<typeof applyClaudeCodeSettings>[0]) => Promise<void>;
   selectAgent: (agentId: string) => Promise<void>;
   installVoice: (model: string) => Promise<void>;
   useVoice: (model: string) => Promise<void>;
@@ -95,6 +97,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     // Candidate values exist only during this invocation; the provider never
     // retains them in state or exposes them in the snapshot.
     saveProviderKey: (provider, candidate) => mutate(() => storeProviderKey(provider, candidate)),
+    saveClaudeCode: (patch) => mutate(() => applyClaudeCodeSettings(patch)),
     selectAgent: (agentId) => mutate(() => setAgentMode(agentId)),
     installVoice: (model) => mutate(() => installVoiceModel(model)),
     useVoice: (model) => mutate(() => useVoiceModel(model)),

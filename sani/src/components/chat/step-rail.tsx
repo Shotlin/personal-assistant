@@ -22,6 +22,7 @@ function StepGlyph({ step }: { step: StepPart }) {
   if (step.status === "failed") return <AlertCircle className="size-4 text-destructive" aria-label="Failed" />;
   const key = `${step.tool ?? ""} ${step.label}`.toLowerCase();
   const className = "size-4";
+  if (/claude code/.test(key)) return <SquareTerminal className={className} />;
   if (/(chrome|safari|browser|web|navigate|url|tab)/.test(key)) return <Globe className={className} />;
   if (/(terminal|shell|bash|command|ran )/.test(key)) return <SquareTerminal className={className} />;
   if (/(click|type|press|scroll|drag)/.test(key)) return <MousePointerClick className={className} />;

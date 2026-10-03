@@ -36,6 +36,9 @@ struct CoreEvent {
     run_id: String,
     message: Option<String>,
     token: Option<String>,
+    /// A structured step (tool call) when the agent reports one, such as a
+    /// Claude Code action. Plain progress lines have none.
+    step: Option<Value>,
 }
 
 fn parse(frame: &Value) -> Option<CoreEvent> {
@@ -60,6 +63,74 @@ fn parse(frame: &Value) -> Option<CoreEvent> {
             .and_then(Value::as_str)
             .map(String::from),
         token: data.get("text").and_then(Value::as_str).map(String::from),
+        step: data.get("step").filter(|step| step.is_object()).cloned(),
+    })
+}
+
+/// A step as the renderer and history see it, after the host has bounded every
+/// field. The core already screens details for secrets; the host still caps
+/// lengths and constrains `status`, so a bad frame cannot bloat the database or
+/// invent a state the UI does not know.
+#[derive(Debug, Clone, PartialEq)]
+struct StepFields {
+    id: String,
+    label: String,
+    status: &'static str,
+    tool: Option<String>,
+    duration_ms: Option<i64>,
+    detail: Option<String>,
+}
+
+const STEP_LABEL_MAX: usize = 200;
+const STEP_DETAIL_MAX: usize = 4000;
+
+fn truncate_chars(text: &str, max: usize) -> String {
+    let mut out: String = text.chars().take(max).collect();
+    if text.chars().count() > max {
+        out.push('…');
+    }
+    out
+}
+
+fn clean_step(step: &Value) -> Option<StepFields> {
+    let label = step.get("label").and_then(Value::as_str)?.trim();
+    if label.is_empty() {
+        return None;
+    }
+    let id = step
+        .get("id")
+        .and_then(Value::as_str)
+        .map(|id| truncate_chars(id, 120))
+        .unwrap_or_default();
+    let status = match step.get("status").and_then(Value::as_str).unwrap_or("info") {
+        "running" => "running",
+        "complete" => "complete",
+        "failed" => "failed",
+        "cancelled" => "cancelled",
+        "unknown" => "unknown",
+        _ => "info",
+    };
+    let tool = step
+        .get("tool")
+        .and_then(Value::as_str)
+        .filter(|tool| !tool.is_empty())
+        .map(|tool| truncate_chars(tool, 60));
+    let duration_ms = step
+        .get("duration_ms")
+        .and_then(Value::as_i64)
+        .filter(|ms| *ms >= 0);
+    let detail = step
+        .get("detail")
+        .and_then(Value::as_str)
+        .filter(|detail| !detail.trim().is_empty())
+        .map(|detail| truncate_chars(detail, STEP_DETAIL_MAX));
+    Some(StepFields {
+        id,
+        label: truncate_chars(label, STEP_LABEL_MAX),
+        status,
+        tool,
+        duration_ms,
+        detail,
     })
 }
 
@@ -168,35 +239,53 @@ pub async fn stream_turn(
                     }
                 }
                 "agent.progress" => {
-                    let line = event
-                        .message
-                        .clone()
-                        .unwrap_or_else(|| "Working…".to_string());
-                    emit_chunk(&emitter, &message_id, "status", &line, &event.agent_id);
-                    emit_activity(
-                        &emitter,
-                        &activity_conversation_id,
-                        &event.run_id,
-                        &event.agent_id,
-                        &line,
-                    );
+                    if let Some(step) = event.step.as_ref().and_then(clean_step) {
+                        if step.status == "running" {
+                            emit_chunk(
+                                &emitter,
+                                &message_id,
+                                "status",
+                                &step.label,
+                                &event.agent_id,
+                            );
+                        }
+                        emit_step_activity(
+                            &emitter,
+                            &activity_conversation_id,
+                            &event.run_id,
+                            &event.agent_id,
+                            &step,
+                        );
+                    } else {
+                        let line = event
+                            .message
+                            .clone()
+                            .unwrap_or_else(|| "Working…".to_string());
+                        emit_chunk(&emitter, &message_id, "status", &line, &event.agent_id);
+                        emit_activity(
+                            &emitter,
+                            &activity_conversation_id,
+                            &event.run_id,
+                            &event.agent_id,
+                            &line,
+                        );
+                    }
                 }
                 _ => {}
             }
         }
     };
 
-    let result =
-        crate::sani_core::run_turn(
-            &app,
-            &agent_id,
-            &text,
-            &thread_id,
-            sink,
-            Some(&message_id),
-            Some(input_origin.as_str()),
-        )
-        .await;
+    let result = crate::sani_core::run_turn(
+        &app,
+        &agent_id,
+        &text,
+        &thread_id,
+        sink,
+        Some(&message_id),
+        Some(input_origin.as_str()),
+    )
+    .await;
 
     // The sink was consumed with the run, so this read is uncontended.
     let streamed = live
@@ -324,6 +413,10 @@ fn emit_activity(
         timestamp,
         label: label.to_string(),
         status: "info".to_string(),
+        step_id: None,
+        tool: None,
+        duration_ms: None,
+        detail: None,
     };
     let sequence = if !conversation_id.is_empty() {
         match app_state::history(emitter).append_activity(&record) {
@@ -346,6 +439,60 @@ fn emit_activity(
             "timestamp": timestamp,
             "label": label,
             "status": "info",
+        }),
+    );
+}
+
+/// A structured step. A step that is still `running` is shown live but not
+/// stored (it will be superseded by its finished row); everything else is
+/// persisted as technical detail and emitted with the same stable `step_id`, so
+/// the renderer replaces the running row instead of adding a second one.
+fn emit_step_activity(
+    emitter: &AppHandle,
+    conversation_id: &str,
+    run_id: &str,
+    agent_id: &str,
+    step: &StepFields,
+) {
+    let timestamp = app_state::now_ms();
+    let mut sequence = 0;
+    if step.status != "running" && !conversation_id.is_empty() {
+        let record = crate::history::ActivityRecord {
+            sequence: 0,
+            conversation_id: conversation_id.to_string(),
+            run_id: run_id.to_string(),
+            agent_id: agent_id.to_string(),
+            event_type: "agent.step".to_string(),
+            timestamp,
+            label: step.label.clone(),
+            status: step.status.to_string(),
+            step_id: (!step.id.is_empty()).then(|| step.id.clone()),
+            tool: step.tool.clone(),
+            duration_ms: step.duration_ms,
+            detail: step.detail.clone(),
+        };
+        sequence = match app_state::history(emitter).append_activity(&record) {
+            Ok(sequence) => sequence,
+            Err(error) => {
+                log::warn!("[history] could not persist run step: {error}");
+                0
+            }
+        };
+    }
+    let _ = emitter.emit(
+        "sani://activity",
+        json!({
+            "sequence": sequence,
+            "run_id": run_id,
+            "agent_id": agent_id,
+            "event_type": "agent.step",
+            "timestamp": timestamp,
+            "label": step.label,
+            "status": step.status,
+            "step_id": if step.id.is_empty() { Value::Null } else { json!(step.id) },
+            "tool": step.tool,
+            "duration_ms": step.duration_ms,
+            "detail": step.detail,
         }),
     );
 }
@@ -435,5 +582,48 @@ mod tests {
         assert!(selectable_agent_mode("deep", &roster()));
         assert!(!selectable_agent_mode("auto", &roster()));
         assert!(!selectable_agent_mode("invented", &roster()));
+    }
+
+    #[test]
+    fn a_progress_frame_carries_its_step_through_parse() {
+        let frame = json!({
+            "type": "event", "run_id": "r", "agent_id": "deep", "kind": "agent.progress",
+            "data": {"message": "Edited a.ts", "step": {"id": "cc:1", "label": "Edited a.ts", "status": "complete"}}
+        });
+        let event = parse(&frame).expect("event");
+        assert_eq!(event.message.as_deref(), Some("Edited a.ts"));
+        assert!(event.step.is_some());
+        let plain = json!({
+            "type": "event", "run_id": "r", "agent_id": "deep", "kind": "agent.progress",
+            "data": {"message": "Using observe"}
+        });
+        assert!(parse(&plain).expect("event").step.is_none());
+    }
+
+    #[test]
+    fn steps_are_bounded_and_unknown_states_become_info() {
+        let long = "x".repeat(5000);
+        let step = clean_step(&json!({
+            "id": "cc:1", "label": long, "status": "weird", "tool": "Bash",
+            "duration_ms": 1200, "detail": "y".repeat(9000)
+        }))
+        .expect("step");
+        assert_eq!(step.status, "info");
+        assert!(step.label.chars().count() <= STEP_LABEL_MAX + 1);
+        assert!(step.detail.as_ref().expect("detail").chars().count() <= STEP_DETAIL_MAX + 1);
+        assert_eq!(step.duration_ms, Some(1200));
+        assert_eq!(step.tool.as_deref(), Some("Bash"));
+    }
+
+    #[test]
+    fn a_step_without_a_label_is_dropped_and_negative_time_is_ignored() {
+        assert!(clean_step(&json!({"id": "x", "label": "   ", "status": "complete"})).is_none());
+        assert!(clean_step(&json!({"id": "x"})).is_none());
+        let step =
+            clean_step(&json!({"label": "Ran tests", "status": "failed", "duration_ms": -5}))
+                .expect("step");
+        assert_eq!(step.status, "failed");
+        assert_eq!(step.duration_ms, None);
+        assert_eq!(step.id, "");
     }
 }
