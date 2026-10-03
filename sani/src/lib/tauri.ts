@@ -38,6 +38,8 @@ export interface ActivityEvent {
   detail?: string;
   /** Stable id of the step, so a finished row replaces its live "running" one. */
   step_id?: string | null;
+  kind?: "round" | "prompt" | "reply" | "note" | null;
+  group?: string | null;
 }
 export interface TimingRecord { run_id: string; stage: string; elapsed_ms: number; status: string; }
 

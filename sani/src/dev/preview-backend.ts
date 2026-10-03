@@ -76,6 +76,8 @@ const settings = {
   claude_code_permission: "edit",
 };
 
+let contextPercent = 47;
+
 const claudeStatus = (signedIn: boolean) => ({
   enabled: settings.claude_code_enabled,
   permission: settings.claude_code_permission,
@@ -93,8 +95,8 @@ const claudeStatus = (signedIn: boolean) => ({
       five_hour: { status: "allowed", resets_at: Date.now() / 1000 + 5400, used_percent: 61 },
       seven_day: { status: "allowed", resets_at: Date.now() / 1000 + 400000, used_percent: 23 },
     },
-    last_run: { context_tokens: 94000, context_window: 200000, turns: 6 },
-    context_percent: 47,
+    last_run: { context_tokens: contextPercent * 2000, context_window: 200000, turns: 6 },
+    context_percent: contextPercent,
   },
 });
 
@@ -267,6 +269,106 @@ export function install(scenario: string): void {
     });
   };
 
+  /**
+   * "Build me a premium SaaS website": Sani writes the request, Claude Code
+   * works, the first build fails, Sani sends a narrower follow-up, then answers.
+   */
+  const simulateWebsite = (text: string) => {
+    const userId = `u${Date.now()}`;
+    const runId = `run${Date.now()}`;
+    emit("sani://message", { id: userId, role: "user", text, created_at: Date.now() });
+    setState("working");
+    let t = 150;
+    const at = (ms: number, fn: () => void) => window.setTimeout(fn, (t += ms));
+    const send = (group: string, id: string, label: string, status: string, extra: Json = {}) =>
+      emit("sani://activity", {
+        sequence: 0, run_id: runId, agent_id: "deep", event_type: "agent.step",
+        timestamp: Date.now(), label, status, step_id: id, group, ...extra,
+      });
+    at(0, () => emit("sani://agent-start", { message_id: userId, run_id: runId, agent_id: "deep", agent_name: "Deep Agent" }));
+
+    // ---------------- Round 1
+    const g1 = "r1";
+    const prompt1 = [
+      'Build a premium marketing website for "Acme Analytics", a B2B SaaS that turns product usage into plain-English insights.',
+      "",
+      "Stack: Vite, React, TypeScript, Tailwind CSS. No backend.",
+      "Sections: hero (headline, subhead, 'Start free trial', product mock), logo strip, three feature blocks, how it works (3 steps), pricing (Starter / Growth / Scale with a monthly/annual toggle), testimonials, FAQ, footer.",
+      "Design: restrained and modern. Light background, near-black text, one indigo accent, generous whitespace, an 8px grid, Inter plus one distinctive display face. Responsive at 390, 768 and 1280px. Respect prefers-reduced-motion.",
+      "Quality: semantic HTML, visible focus states, AA contrast. Specific copy, no lorem ipsum.",
+      "Do not add dependencies beyond tailwindcss, framer-motion and lucide-react.",
+      "Finish by running `npm run build` and tell me exactly what happened.",
+    ].join("\n");
+    at(500, () => send(g1, "r1:round", "Build the first version of the site", "running", { kind: "round", tool: "claude_code" }));
+    at(300, () => send(g1, "r1:prompt", "Sani asked Claude Code", "complete", { kind: "prompt", detail: prompt1 }));
+    const work = (id: string, label: string, tool: string, ms: number, ok = true, detail = "") => {
+      at(350, () => send(g1, id, label, "running", { tool }));
+      at(550, () => send(g1, id, label, ok ? "complete" : "failed", { tool, duration_ms: ms, detail }));
+    };
+    work("a1", "Updated its plan", "TodoWrite", 420);
+    work("a2", "Ran `npm create vite@latest acme-site -- --template react-ts`", "Bash", 8200);
+    work("a3", "Ran `npm install`", "Bash", 21400);
+    work("a4", "Ran `npm install tailwindcss framer-motion lucide-react`", "Bash", 9100);
+    work("a5", "Wrote tailwind.config.ts", "Write", 610, true, "export default {\n  content: ['./index.html', './src/**/*.{ts,tsx}'],\n  theme: { extend: { colors: { accent: '#4f46e5' } } },\n}");
+    work("a6", "Wrote src/index.css", "Write", 540);
+    work("a7", "Wrote src/components/Hero.tsx", "Write", 1900);
+    work("a8", "Wrote src/components/Features.tsx", "Write", 1700);
+    work("a9", "Wrote src/components/Pricing.tsx", "Write", 2300);
+    work("a10", "Wrote src/App.tsx", "Write", 980);
+    work("a11", "Ran `npm run build`", "Bash", 7400, false, "npm run build\n\n\u2192 src/App.tsx(7,28): error TS2307: Cannot find module './components/Testimonials' or its corresponding type declarations.");
+    at(300, () => { contextPercent = 63; });
+    at(200, () =>
+      send(g1, "r1:reply", "Claude Code replied", "complete", {
+        kind: "reply",
+        detail:
+          "Built the hero, features, pricing, FAQ and footer.\n\n`npm run build` **fails**: `src/App.tsx` imports `./components/Testimonials`, which I did not create. Nothing else is wrong.",
+      }),
+    );
+    at(100, () => send(g1, "r1:round", "Build the first version of the site", "failed", { kind: "round", tool: "claude_code", duration_ms: 64000 }));
+
+    // ---------------- Round 2: Sani reads the failure and sends a narrow fix
+    const g2 = "r2";
+    const prompt2 = [
+      "The build fails with: src/App.tsx(7,28) TS2307 Cannot find module './components/Testimonials'.",
+      "",
+      "Create that component: three customer quotes (name, role, company), styled with the existing tokens and the same spacing as Features.tsx. Change nothing else.",
+      "Then run `npm run build` and `npm run lint` and report both results.",
+    ].join("\n");
+    at(900, () => send(g2, "r2:round", "Fix the failing build", "running", { kind: "round", tool: "claude_code" }));
+    at(300, () => send(g2, "r2:prompt", "Sani asked Claude Code", "complete", { kind: "prompt", detail: prompt2 }));
+    const fix = (id: string, label: string, tool: string, ms: number) => {
+      at(350, () => send(g2, id, label, "running", { tool }));
+      at(550, () => send(g2, id, label, "complete", { tool, duration_ms: ms }));
+    };
+    fix("b1", "Read src/App.tsx", "Read", 280);
+    fix("b2", "Wrote src/components/Testimonials.tsx", "Write", 1600);
+    fix("b3", "Ran `npm run build`", "Bash", 6400);
+    fix("b4", "Ran `npm run lint`", "Bash", 3100);
+    at(300, () => { contextPercent = 71; });
+    at(200, () =>
+      send(g2, "r2:reply", "Claude Code replied", "complete", {
+        kind: "reply",
+        detail: "Added `Testimonials.tsx` with three quotes.\n\n- `npm run build` passes (JS 148 kB, 47 kB gzipped)\n- `npm run lint` is clean",
+      }),
+    );
+    at(100, () => send(g2, "r2:round", "Fix the failing build", "complete", { kind: "round", tool: "claude_code", duration_ms: 21000 }));
+
+    const answer =
+      "Your site is ready in **~/Projects/acme-site**.\n\n" +
+      "**What's there**\n- Hero with a clear headline and a *Start free trial* button\n- Logo strip, three feature blocks and a three-step *How it works*\n- Pricing with Starter, Growth and Scale and a monthly/annual toggle\n- Testimonials, FAQ and footer\n\n" +
+      "**Design:** light and restrained, one indigo accent, Inter with one display face, responsive at phone, tablet and desktop.\n\n" +
+      "The first build failed on a missing *Testimonials* component. I asked Claude Code to add just that, and the build and lint now pass.\n\n" +
+      "To look at it, run `npm run dev` in that folder. Want me to deploy it, or change the colours or copy?";
+    at(900, () => {
+      emit("sani://agent-done", {
+        message_id: userId, run_id: runId, ok: true, status: "completed", error: "",
+        agent_id: "deep", agent_name: "Deep Agent", assistant_message_id: `a${Date.now()}`,
+        text: answer, created_at: Date.now(),
+      });
+      setState("idle");
+    });
+  };
+
   const handlers: Record<string, (args: Json) => unknown> = {
     get_state: () => ({
       state: uiState,
@@ -308,7 +410,8 @@ export function install(scenario: string): void {
     main_ready: () => undefined,
     submit_text_cmd: (args) => {
       const text = String(args.text);
-      if (/\b(code|fix|bug|build|test|app)\b/i.test(text)) simulateCoding(text);
+      if (/\b(website|saas|landing)\b/i.test(text)) simulateWebsite(text);
+      else if (/\b(code|fix|bug|build|test|app)\b/i.test(text)) simulateCoding(text);
       else simulateTurn(text);
       return undefined;
     },
@@ -394,6 +497,12 @@ export function install(scenario: string): void {
   // `?autorun=code` plays a Claude Code turn by itself, so a screenshot or a
   // shared preview link shows the live steps without anyone typing.
   const autorun = new URLSearchParams(window.location.search).get("autorun");
+  if (autorun === "website") {
+    window.setTimeout(
+      () => simulateWebsite("Build me a premium SaaS website for my product, Acme Analytics"),
+      1800,
+    );
+  }
   if (autorun === "code") {
     window.setTimeout(
       () => simulateCoding("Fix the cart total bug in my shop app and run the tests"),

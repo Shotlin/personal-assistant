@@ -37,6 +37,7 @@ from assistant.claude_code.locate import (
     parse_version,
     read_status,
 )
+from assistant.claude_code.redact import screen
 from assistant.claude_code.runner import ClaudeRunner, Permission, RunOutcome, RunRequest
 from assistant.claude_code.store import SessionStore
 from assistant.claude_code.watchdog import Watchdog, WatchdogLimits
@@ -72,6 +73,7 @@ Coding with Claude Code: you have a `claude_code` tool that drives the user's ow
   twice, stop and explain in plain words what happened and what you need from the user.
 - Never paste long output back. Say what changed, whether it worked, and what to do next.
 - If the user attached an image, pass its path in `attachments`.
+- Give every call a short `purpose` (under 8 words); the user sees it as the round's title.
 """
 
 
@@ -89,6 +91,13 @@ class ClaudeCodeArgs(BaseModel):
     attachments: list[str] = Field(
         default_factory=list,
         description="Paths of images or files the user attached that Claude Code should look at.",
+    )
+    purpose: str = Field(
+        default="",
+        description=(
+            "Under 8 words, shown to the user as this round's title, e.g. 'Build the first "
+            "version' or 'Fix the failing build'."
+        ),
     )
 
 
@@ -240,6 +249,7 @@ class ClaudeCodeToolkit:
         mode: str = "edit",
         new_session: bool = False,
         attachments: list[str] | None = None,
+        purpose: str = "",
     ) -> str:
         if not task.strip():
             return "Nothing to do: the request was empty."
@@ -291,7 +301,9 @@ class ClaudeCodeToolkit:
         reporter = _Reporter(project, self._remember_rate)
         async with lock:
             await reporter.start(
-                f"Opened Claude Code in {project.name}" + (" (continuing)" if session_id else "")
+                purpose.strip() or f"Working in {project.name}",
+                request=task.strip(),
+                continuing=bool(session_id),
             )
             try:
                 outcome = await runner.run(
@@ -301,7 +313,9 @@ class ClaudeCodeToolkit:
                 cancel.set()
                 raise
             except OSError as problem:
+                await reporter.finish(None, error=str(problem))
                 return f"Claude Code could not be started: {problem}"
+            await reporter.finish(outcome)
         await self._after_run(conversation, project, outcome)
         return self._summary(outcome, project, effective, clamp_note, bool(session_id))
 
@@ -393,25 +407,89 @@ class ClaudeCodeToolkit:
 
 
 class _Reporter:
-    """Turns Claude Code events into chat steps (and tracks open ones)."""
+    """Turns one Claude Code round into chat steps.
+
+    A round reads as a short conversation: a header (why Sani is calling Claude
+    Code), the request Sani wrote, Claude Code's steps, and Claude Code's reply.
+    Every step carries the round's ``group`` so the UI can fold them together.
+    """
 
     def __init__(self, project: Path, on_rate: Callable[[RateLimit], None]) -> None:
         self._project = project
         self._on_rate = on_rate
         self._open: dict[str, tuple[ToolStart, float]] = {}
         self._counter = 0
+        self._group = f"r{time.time_ns()}"
+        self._started = time.monotonic()
+        self._title = ""
 
-    @staticmethod
-    async def _send(step: dict[str, Any]) -> None:
+    async def _send(self, step: dict[str, Any]) -> None:
         sink = context.event_sink.get()
         if sink is None:
             return
+        step = {**step, "group": self._group}
         with contextlib.suppress(Exception):
             await sink(AGENT_PROGRESS, {"message": step["label"], "step": step})
 
-    async def start(self, label: str) -> None:
-        self._counter += 1
-        await self._send({"id": f"cc:open-{time.time_ns()}", "label": label, "status": "info"})
+    async def start(self, title: str, *, request: str, continuing: bool) -> None:
+        self._title = screen(title, limit=80)
+        self._started = time.monotonic()
+        await self._send(
+            {
+                "id": f"{self._group}:round",
+                "kind": "round",
+                "label": self._title,
+                "status": "running",
+                "tool": "claude_code",
+                "detail": "continuing the same Claude Code session" if continuing else "",
+            }
+        )
+        await self._send(
+            {
+                "id": f"{self._group}:prompt",
+                "kind": "prompt",
+                "label": "Sani asked Claude Code",
+                "status": "complete",
+                "detail": screen(request, limit=2500),
+            }
+        )
+
+    async def finish(self, outcome: RunOutcome | None, *, error: str = "") -> None:
+        if outcome is not None and outcome.stopped_reason:
+            await self._send(
+                {
+                    "id": f"{self._group}:note",
+                    "kind": "note",
+                    "label": f"Stopped: {outcome.stopped_reason}",
+                    "status": "info",
+                }
+            )
+        reply = ""
+        if outcome is not None:
+            reply = outcome.text.strip()
+        elif error:
+            reply = error
+        if reply:
+            await self._send(
+                {
+                    "id": f"{self._group}:reply",
+                    "kind": "reply",
+                    "label": "Claude Code replied",
+                    "status": "complete",
+                    "detail": screen(reply, limit=1800),
+                }
+            )
+        ok = outcome is not None and outcome.ok
+        await self._send(
+            {
+                "id": f"{self._group}:round",
+                "kind": "round",
+                "label": self._title,
+                "status": "complete" if ok else "failed" if outcome is not None else "failed",
+                "tool": "claude_code",
+                "duration_ms": int((time.monotonic() - self._started) * 1000),
+            }
+        )
 
     async def handle(self, event: ClaudeEvent) -> None:
         if isinstance(event, ToolStart):

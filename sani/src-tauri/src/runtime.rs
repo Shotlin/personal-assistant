@@ -79,6 +79,8 @@ struct StepFields {
     tool: Option<String>,
     duration_ms: Option<i64>,
     detail: Option<String>,
+    kind: Option<&'static str>,
+    group: Option<String>,
 }
 
 const STEP_LABEL_MAX: usize = 200;
@@ -124,6 +126,18 @@ fn clean_step(step: &Value) -> Option<StepFields> {
         .and_then(Value::as_str)
         .filter(|detail| !detail.trim().is_empty())
         .map(|detail| truncate_chars(detail, STEP_DETAIL_MAX));
+    let kind = match step.get("kind").and_then(Value::as_str) {
+        Some("round") => Some("round"),
+        Some("prompt") => Some("prompt"),
+        Some("reply") => Some("reply"),
+        Some("note") => Some("note"),
+        _ => None,
+    };
+    let group = step
+        .get("group")
+        .and_then(Value::as_str)
+        .filter(|group| !group.is_empty())
+        .map(|group| truncate_chars(group, 60));
     Some(StepFields {
         id,
         label: truncate_chars(label, STEP_LABEL_MAX),
@@ -131,6 +145,8 @@ fn clean_step(step: &Value) -> Option<StepFields> {
         tool,
         duration_ms,
         detail,
+        kind,
+        group,
     })
 }
 
@@ -417,6 +433,8 @@ fn emit_activity(
         tool: None,
         duration_ms: None,
         detail: None,
+        kind: None,
+        group: None,
     };
     let sequence = if !conversation_id.is_empty() {
         match app_state::history(emitter).append_activity(&record) {
@@ -470,6 +488,8 @@ fn emit_step_activity(
             tool: step.tool.clone(),
             duration_ms: step.duration_ms,
             detail: step.detail.clone(),
+            kind: step.kind.map(String::from),
+            group: step.group.clone(),
         };
         sequence = match app_state::history(emitter).append_activity(&record) {
             Ok(sequence) => sequence,
@@ -493,6 +513,8 @@ fn emit_step_activity(
             "tool": step.tool,
             "duration_ms": step.duration_ms,
             "detail": step.detail,
+            "kind": step.kind,
+            "group": step.group,
         }),
     );
 }
@@ -613,6 +635,20 @@ mod tests {
         assert!(step.detail.as_ref().expect("detail").chars().count() <= STEP_DETAIL_MAX + 1);
         assert_eq!(step.duration_ms, Some(1200));
         assert_eq!(step.tool.as_deref(), Some("Bash"));
+    }
+
+    #[test]
+    fn round_kind_and_group_are_kept_and_unknown_kinds_dropped() {
+        let step = clean_step(&json!({
+            "label": "Fix the build", "status": "running", "kind": "round", "group": "r1"
+        }))
+        .expect("step");
+        assert_eq!(step.kind, Some("round"));
+        assert_eq!(step.group.as_deref(), Some("r1"));
+        let other =
+            clean_step(&json!({"label": "x", "kind": "exfiltrate", "group": ""})).expect("step");
+        assert_eq!(other.kind, None);
+        assert_eq!(other.group, None);
     }
 
     #[test]

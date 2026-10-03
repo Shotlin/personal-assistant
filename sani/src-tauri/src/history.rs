@@ -60,6 +60,13 @@ pub struct ActivityRecord {
     /// only behind the quiet "Technical details" affordance.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// round | prompt | reply | note: how the step reads inside a Claude Code
+    /// round. Absent for ordinary steps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Ties the steps of one round together.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -176,6 +183,8 @@ impl History {
         ensure_table_column(&conn, "run_activity", "tool", "TEXT")?;
         ensure_table_column(&conn, "run_activity", "duration_ms", "INTEGER")?;
         ensure_table_column(&conn, "run_activity", "detail", "TEXT")?;
+        ensure_table_column(&conn, "run_activity", "kind", "TEXT")?;
+        ensure_table_column(&conn, "run_activity", "step_group", "TEXT")?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -325,16 +334,16 @@ impl History {
         // under the connection mutex is monotonic across restarts.
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT INTO run_activity (sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status, step_id, tool, duration_ms, detail)
-             VALUES ((SELECT COALESCE(MAX(sequence), 0) + 1 FROM run_activity), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![record.conversation_id, record.run_id, record.agent_id, record.event_type, record.timestamp, record.label, record.status, record.step_id, record.tool, record.duration_ms, record.detail],
+            "INSERT INTO run_activity (sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status, step_id, tool, duration_ms, detail, kind, step_group)
+             VALUES ((SELECT COALESCE(MAX(sequence), 0) + 1 FROM run_activity), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![record.conversation_id, record.run_id, record.agent_id, record.event_type, record.timestamp, record.label, record.status, record.step_id, record.tool, record.duration_ms, record.detail, record.kind, record.group],
         ).map_err(|e| e.to_string())?;
         Ok(conn.last_insert_rowid())
     }
 
     pub fn activity(&self, conversation_id: &str) -> Result<Vec<ActivityRecord>, String> {
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare("SELECT sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status, step_id, tool, duration_ms, detail FROM run_activity WHERE conversation_id = ?1 ORDER BY sequence ASC").map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT sequence, conversation_id, run_id, agent_id, event_type, timestamp, label, status, step_id, tool, duration_ms, detail, kind, step_group FROM run_activity WHERE conversation_id = ?1 ORDER BY sequence ASC").map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![conversation_id], |row| {
                 Ok(ActivityRecord {
@@ -350,6 +359,8 @@ impl History {
                     tool: row.get(9)?,
                     duration_ms: row.get(10)?,
                     detail: row.get(11)?,
+                    kind: row.get(12)?,
+                    group: row.get(13)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -429,6 +440,8 @@ mod step_tests {
             tool: Some("Edit".into()),
             duration_ms: Some(840),
             detail: detail.map(String::from),
+            kind: None,
+            group: None,
         }
     }
 

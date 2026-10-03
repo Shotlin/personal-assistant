@@ -61,6 +61,8 @@ export function stepFromActivity(event: ActivityEvent): StepPart {
     durationMs: event.duration_ms,
     detail: event.detail,
     timestamp: event.timestamp,
+    kind: event.kind ?? undefined,
+    group: event.group ?? undefined,
   };
 }
 

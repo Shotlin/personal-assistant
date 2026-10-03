@@ -22,6 +22,14 @@ export interface StepPart {
   /** Raw detail, shown only behind the quiet "Technical details" affordance. */
   detail?: string;
   timestamp: number;
+  /**
+   * How the step reads inside a Claude Code round: `round` is the header (why
+   * Sani called it), `prompt` is what Sani asked, `reply` is what came back,
+   * `note` is a supervisor remark. Plain tool steps have no kind.
+   */
+  kind?: "round" | "prompt" | "reply" | "note";
+  /** Ties one round's steps together. */
+  group?: string;
 }
 
 export interface TextPart {

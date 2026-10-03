@@ -15,6 +15,7 @@ import { DotMatrixLoader } from "@/components/ui/dot-matrix-loader";
 import { cn } from "@/lib/utils";
 import { formatDuration, pluralize } from "@/lib/format";
 import { itemSteps, type ChatItem, type StepPart } from "@/chat/types";
+import { RoundBlock, buildEntries, countWorkSteps } from "./round";
 
 /** Leading slot: a glyph chosen from the tool/label, never an "AI" sparkle. */
 function StepGlyph({ step }: { step: StepPart }) {
@@ -105,34 +106,58 @@ export function StepRail({ item }: { item: ChatItem }) {
   if (steps.length === 0) return null;
   const live = item.status === "streaming";
 
+  const entries = buildEntries(steps);
+  const hasRounds = entries.some((entry) => entry.type === "round");
+  const plainSteps = steps.filter((step) => !step.group);
+
+  const renderEntries = (liveRail: boolean) => {
+    // The host reports plain progress as "info" lines. While the turn is live
+    // the newest plain one is the step in flight, so it carries the running mark.
+    const lastPlain = liveRail ? plainSteps[plainSteps.length - 1] : undefined;
+    return entries.map((entry) =>
+      entry.type === "round" ? (
+        <RoundBlock key={entry.round.group} round={entry.round} renderStep={(step) => <StepRow key={step.id} step={step} />} />
+      ) : (
+        <StepRow
+          key={entry.step.id}
+          step={
+            liveRail && entry.step === lastPlain && entry.step.status === "info"
+              ? { ...entry.step, status: "running" }
+              : entry.step
+          }
+        />
+      ),
+    );
+  };
+
   if (live) {
-    // The host reports progress as plain "info" lines. While the turn is live
-    // the newest one is the step in flight, so it carries the running mark.
-    const last = steps.length - 1;
     return (
       <div className="flex flex-col" aria-live="polite">
-        {steps.map((step, index) => (
-          <StepRow
-            key={step.id}
-            step={index === last && step.status === "info" ? { ...step, status: "running" } : step}
-          />
-        ))}
+        {renderEntries(true)}
       </div>
     );
   }
 
-  const duration = workedFor(item, steps);
-  const failedCount = steps.filter((step) => step.status === "failed").length;
+  // With Claude Code rounds, the honest total is the time the rounds took.
+  const roundTime = entries.reduce(
+    (sum, entry) => sum + (entry.type === "round" ? (entry.round.header?.durationMs ?? 0) : 0),
+    0,
+  );
+  const duration = hasRounds && roundTime > 0 ? roundTime : workedFor(item, steps);
+  const failedCount = steps.filter((step) => step.status === "failed" && !step.kind).length;
+  const roundCount = entries.filter((entry) => entry.type === "round").length;
   const summary = [
-    duration ? `Worked for ${formatDuration(duration)}` : "Worked",
-    pluralize(steps.length, "step"),
+    hasRounds ? "Worked with Claude Code" : duration ? `Worked for ${formatDuration(duration)}` : "Worked",
+    hasRounds ? pluralize(roundCount, "round") : null,
+    pluralize(countWorkSteps(steps), "step"),
+    hasRounds && duration ? formatDuration(duration) : null,
     failedCount ? `${failedCount} failed` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
   return (
-    <Collapsible defaultOpen={failedCount > 0}>
+    <Collapsible defaultOpen={failedCount > 0 || hasRounds}>
       <CollapsibleTrigger className="group/trigger flex cursor-pointer items-center gap-1 rounded text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none">
         <span>{summary}</span>
         <ChevronRight
@@ -141,11 +166,7 @@ export function StepRail({ item }: { item: ChatItem }) {
         />
       </CollapsibleTrigger>
       <CollapsibleContent className="h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-150 ease-out data-ending-style:h-0 data-starting-style:h-0">
-        <div className="flex flex-col pt-1 pl-0.5">
-          {steps.map((step) => (
-            <StepRow key={step.id} step={step} />
-          ))}
-        </div>
+        <div className="flex flex-col pt-1 pl-0.5">{renderEntries(false)}</div>
       </CollapsibleContent>
     </Collapsible>
   );

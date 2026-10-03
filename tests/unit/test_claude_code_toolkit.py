@@ -195,3 +195,48 @@ async def test_status_report_tells_the_ui_what_is_true(fake_claude: Path, tmp_pa
     assert report["folders"] == [str((tmp_path / "work").resolve())]
     assert report["claude"]["signed_in"] is True
     json.dumps(report)  # must be JSON-serialisable for the wire
+
+
+async def test_a_round_reads_as_a_conversation_request_steps_reply(
+    fake_claude: Path,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    toolkit, project = make(tmp_path, fake_claude)
+    sink = Sink()
+    token = context.event_sink.set(sink)
+    try:
+        await toolkit.run(
+            "SCENARIO:ok build it. key=sk-abcdef123456",
+            str(project),
+            purpose="Build the first version",
+        )
+    finally:
+        context.event_sink.reset(token)
+    steps = sink.steps()
+    kinds = [s.get("kind") for s in steps]
+    assert kinds[0] == "round" and kinds[1] == "prompt" and kinds[-2] == "reply"
+    assert kinds[-1] == "round"
+    # One group ties the whole round together.
+    assert len({s["group"] for s in steps}) == 1
+    assert steps[0]["label"] == "Build the first version" and steps[0]["status"] == "running"
+    assert steps[-1]["status"] == "complete" and steps[-1]["duration_ms"] >= 0
+    # What Sani asked is shown, with secrets screened.
+    assert "build it" in steps[1]["detail"] and "sk-abcdef123456" not in steps[1]["detail"]
+    assert "Fixed the bug" in steps[-2]["detail"]
+
+
+async def test_a_stopped_round_says_why_and_fails_the_header(
+    fake_claude: Path,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    toolkit, project = make(tmp_path, fake_claude)
+    sink = Sink()
+    token = context.event_sink.set(sink)
+    try:
+        await toolkit.run("SCENARIO:loop", str(project))
+    finally:
+        context.event_sink.reset(token)
+    steps = sink.steps()
+    notes = [s for s in steps if s.get("kind") == "note"]
+    assert notes and notes[0]["label"].startswith("Stopped: it repeated the same step")
+    assert steps[-1]["kind"] == "round" and steps[-1]["status"] == "failed"
