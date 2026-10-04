@@ -180,9 +180,25 @@ pub fn toggle_listening(app: &AppHandle) {
     }
 }
 
+/// True while the mic was started from the main window's composer: the words
+/// become draft text for the user to edit, never a turn, and no overlay opens.
+static DICTATION: AtomicBool = AtomicBool::new(false);
+
 pub fn start_listening(app: &AppHandle) {
+    start_capture(app, false);
+}
+
+/// Mic button in the main composer: live words into the input box, no auto-send.
+pub fn start_dictation(app: &AppHandle) {
+    start_capture(app, true);
+}
+
+fn start_capture(app: &AppHandle, dictation: bool) {
     if matches!(current_state(app), UiState::Working | UiState::Finalizing) {
         return; // one turn at a time
+    }
+    if !matches!(current_state(app), UiState::Listening | UiState::Preparing) {
+        DICTATION.store(dictation, Ordering::SeqCst);
     }
 
     // R10/F10: PTT/barge-in interlock. If speech output is playing, stop it
@@ -351,8 +367,10 @@ fn begin_capture(app: &AppHandle) {
     *state.partial.lock() = String::new();
     let _ = app.emit("sani://partial", "");
 
-    let _ = windows::show_pill(app);
-    let _ = windows::show_panel(app);
+    if !DICTATION.load(Ordering::SeqCst) {
+        let _ = windows::show_pill(app);
+        let _ = windows::show_panel(app);
+    }
 
     state.pending_listen.store(true, Ordering::Relaxed);
     set_state(app, UiState::Preparing);
@@ -455,6 +473,7 @@ pub fn cancel_listening(app: &AppHandle) {
     // Cancel any in-flight prepare and invalidate a pending finalization so a
     // delayed begin_turn cannot still fire (FIX-02).
     state.pending_listen.store(false, Ordering::Relaxed);
+    DICTATION.store(false, Ordering::SeqCst);
     state.turn_gen.fetch_add(1, Ordering::Relaxed);
     if let Some(audio) = state.audio.lock().as_ref() {
         audio.gate.store(false, Ordering::Relaxed);
@@ -575,6 +594,15 @@ pub fn on_final(app: &AppHandle, text: String) {
         let _ = app.emit("sani://partial", "");
         set_state(app, UiState::Idle);
         log::info!("[turn] empty final; returning to idle without a run");
+        return;
+    }
+
+    if DICTATION.swap(false, Ordering::SeqCst) {
+        // Dictation: hand the words to the composer as a draft. No turn starts.
+        *state.partial.lock() = String::new();
+        let _ = app.emit("sani://partial", "");
+        let _ = app.emit("sani://dictation-final", trimmed);
+        set_state(app, UiState::Idle);
         return;
     }
 

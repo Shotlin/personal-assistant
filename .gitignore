@@ -29,3 +29,6 @@ sani/.stt-venv/
 sani/.sidecar-build/
 sani/src-tauri/binaries/
 sani/.cua-build/
+
+# Read-only reference clones of other projects (not part of Sani)
+third_party/

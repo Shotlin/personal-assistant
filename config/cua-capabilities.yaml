@@ -19,6 +19,11 @@
 #   Calculator     com.apple.calculator
 #   Google Chrome  com.google.Chrome
 #   Terminal       com.apple.Terminal   (hosts Claude Code CLI)
+#   ZCode          dev.zcode.app        (reviewed 2026-10-04, owner-approved: Sani
+#       drives the ZCode desktop app like a person so the user's own Start Plan
+#       can be used, and reads the plan balances ZCode displays. ZCode's window
+#       can show the user's code and prompts; same launch/terminate rules as
+#       Terminal. Remove this entry and the app is out of reach again.)
 #   TextEdit       com.apple.TextEdit   (reviewed 2026-09-24: the computer-
 #       control acceptance test types a harmless phrase into a document, and
 #       no other allowlisted app has a text field that a keystroke can be
@@ -86,6 +91,10 @@ resources:
       windows: all
       terminate: driver_launched
     - bundle_id: com.apple.TextEdit
+      launch: true
+      windows: all
+      terminate: driver_launched
+    - bundle_id: dev.zcode.app
       launch: true
       windows: all
       terminate: driver_launched

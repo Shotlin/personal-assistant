@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Conversation } from "@/components/chat/conversation";
 import { Composer } from "@/components/chat/composer";
 import { ApprovalCard, MissionBar } from "@/components/chat/mission-bar";
@@ -8,7 +8,7 @@ import { useMission } from "@/chat/use-mission";
 import { useClaudeCode } from "@/chat/use-claude-code";
 import { QuickReplyContext } from "@/chat/quick-reply";
 import { useSettings } from "@/app/settings/SettingsContext";
-import { pressEscape, startListening, stopListening, submitText } from "@/lib/tauri";
+import { pressEscape, startDictation, stopListening, submitText } from "@/lib/tauri";
 
 /**
  * Chat is the home surface (DESIGN: everything else supports the
@@ -25,6 +25,12 @@ export default function ChatPage() {
 
   const capturing = uiState === "listening" || uiState === "preparing" || uiState === "finalizing";
   const working = uiState === "working";
+  // Mic pressed in this window: words go into the input box instead of being sent.
+  const [dictating, setDictating] = useState(false);
+  useEffect(() => {
+    if (uiState === "idle" || uiState === "error" || uiState === "working") setDictating(false);
+  }, [uiState]);
+  const voiceCapture = capturing && !dictating;
 
   // Escape cancels an open voice capture; a pending approval owns Escape itself.
   const hasPending = (mission.mission?.pendingApprovals.length ?? 0) > 0;
@@ -38,8 +44,12 @@ export default function ChatPage() {
   }, [capturing, hasPending]);
 
   const onMic = () => {
-    if (capturing) void stopListening();
-    else void startListening();
+    if (capturing) {
+      void stopListening();
+    } else {
+      setDictating(true);
+      void startDictation();
+    }
   };
 
   const composer = (
@@ -53,6 +63,8 @@ export default function ChatPage() {
       onMic={onMic}
       onStop={() => void pressEscape()}
       autoFocus
+      dictating={dictating}
+      partial={partial}
       claudeCode={claudeCode.status}
     />
   );
@@ -89,11 +101,11 @@ export default function ChatPage() {
   );
 
   const quickReply = {
-    enabled: !capturing && !working,
+    enabled: !voiceCapture && !working && !dictating,
     send: (text: string) => void submitText(text).catch(() => undefined),
   };
 
-  if (items.length === 0 && !capturing && !working) {
+  if (items.length === 0 && !voiceCapture && !working) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6 pb-16">
         <div className="flex w-full max-w-[680px] flex-col gap-5">
@@ -113,7 +125,7 @@ export default function ChatPage() {
       <Conversation
         items={items}
         footer={
-          capturing ? (
+          voiceCapture ? (
             <VoiceDraft
               state={uiState}
               partial={partial}

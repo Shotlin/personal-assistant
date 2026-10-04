@@ -163,6 +163,7 @@ fn main() {
             set_agent_mode,
             list_mics,
             start_listening_cmd,
+            start_dictation_cmd,
             stop_listening_cmd,
             escape_cmd,
             submit_text_cmd,
@@ -198,6 +199,10 @@ fn main() {
             sani_core::core_ping,
             attachments::save_attachment_cmd,
             sani_core::claude_code_status_cmd,
+            sani_core::zcode_status_cmd,
+            sani_core::zcode_auth_cmd,
+            sani_core::open_zcode_cmd,
+            sani_core::deep_context_cmd,
             sani_core::claude_code_auth_cmd,
             sani_core::focus_main_cmd,
             sani_core::open_sign_in_link_cmd,
@@ -546,6 +551,11 @@ async fn set_agent_mode(app: tauri::AppHandle, agent_mode: String) -> Result<(),
 #[tauri::command]
 fn list_mics() -> Vec<String> {
     audio::list_input_devices()
+}
+
+#[tauri::command]
+fn start_dictation_cmd(app: tauri::AppHandle) {
+    app_state::start_dictation(&app);
 }
 
 #[tauri::command]

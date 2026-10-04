@@ -171,3 +171,98 @@ async def test_deep_entry_uses_the_shared_runtime_not_a_private_build(
     # Idempotent: one runtime for the process, not one per turn.
     assert await entry._provider.runtime() is sentinel  # noqa: SLF001
     assert len(opened) == 1
+
+
+# --------------------------------------------- coding companions bound into the agent
+
+
+def _zcode_toolkit(settings: Settings) -> Any:
+    from assistant.claude_code.toolkit import ClaudeCodeToolkit
+    from assistant.coding_agents.zcode import ZCodeBackend
+
+    return ClaudeCodeToolkit(settings, backend=ZCodeBackend(settings.sani_data_dir))
+
+
+async def test_zcode_cli_mode_binds_the_zcode_tool_and_its_guide(
+    installed: dict[str, Any],
+) -> None:
+    settings = _settings(zcode_cli_enabled=True, zcode_mode="cli")
+    async with SaniRuntime.open(settings, zcode=_zcode_toolkit(settings)) as rt:
+        kwargs = installed["build_agent_kwargs"]
+        names = sorted(t.name for t in kwargs["extra_tools"])
+        assert names == ["launch_app", "observe", "zcode"]
+        assert "`zcode`" in kwargs["system_prompt"] and "ZCode" in kwargs["system_prompt"]
+        assert "zcode" not in rt.cua_tools  # not a computer-control tool
+        assert rt.claude_code_enabled and not rt.zcode_app_enabled
+
+
+async def test_zcode_app_mode_binds_the_helper_tools_and_the_app_guide(
+    installed: dict[str, Any],
+) -> None:
+    settings = _settings(zcode_cli_enabled=True, zcode_mode="app")
+    async with SaniRuntime.open(settings, zcode=_zcode_toolkit(settings)) as rt:
+        kwargs = installed["build_agent_kwargs"]
+        names = sorted(t.name for t in kwargs["extra_tools"])
+        assert names == [
+            "launch_app",
+            "observe",
+            "zcode_choice",
+            "zcode_save_account",
+            "zcode_save_balances",
+        ]
+        assert "dev.zcode.app" in kwargs["system_prompt"]
+        assert set(rt.cua_tools) == {"launch_app", "observe"}
+        assert rt.zcode_app_enabled
+
+
+async def test_zcode_app_mode_needs_computer_control_so_it_binds_nothing_without_it(
+    installed: dict[str, Any],
+) -> None:
+    settings = _settings(zcode_cli_enabled=True, zcode_mode="app", cua_enabled=False)
+    async with SaniRuntime.open(settings, zcode=_zcode_toolkit(settings)) as rt:
+        assert installed["build_agent_kwargs"]["extra_tools"] == []
+        assert not rt.zcode_app_enabled
+
+
+async def test_zcode_off_binds_nothing(installed: dict[str, Any]) -> None:
+    settings = _settings(zcode_cli_enabled=False)
+    async with SaniRuntime.open(settings, zcode=_zcode_toolkit(settings)):
+        names = sorted(t.name for t in installed["build_agent_kwargs"]["extra_tools"])
+        assert names == ["launch_app", "observe"]
+
+
+async def test_claude_code_and_zcode_can_both_be_bound(installed: dict[str, Any]) -> None:
+    from assistant.claude_code.toolkit import ClaudeCodeToolkit
+
+    settings = _settings(claude_code_enabled=True, zcode_cli_enabled=True, zcode_mode="cli")
+    async with SaniRuntime.open(
+        settings, claude_code=ClaudeCodeToolkit(settings), zcode=_zcode_toolkit(settings)
+    ):
+        kwargs = installed["build_agent_kwargs"]
+        names = sorted(t.name for t in kwargs["extra_tools"])
+        assert names == ["claude_code", "launch_app", "observe", "zcode"]
+        assert "`claude_code`" in kwargs["system_prompt"] and "`zcode`" in kwargs["system_prompt"]
+
+
+async def test_coding_tools_raise_the_models_output_cap(
+    installed: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caps: list[int] = []
+    real = runtime_module.build_chat_model
+
+    def spy(settings: Settings) -> Any:
+        caps.append(settings.model_max_tokens)
+        return real(settings)
+
+    monkeypatch.setattr(runtime_module, "build_chat_model", spy)
+    plain = _settings()
+    async with SaniRuntime.open(plain):
+        pass
+    coding = _settings(zcode_cli_enabled=True, zcode_mode="cli")
+    async with SaniRuntime.open(coding, zcode=_zcode_toolkit(coding)):
+        pass
+    explicit = _settings(zcode_cli_enabled=True, zcode_mode="cli", model_max_tokens=12000)
+    async with SaniRuntime.open(explicit, zcode=_zcode_toolkit(explicit)):
+        pass
+    # Unchanged without a coding tool; raised with one; a bigger explicit choice is kept.
+    assert caps == [2000, 8000, 12000]

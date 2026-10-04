@@ -142,6 +142,13 @@ export interface FullSettingsSnapshot extends SettingsShape {
   claude_code_enabled: boolean;
   claude_code_dirs: string[];
   claude_code_permission: ClaudeCodePermission;
+  claude_code_model: string;
+  claude_code_effort: string;
+  zcode_cli_enabled: boolean;
+  /** How Sani uses ZCode: the command line (default) or the real ZCode app window. */
+  zcode_mode: "cli" | "window";
+  /** ZCode's reasoning level for window runs; empty leaves it as it is. */
+  zcode_effort: "" | "low" | "high" | "max";
 }
 
 // ------------------------------------------------------- overlay layout editor
@@ -243,6 +250,10 @@ export interface ClaudeCodeStatus {
     signed_in: boolean;
     auth_method: string;
     detail: string;
+    name?: string;
+    email?: string;
+    plan?: string;
+    org?: string;
   };
   usage: {
     rates: Record<string, ClaudeCodeRate>;
@@ -251,6 +262,7 @@ export interface ClaudeCodeStatus {
       session_id?: string;
       context_tokens?: number | null;
       context_window?: number | null;
+      model?: string;
       cost_usd?: number | null;
       turns?: number;
       at?: number;
@@ -260,7 +272,17 @@ export interface ClaudeCodeStatus {
 }
 
 export const claudeCodeStatus = () => invoke<ClaudeCodeStatus>("claude_code_status_cmd");
-export const claudeCodeAuth = (action: "login" | "code" | "cancel" | "logout", code?: string) =>
+export interface DeepContext {
+  known: boolean;
+  tokens?: number;
+  window?: number | null;
+  percent?: number | null;
+  estimated?: boolean;
+  model?: string;
+}
+export const deepContext = (conversationId: string) =>
+  invoke<DeepContext>("deep_context_cmd", { conversationId });
+export const claudeCodeAuth = (action: "login" | "code" | "cancel" | "logout" | "usage", code?: string) =>
   invoke<ClaudeCodeStatus & { error?: string }>("claude_code_auth_cmd", { action, code });
 export const openSignInLink = (url: string) => invoke<void>("open_sign_in_link_cmd", { url });
 export const focusMain = () => invoke<void>("focus_main_cmd");
@@ -268,7 +290,132 @@ export const applyClaudeCodeSettings = (patch: {
   enabled?: boolean;
   dirs?: string[];
   permission?: ClaudeCodePermission;
+  model?: string;
+  effort?: string;
+  zcode_enabled?: boolean;
+  zcode_mode?: "cli" | "window";
+  zcode_effort?: "" | "low" | "high" | "max";
 }) => invoke<FullSettingsSnapshot>("apply_claude_code_settings", { patch });
+
+// ------------------------------------------------------------ ZCode companion
+
+export interface ZCodeModel {
+  id: string;
+  /** Size of the conversation the model can hold, in tokens. Not a plan balance. */
+  context_window: number | null;
+  max_output: number | null;
+}
+
+export interface ZCodeBalance {
+  provider: string;
+  plan: string;
+  model: string;
+  remaining: number;
+  total: number;
+  expires: string;
+  /** Percent left and the time it resets, as ZCode's own page shows them (read from the window). */
+  percent?: number;
+  reset?: string;
+}
+
+/** What the last read of the ZCode window found. Every part has its own `as_of` (epoch seconds). */
+export interface ZCodeWindowRead {
+  contract?: { ok: boolean; version: string; version_verified: boolean; missing: string[]; as_of?: number };
+  models?: {
+    as_of?: number;
+    current_model: string;
+    models: Array<{ provider: string; plan_id: string; plan: string; model: string; current: boolean }>;
+    modes: Array<{ id: string; label: string; current: boolean }>;
+    reasoning: Array<{ id: string; label: string; current: boolean }>;
+  } | null;
+  sessions?: {
+    as_of?: number;
+    count: number;
+    complete: boolean;
+    projects: Array<{ path: string; name: string; tasks: Array<{ id: string; title: string; age: string }> }>;
+  } | null;
+  /** A short, redacted account of the last run (diagnostics). */
+  last_run?: {
+    at: number;
+    seconds: number;
+    ok: boolean;
+    project: string;
+    model: string;
+    plan: string;
+    session_id: string;
+    stopped_reason: string;
+    cancelled: boolean;
+    error: string;
+    steps: Array<{ label: string; status: string }>;
+    files_changed: string[];
+    notes: string[];
+    tokens_used: number | null;
+  } | null;
+  /** The background read: reading takes a minute or two, so the button only starts it. */
+  job: {
+    state: "idle" | "reading" | "done" | "refused";
+    message: string;
+    started_at: number | null;
+    finished_at: number | null;
+    port_closed: boolean | null;
+  };
+}
+
+export interface ZCodeBalances {
+  /** Epoch seconds when the figures were read. */
+  as_of: number;
+  items: ZCodeBalance[];
+}
+
+export interface ZCodePlan {
+  id: string;
+  name: string;
+  family: string;
+  family_name: string;
+  models: ZCodeModel[];
+}
+
+/** Same shape as the Claude Code status, plus ZCode's plans, models and saved choice. */
+export interface ZCodeStatus extends Omit<ClaudeCodeStatus, "claude"> {
+  zcode: ClaudeCodeStatus["claude"];
+  extra: {
+    catalog: ZCodePlan[];
+    /** What ZCode itself will use by default, when it has one saved. */
+    zcode_default: { provider: string; model: string } | null;
+    /** The ZCode app's own Z.ai sign-in is present on this Mac (names only, never values). */
+    app_signed_in?: boolean;
+  };
+  selection: { provider?: string; model?: string };
+  /** What Sani's agent last read off ZCode's own screen. Null until it has read them. */
+  balances: ZCodeBalances | null;
+  /** Which account ZCode is signed in as, as read off ZCode's own screen. Null until read. */
+  account: { name?: string; email?: string; as_of?: number } | null;
+  /** What Sani read through ZCode's own window. Null until the first read. */
+  cdp: ZCodeWindowRead | null;
+  /** Window mode only: whether Sani may close/reopen ZCode to drive it, and if its port is open. */
+  control: { enabled: boolean; open: boolean } | null;
+  /** The last account/plan change (until dismissed) and whether the data may be out of date. */
+  account_change: {
+    change: {
+      kind: "switched" | "signed_out" | "signed_in" | "plans_changed";
+      from: string;
+      to: string;
+      plans_added: string[];
+      plans_removed: string[];
+      at: number;
+      source: string;
+    } | null;
+    stale: boolean;
+  } | null;
+}
+
+export const zcodeStatus = () => invoke<ZCodeStatus>("zcode_status_cmd");
+export const zcodeAuth = (
+  action: "login" | "cancel" | "logout" | "select" | "read" | "control" | "ack_change",
+  choice?: { provider?: string; model?: string; enabled?: boolean },
+) => invoke<ZCodeStatus & { error?: string }>("zcode_auth_cmd", { action, ...choice });
+/** Open the ZCode app itself, where its sign-in lives. */
+export const openZcode = () => invoke<void>("open_zcode_cmd");
 /** Save a file the user attached; returns its absolute path under Sani's data folder. */
 export const saveAttachment = (name: string, dataBase64: string) =>
   invoke<string>("save_attachment_cmd", { name, dataBase64 });
@@ -283,6 +430,8 @@ export const onPartial = (cb: (text: string) => void) =>
   listen<string>("sani://partial", (e) => cb(e.payload));
 export const onFinal = (cb: (text: string) => void) =>
   listen<string>("sani://final", (e) => cb(e.payload));
+export const onDictationFinal = (cb: (text: string) => void) =>
+  listen<string>("sani://dictation-final", (e) => cb(e.payload));
 export const onLevel = (cb: (levels: number[]) => void) =>
   listen<number[]>("sani://level", (e) => cb(e.payload));
 export const onAgentChunk = (cb: (c: AgentChunk) => void) =>
@@ -351,6 +500,8 @@ export const saveSettings = (patch: {
 export const setAgentMode = (agentMode: string) => invoke<void>("set_agent_mode", { agentMode });
 export const listMics = () => invoke<string[]>("list_mics");
 export const startListening = () => invoke<void>("start_listening_cmd");
+/** Mic in the main composer: live words into the input box, never auto-sent. */
+export const startDictation = () => invoke<void>("start_dictation_cmd");
 export const stopListening = () => invoke<void>("stop_listening_cmd");
 export const pressEscape = () => invoke<void>("escape_cmd");
 /** Typed and finalized-speech requests share the native admission gate. */

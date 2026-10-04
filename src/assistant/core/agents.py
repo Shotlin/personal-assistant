@@ -55,10 +55,12 @@ class RuntimeProvider:
         *,
         agent_builder: Callable[[], Awaitable[Any]] | None = None,
         claude_code: Any | None = None,
+        zcode: Any | None = None,
     ) -> None:
         self._settings = settings
         self._builder = agent_builder
         self._claude_code = claude_code
+        self._zcode = zcode
         self._lock = asyncio.Lock()
         self._runtime: SaniRuntime | None = None
         self._cm: Any = None
@@ -71,7 +73,7 @@ class RuntimeProvider:
                 self._runtime = SaniRuntime.open_with_agent(await self._builder(), self._settings)
                 return self._runtime
             self._cm = (
-                SaniRuntime.open(self._settings, claude_code=self._claude_code)
+                SaniRuntime.open(self._settings, claude_code=self._claude_code, zcode=self._zcode)
                 if self._claude_code is not None
                 else SaniRuntime.open(self._settings)
             )
@@ -150,6 +152,9 @@ class DeepAgentEntry:
         if provider is not None and agent_builder is not None:
             raise ValueError("give the provider the builder, not both")
         self._settings = settings
+        from assistant.core import context_meter
+
+        context_meter.set_default_model(str(getattr(settings, "model_name", "")))
         self._provider = provider or RuntimeProvider(settings, agent_builder=agent_builder)
         # A07 fix: cancellation is per run, not a shared boolean. Concurrent
         # runs over the same entry cancel independently; cancelling run A
@@ -249,8 +254,19 @@ class DeepAgentEntry:
         # A12: usage is metered at the provider boundary for every core run,
         # not only in legacy routes. Unknown usage stays unknown (never zero).
         ledger = UsageLedger()
+        meter_key = thread_id.strip()
+
+        def _on_call(call_id: str, usage: dict[str, Any]) -> None:
+            reported = (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0)
+            if reported and meter_key:
+                from assistant.core import context_meter
+
+                context_meter.record(meter_key, reported, model=str(self._settings.model_name))
+            if usage_recorder is not None:
+                usage_recorder(call_id, usage)
+
         usage_handler = LedgerCallbackHandler(
-            ledger, prefix=f"core-{uuid.uuid4().hex[:8]}", on_call=usage_recorder
+            ledger, prefix=f"core-{uuid.uuid4().hex[:8]}", on_call=_on_call
         )
 
         # The host's conversation id IS the agent thread, so turn two of a chat
@@ -272,9 +288,17 @@ class DeepAgentEntry:
         # bound. It stays under the 13 minute core ceiling.
         deadline = getattr(self._settings, "deep_run_deadline_seconds", 180)
         if getattr(runtime, "claude_code_enabled", False):
-            deadline = max(deadline, int(self._settings.claude_code_run_seconds) + 60)
+            seconds = int(self._settings.claude_code_run_seconds)
+            if self._settings.zcode_cli_enabled:
+                seconds = max(seconds, int(self._settings.zcode_cli_run_seconds))
+            deadline = max(deadline, seconds + 60)
+        max_steps = getattr(self._settings, "deep_max_tool_steps", 40)
+        if getattr(runtime, "zcode_app_enabled", False):
+            # Driving ZCode on screen is many small look/act/poll steps, not a stuck loop.
+            max_steps = max(max_steps, 150)
+            deadline = max(deadline, int(self._settings.zcode_cli_run_seconds) + 60)
         guard = _LoopGuard(
-            max_steps=getattr(self._settings, "deep_max_tool_steps", 40),
+            max_steps=max_steps,
             deadline_seconds=deadline,
         )
         stopped_reason: str | None = None
@@ -343,6 +367,18 @@ class DeepAgentEntry:
                 continue
             response = "".join(partials[message_id])
             break
+        empty_answer = stopped_reason is None and not response.strip()
+        if empty_answer:
+            # A blank bubble tells the user nothing. The usual cause is the model running out
+            # of output room (its reasoning counts toward the cap) on a very long request.
+            response = (
+                "I ran the steps above but did not write a summary. Ask me what happened and "
+                "I will report it."
+                if tool_backed
+                else "I didn't get an answer back from the model. This usually means it ran out "
+                "of room on a very long request, or the provider returned nothing. Please try "
+                "again, or send the request in smaller parts."
+            )
         if stopped_reason is not None:
             # Fail closed: never present a loop that was cut off as a finish.
             response = (
@@ -350,12 +386,22 @@ class DeepAgentEntry:
                 "reached. Tell me what you see on screen, or give a more specific "
                 "instruction (for example the exact video title) and I will retry."
             )
+        if meter_key and not ledger.snapshot().get("input_tokens"):
+            # Provider reported nothing: keep a rough, marked estimate instead.
+            from assistant.core import context_meter
+
+            context_meter.estimate_add(meter_key, text, str(self._settings.model_name))
+            context_meter.estimate_add(meter_key, response, str(self._settings.model_name))
         usage_snapshot = ledger.snapshot()
         # Decimal cost is str()'d for the JSON frame; unknown stays None.
         if usage_snapshot.get("cost_usd") is not None:
             usage_snapshot["cost_usd"] = str(usage_snapshot["cost_usd"])
         return {
-            "status": "blocked" if stopped_reason is not None else "done",
+            "status": (
+                "blocked"
+                if stopped_reason is not None or (empty_answer and not tool_backed)
+                else "done"
+            ),
             "thread_id": thread,
             "response": response,
             "cua_actions_used": budget.used,
@@ -441,6 +487,7 @@ class CoreResources:
     #: Always built (cheap): the UI asks whether Claude Code is installed and
     #: signed in even while the feature is off. The tool is bound only when enabled.
     claude_code: Any = None
+    zcode: Any = None
     _service_lock: asyncio.Lock = dataclass_field(default_factory=asyncio.Lock)
     _service: Any = None
     _store: Any = None
@@ -455,7 +502,11 @@ class CoreResources:
             return self._service
 
     async def aclose(self) -> None:
-        """Close the shared store once (idempotent, best-effort)."""
+        """Close the shared store once and any open ZCode debug port (best-effort)."""
+        control = getattr(getattr(self.zcode, "_backend", None), "control", None)
+        if control is not None:
+            with contextlib.suppress(Exception):
+                await control.close()
         if self._store is not None:
             with contextlib.suppress(Exception):
                 await self._store.close()
@@ -467,8 +518,27 @@ def build_core_resources(settings: Settings) -> CoreResources:
     from assistant.claude_code.toolkit import ClaudeCodeToolkit
 
     registry = AgentRegistry()
+    from assistant.coding_agents.zcode import ZCodeBackend
+
     claude_code = ClaudeCodeToolkit(settings)
-    provider = RuntimeProvider(settings, claude_code=claude_code)
+    if settings.zcode_mode == "window":
+        from assistant.coding_agents.zcode_cdp.runner import ZCodeWindowRunner
+        from assistant.coding_agents.zcode_window import ZCodeWindowBackend
+
+        window_backend = ZCodeWindowBackend(settings.sani_data_dir)
+        zcode = ClaudeCodeToolkit(
+            settings,
+            backend=window_backend,
+            runner_factory=lambda _binary, _version: ZCodeWindowRunner(
+                window_backend.control,
+                allow_any_provider=settings.zcode_allowed_providers == "any",
+                selection=window_backend.selection,
+                remember=window_backend.control.remember,
+            ),
+        )
+    else:
+        zcode = ClaudeCodeToolkit(settings, backend=ZCodeBackend(settings.sani_data_dir))
+    provider = RuntimeProvider(settings, claude_code=claude_code, zcode=zcode)
     deep = DeepAgentEntry(settings, provider=provider)
 
     def jev_factory() -> Any:
@@ -484,6 +554,7 @@ def build_core_resources(settings: Settings) -> CoreResources:
         deep=deep,
         registry=registry,
         claude_code=claude_code,
+        zcode=zcode,
     )
 
     registry.register(deep)
@@ -780,7 +851,8 @@ class _DeepInvoke:
             # D11: one admission scope per invocation, with the ceiling
             # taken from the mission's own durable budget limits.
             scope = await self._admission.open_scope(
-                self._mission_id, self._plan_version,
+                self._mission_id,
+                self._plan_version,
                 f"{kind}:{self._thread_id}",
             )
             self._admission.push_scope(scope)
@@ -789,8 +861,7 @@ class _DeepInvoke:
                 await self._deep.run(
                     instruction,
                     thread_id=(
-                        f"{self._thread_id}:mission:{self._mission_id}:"
-                        f"v{self._plan_version}:{kind}"
+                        f"{self._thread_id}:mission:{self._mission_id}:v{self._plan_version}:{kind}"
                     ),
                     on_event=self._on_event,
                     cancel_check=self._cancel_check,

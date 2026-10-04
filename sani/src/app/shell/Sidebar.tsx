@@ -21,7 +21,8 @@ import { cn } from "@/lib/utils";
 import { computerControlSnapshot, onComputerControlChange, type Conversation } from "@/lib/tauri";
 import { useConversations } from "@/chat/use-conversations";
 import { useClaudeCode } from "@/chat/use-claude-code";
-import { claudeHealth } from "@/chat/claude-health";
+import { claudeHealth, zcodeHealth } from "@/chat/claude-health";
+import { useZCode } from "@/chat/use-zcode";
 import { StatusDot } from "@/components/status-dot";
 
 export type Section = "chat" | "control" | "settings";
@@ -100,13 +101,17 @@ export function Sidebar({
   section,
   onSection,
   onOpenClaudeCode,
+  onOpenZCode,
 }: {
   section: Section;
   onSection: (section: Section) => void;
   onOpenClaudeCode: () => void;
+  onOpenZCode: () => void;
 }) {
   const claude = useClaudeCode();
   const health = claudeHealth(claude.status, claude.loading);
+  const zcode = useZCode();
+  const zcodeState = zcodeHealth(zcode.status, zcode.loading);
   const { conversations, activeId, open, create, remove } = useConversations();
   const groups = useMemo(() => groupConversations(conversations), [conversations]);
   const controlReady = useControlReady();
@@ -206,6 +211,13 @@ export function Sidebar({
           selected={false}
           onClick={onOpenClaudeCode}
           trailing={<StatusDot tone={health.tone} label={`Claude Code: ${health.title}`} />}
+        />
+        <NavRow
+          icon={<SquareTerminal className="size-4" />}
+          label="ZCode"
+          selected={false}
+          onClick={onOpenZCode}
+          trailing={<StatusDot tone={zcodeState.tone} label={`ZCode: ${zcodeState.title}`} />}
         />
         <NavRow
           icon={<Settings className="size-4" />}

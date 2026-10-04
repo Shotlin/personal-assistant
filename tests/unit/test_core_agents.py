@@ -215,11 +215,38 @@ async def test_deep_entry_ends_a_hung_model_request_at_the_hard_limit() -> None:
     async def builder() -> _HungDeepAgent:
         return agent
 
-    entry = DeepAgentEntry(
-        _settings(deep_run_deadline_seconds=-29), agent_builder=builder
-    )
+    entry = DeepAgentEntry(_settings(deep_run_deadline_seconds=-29), agent_builder=builder)
     result = await entry.run(
         "do something", thread_id="c", on_event=_EventLog(), cancel_check=lambda: False
     )
     assert result["status"] == "blocked"
     assert "time limit" in result["response"]
+
+
+async def test_an_empty_model_answer_becomes_an_explanation_not_a_blank_reply() -> None:
+    agent = _StreamingDeepAgent([_chunk("m1", "")])
+
+    async def builder() -> _StreamingDeepAgent:
+        return agent
+
+    entry = DeepAgentEntry(_settings(), agent_builder=builder)
+    result = await entry.run(
+        "a very long request", thread_id="c", on_event=_EventLog(), cancel_check=lambda: False
+    )
+    assert result["status"] == "blocked"
+    assert "didn't get an answer back from the model" in result["response"]
+    assert "smaller parts" in result["response"]
+
+
+async def test_tools_run_but_no_summary_is_reported_as_done_with_a_note() -> None:
+    agent = _StreamingDeepAgent([_chunk("m1", tool_names=["launch_app"])])
+
+    async def builder() -> _StreamingDeepAgent:
+        return agent
+
+    entry = DeepAgentEntry(_settings(), agent_builder=builder)
+    result = await entry.run(
+        "open it", thread_id="c", on_event=_EventLog(), cancel_check=lambda: False
+    )
+    assert result["status"] == "done"
+    assert "did not write a summary" in result["response"]

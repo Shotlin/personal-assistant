@@ -19,7 +19,7 @@ import { DotMatrixLoader } from "@/components/ui/dot-matrix-loader";
 import { cn } from "@/lib/utils";
 import { formatDuration, pluralize } from "@/lib/format";
 import { itemSteps, type ChatItem, type StepPart } from "@/chat/types";
-import { RoundBlock, buildEntries, countWorkSteps } from "./round";
+import { RoundBlock, buildEntries, countWorkSteps, toolDisplayName } from "./round";
 
 /** Leading slot: a glyph chosen from the tool/label, never an "AI" sparkle. */
 function StepGlyph({ step }: { step: StepPart }) {
@@ -155,8 +155,13 @@ export function StepRail({ item }: { item: ChatItem }) {
   const duration = hasRounds && roundTime > 0 ? roundTime : workedFor(item, steps);
   const failedCount = steps.filter((step) => step.status === "failed" && !step.kind).length;
   const roundCount = entries.filter((entry) => entry.type === "round").length;
+  const toolNames = [
+    ...new Set(
+      entries.flatMap((entry) => (entry.type === "round" ? [toolDisplayName(entry.round.header?.tool)] : [])),
+    ),
+  ];
   const summary = [
-    hasRounds ? "Worked with Claude Code" : duration ? `Worked for ${formatDuration(duration)}` : "Worked",
+    hasRounds ? `Worked with ${toolNames.join(" and ")}` : duration ? `Worked for ${formatDuration(duration)}` : "Worked",
     hasRounds ? pluralize(roundCount, "round") : null,
     pluralize(countWorkSteps(steps), "step"),
     hasRounds && duration ? formatDuration(duration) : null,

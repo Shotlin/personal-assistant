@@ -81,6 +81,8 @@ class Final:
     #: Tokens in the conversation after this run (best estimate of context use).
     context_tokens: int | None = None
     context_window: int | None = None
+    #: The model Claude Code actually used (from its own report).
+    model: str = ""
     denials: tuple[str, ...] = ()
     usage: dict[str, Any] = field(default_factory=dict)
 

@@ -15,11 +15,12 @@ import logging
 import os
 import time
 from collections.abc import Awaitable, Callable
+from copy import copy
 from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.tools import BaseTool, StructuredTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 from assistant.claude_code import context
 from assistant.claude_code.auth import SUCCEEDED, LoginSession, sign_out
@@ -34,14 +35,17 @@ from assistant.claude_code.events import (
 )
 from assistant.claude_code.locate import (
     ClaudeStatus,
-    find_claude_binary,
+    child_environment,
     parse_version,
-    read_status,
 )
+from assistant.claude_code.parser import StreamParser
 from assistant.claude_code.redact import screen
-from assistant.claude_code.runner import ClaudeRunner, Permission, RunOutcome, RunRequest
+from assistant.claude_code.runner import ClaudeRunner, Permission, Runner, RunOutcome, RunRequest
 from assistant.claude_code.store import SessionStore
 from assistant.claude_code.watchdog import Watchdog, WatchdogLimits
+from assistant.coding_agents.backend import Backend, session_key
+from assistant.coding_agents.claude import ClaudeBackend
+from assistant.coding_agents.guide import GUIDE, TOOL_DESCRIPTION, for_backend
 from assistant.core.protocol import AGENT_PROGRESS
 from assistant.settings import Settings
 
@@ -53,39 +57,7 @@ _ATTACHMENT_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".txt"
 _MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 _SUMMARY_LIMIT = 3000
 
-TOOL_DESCRIPTION = (
-    "Do software work with the user's own Claude Code: write, change, debug, test or explain code "
-    "in a project folder. Use it for any coding request, never for chat, desktop clicking or "
-    "browsing. Give ONE complete, self-contained request (the goal, the files or area involved, "
-    "constraints, and how to check it worked, for example 'run the tests'). Claude Code keeps this "
-    "chat's session, so follow-ups continue where it left off. The result tells you what changed "
-    "and whether it worked; read it before answering. If a run fails for a clear, fixable reason, "
-    "make ONE corrected follow-up. If it stops, is blocked, or fails the same way twice, stop and "
-    "tell the user plainly what happened and what you need, instead of trying again."
-)
-
-GUIDE = """
-Coding with Claude Code: you have a `claude_code` tool that drives the user's own Claude Code.
-- Use it for software work (build, edit, fix, test, explain a codebase). Do not use it for chat,
-  the desktop, or the web.
-- Write the request like a good engineer would: goal, where, constraints, how to verify.
-- Pick mode "read" to only look, "edit" to change files, "run" to also run commands and tests.
-- Judge each result. One corrected follow-up is fine; if it stops, is blocked or fails the same way
-  twice, stop and explain in plain words what happened and what you need from the user.
-- Never paste long output back. Say what changed, whether it worked, and what to do next.
-- If the user attached an image, pass its path in `attachments`.
-- Give every call a short `purpose` (under 8 words); the user sees it as the round's title.
-- New project: pass `create_folder=true` and a project_dir inside an allowed folder.
-- Claude Code cannot wait for an answer mid-run. If its reply asks you something with options,
-  decide who answers. Answer it yourself (send a follow-up call) when the user's request, the chat
-  so far, or sound engineering defaults settle it, and say in one line what you chose and why.
-  Ask the user only for things that are theirs to decide (brand, taste, money, anything hard to
-  undo). Ask by ending your message with a block like:
-  [Options]
-  - First choice
-  - Second choice
-  (2 to 4 short choices; the user can tap one or type their own).
-"""
+__all__ = ["GUIDE", "TOOL_DESCRIPTION", "ClaudeCodeToolkit", "ClaudeCodeArgs"]
 
 
 class ClaudeCodeArgs(BaseModel):
@@ -119,6 +91,18 @@ class ClaudeCodeArgs(BaseModel):
     )
 
 
+def args_schema_for(name: str) -> type[BaseModel]:
+    """The tool's argument schema with this backend's name in the descriptions."""
+    if name == "Claude Code":
+        return ClaudeCodeArgs
+    fields: dict[str, Any] = {}
+    for key, info in ClaudeCodeArgs.model_fields.items():
+        copied = copy(info)
+        copied.description = (info.description or "").replace("Claude Code", name)
+        fields[key] = (info.annotation, copied)
+    return create_model(f"{name.replace(' ', '')}Args", **fields)
+
+
 class ProjectNotAllowed(ValueError):
     """The folder is not one the user allowed. The message is shown to the user."""
 
@@ -136,34 +120,46 @@ class ClaudeCodeToolkit:
         self,
         settings: Settings,
         *,
-        locator: Callable[..., Path | None] = find_claude_binary,
-        status_reader: Callable[[Path | None], Awaitable[ClaudeStatus]] = read_status,
+        backend: Backend | None = None,
+        locator: Callable[..., Path | None] | None = None,
+        status_reader: Callable[[Path | None], Awaitable[ClaudeStatus]] | None = None,
         store: SessionStore | None = None,
-        runner_factory: Callable[[Path, tuple[int, int, int] | None], ClaudeRunner] | None = None,
+        runner_factory: Callable[[Path, tuple[int, int, int] | None], Runner] | None = None,
         limits: WatchdogLimits | None = None,
     ) -> None:
         self._settings = settings
-        self._locator = locator
-        self._status_reader = status_reader
+        self._backend: Backend = backend or ClaudeBackend()
+        self._name = self._backend.name
+        self._opts = self._backend.options(settings)
+        # Tests inject find_claude_binary/read_status fakes; otherwise the backend decides.
+        self._locator = locator or (lambda override="": self._backend.locate(override))
+        self._status_reader = status_reader or self._backend.read_status
         self._store = store or (
             SessionStore(settings.sani_db_path) if settings.sani_data_dir else None
         )
+        bind = getattr(self._backend, "bind_store", None)
+        if bind is not None:
+            bind(self._store)
         self._runner_factory = runner_factory or (
-            lambda binary, version: ClaudeRunner(binary, version=version)
+            lambda binary, version: ClaudeRunner(
+                binary, version=version, backend=self._backend, settings=settings
+            )
         )
         self._limits = limits
         self._status: tuple[float, ClaudeStatus] | None = None
+        self._cdp_job: Any = None
+        self._last_auto = -1000.0
         self._locks: dict[str, asyncio.Lock] = {}
         self._rates: dict[str, dict[str, Any]] = {}
         self._last_run: dict[str, Any] = {}
-        self._login = LoginSession()
+        self._login = LoginSession(self._backend, on_success=self._login_succeeded)
 
     # -- configuration -------------------------------------------------------
 
     def allowed_dirs(self) -> list[Path]:
         roots: list[Path] = []
         home = Path.home().resolve()
-        for raw in self._settings.claude_code_dirs.split(os.pathsep):
+        for raw in self._opts.dirs.split(os.pathsep):
             raw = raw.strip()
             if not raw:
                 continue
@@ -187,8 +183,9 @@ class ClaudeCodeToolkit:
         roots = self.allowed_dirs()
         if not roots:
             raise ProjectNotAllowed(
-                "No project folders are set up for Claude Code yet. Add one in "
-                "Settings → Claude Code."
+                f"No project folders are set up for {self._name} yet. The user adds one in "
+                "Sani's Settings → Claude Code → Project folders (a list shared by every "
+                "coding tool, not a setting inside the coding tool itself)."
             )
         project = _real(raw)
         if create and not project.exists():
@@ -209,7 +206,9 @@ class ClaudeCodeToolkit:
             names = ", ".join(str(root) for root in roots)
             raise ProjectNotAllowed(
                 f"{project} isn't one of the folders Sani may work in ({names}). "
-                "The user can add it in Settings → Claude Code."
+                "That list is Sani's own, shared by every coding tool: the user adds the folder in "
+                "Sani's Settings → Claude Code → Project folders. It is not a setting inside "
+                f"{self._name}, so do not look for it there."
             )
         return project
 
@@ -222,7 +221,7 @@ class ClaudeCodeToolkit:
         for item in raw:
             path = _real(item)
             if not any(_inside(path, root) for root in allowed):
-                raise ProjectNotAllowed(f"I can't share {item} with Claude Code from there.")
+                raise ProjectNotAllowed(f"I can't share {item} with {self._name} from there.")
             if not path.is_file() or path.suffix.lower() not in _ATTACHMENT_SUFFIXES:
                 raise ProjectNotAllowed(f"{item} isn't an image or document I can pass along.")
             if path.stat().st_size > _MAX_ATTACHMENT_BYTES:
@@ -236,7 +235,7 @@ class ClaudeCodeToolkit:
         now = time.monotonic()
         if not fresh and self._status and now - self._status[0] < _STATUS_TTL_SECONDS:
             return self._status[1]
-        binary = self._locator(override=self._settings.claude_code_binary)
+        binary = self._locator(override=self._opts.binary)
         status = await self._status_reader(binary)
         self._status = (now, status)
         return status
@@ -256,16 +255,25 @@ class ClaudeCodeToolkit:
         }
 
     async def status_report(self) -> dict[str, Any]:
+        await self._maybe_auto_read()
         status = await self.claude_status(fresh=True)
         # A finished sign-in is re-read from Claude Code itself, never assumed.
         if self._login.view().state == SUCCEEDED and not status.signed_in:
             status = await self.claude_status(fresh=True)
         return {
             "login": self._login.view().as_dict(),
-            "enabled": self._settings.claude_code_enabled,
-            "permission": self._settings.claude_code_permission,
+            "enabled": self._opts.enabled,
+            "permission": self._opts.permission,
             "folders": [str(root) for root in self.allowed_dirs()],
-            "claude": status.as_dict(),
+            self._backend.key: status.as_dict(),
+            "backend": self._backend.key,
+            "extra": self._backend.extra_status(self._locator(override=self._opts.binary)),
+            "selection": await self._selection(),
+            "balances": await self._balances(),
+            "account": await self._account(),
+            "cdp": await self._cdp(),
+            "control": await self._control_view(),
+            "account_change": await self._account_change(),
             "usage": await self.usage_state(),
         }
 
@@ -273,37 +281,233 @@ class ClaudeCodeToolkit:
 
     async def handle_action(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """``claude_code.login_start`` / ``login_code`` / ``login_cancel`` / ``logout``."""
-        binary = self._locator(override=self._settings.claude_code_binary)
-        if method == "claude_code.login_start":
+        binary = self._locator(override=self._opts.binary)
+        prefix = self._backend.action_prefix
+        if method == f"{prefix}.status":
+            return await self.status_report()
+        if method == f"{prefix}.select":
+            error = await self._select(
+                str(params.get("provider") or ""), str(params.get("model") or "")
+            )
+            if error:
+                return {"error": error}
+        elif method == f"{prefix}.login_start":
             if binary is None:
-                return {"error": "Claude Code isn't installed."}
+                return {"error": f"{self._name} isn't installed."}
             self._status = None
             await self._login.start(binary)
-        elif method == "claude_code.login_code":
+        elif method == f"{prefix}.login_code":
             await self._login.submit_code(str(params.get("code") or ""))
-        elif method == "claude_code.login_cancel":
+        elif method == f"{prefix}.login_cancel":
             await self._login.cancel()
-        elif method == "claude_code.logout":
+        elif method == f"{prefix}.logout":
             if binary is None:
-                return {"error": "Claude Code isn't installed."}
+                return {"error": f"{self._name} isn't installed."}
             await self._login.cancel()
-            ok, message = await sign_out(binary)
+            ok, message = await sign_out(binary, self._backend)
             self._status = None
             if not ok:
                 return {"error": message}
+        elif method == f"{prefix}.control" and getattr(self._backend, "control", None):
+            control: Any = getattr(self._backend, "control")  # noqa: B009
+            if params.get("confirm") is not True:
+                return {"error": "Confirm first: this lets Sani close and reopen ZCode."}
+            await control.set_enabled(params.get("enabled") is True)
+        elif method == f"{prefix}.ack_change" and self._backend.key == "zcode":
+            from assistant.coding_agents.zcode_cdp.sync import AccountSync
+
+            await AccountSync(self._store).acknowledge()
+        elif method == f"{prefix}.read" and self._backend.key == "zcode":
+            error = self._zcode_job().start(confirmed=params.get("confirm") is True)
+            if error:
+                return {"error": error}
+            return await self.status_report()
+        elif method == f"{prefix}.usage_refresh" and self._backend.supports_usage:
+            error = await self._refresh_usage(binary)
+            if error:
+                return {"error": error}
         else:
             return {"error": "unknown action"}
         self._status = None
         return await self.status_report()
 
+    async def _login_succeeded(self, output: str) -> None:
+        """Keep the account label the sign-in command printed (name or email only)."""
+        found = self._backend.parse_account(output)
+        if not found or self._store is None:
+            return
+        keep = {k: screen(v, limit=120) for k, v in found.items() if k in {"name", "email"}}
+        await self._store.put_state(f"{self._backend.key}_account", {**keep, "as_of": time.time()})
+
+    async def _account(self) -> dict[str, Any] | None:
+        if self._backend.key != "zcode":
+            return None
+        from assistant.coding_agents.zcode_app import saved_account
+
+        return await saved_account(self)
+
+    async def _cdp(self) -> dict[str, Any] | None:
+        """What the last read of the ZCode window found (contract, models, sessions)."""
+        if self._backend.key != "zcode":
+            return None
+        from assistant.coding_agents.zcode_cdp.reader import saved_overview
+
+        overview = await saved_overview(self._store) or {}
+        return {**overview, "job": self._zcode_job().view()}
+
+    async def _account_change(self) -> dict[str, Any] | None:
+        if self._backend.key != "zcode" or self._store is None:
+            return None
+        from assistant.coding_agents.zcode_cdp.sync import AccountSync
+
+        return await AccountSync(self._store).view()
+
+    async def _maybe_auto_read(self) -> None:
+        """Re-read ZCode on its own once its sign-in file changed (with the user's standing yes).
+
+        Waits until the file has been still for 20 seconds (a sign-in is finished), never while a
+        run uses the window, and at most once every five minutes.
+        """
+        control: Any = getattr(self._backend, "control", None)
+        if control is None or self._store is None:
+            return
+        from assistant.coding_agents.zcode_cdp.sync import AccountSync, credential_signal
+
+        sync = AccountSync(self._store)
+        fingerprint, modified = credential_signal()
+        await sync.signal(fingerprint, modified)
+        stale = await sync.stale()
+        if not stale or not await control.enabled():
+            return
+        job = self._zcode_job()
+        if job.reading or control.busy or time.time() - float(stale.get("modified", 0)) < 20:
+            return
+        if time.monotonic() - self._last_auto < 300:
+            return
+        self._last_auto = time.monotonic()
+        job.start(confirmed=True)
+
+    async def _control_view(self) -> dict[str, Any] | None:
+        """Whether Sani may close/reopen ZCode to drive it, and whether the port is open now."""
+        control: Any = getattr(self._backend, "control", None)
+        if control is None:
+            return None
+        return {"enabled": await control.enabled(), "open": control.is_open}
+
+    def _zcode_job(self) -> Any:
+        """The one background read of the ZCode window (created on first use)."""
+        if self._cdp_job is None:
+            from assistant.coding_agents.zcode_cdp.job import ReadJob
+            from assistant.coding_agents.zcode_cdp.launcher import ZCodeLauncher
+            from assistant.coding_agents.zcode_cdp.reader import read_snapshot
+
+            control: Any = getattr(self._backend, "control", None)
+
+            async def reader() -> Any:
+                if control is not None and control.is_open:
+                    snap = await control.read_in_place()
+                    if snap is not None:
+                        return snap
+                return await read_snapshot(ZCodeLauncher(), consent=True)
+
+            self._cdp_job = ReadJob(self._store, reader)
+        return self._cdp_job
+
+    async def _balances(self) -> dict[str, Any] | None:
+        if self._backend.key != "zcode":
+            return None
+        from assistant.coding_agents.zcode_app import saved_balances
+
+        return await saved_balances(self)
+
+    async def _selection(self) -> dict[str, str]:
+        if self._store is None:
+            return {}
+        saved = await self._store.get_state(f"{self._backend.key}_selection")
+        return {k: str(v) for k, v in saved.items() if k in {"provider", "model"}}
+
+    async def _select(self, provider: str, model: str) -> str:
+        """Remember the plan and model the user picked (must exist in this backend's catalog)."""
+        catalog = self._backend.extra_status(self._locator(override=self._opts.binary)).get(
+            "catalog"
+        )
+        plans = catalog if isinstance(catalog, list) else []
+        known = any(
+            plan.get("id") == provider and any(m.get("id") == model for m in plan.get("models", []))
+            for plan in plans
+        )
+        if not known:
+            return "That plan and model aren't available."
+        if self._store is None:
+            return "Nowhere to save the choice."
+        await self._store.put_state(
+            f"{self._backend.key}_selection", {"provider": provider, "model": model}
+        )
+        return ""
+
+    async def _refresh_usage(self, binary: Path | None) -> str:
+        """Ask Claude Code for its 5-hour and weekly numbers with one tiny request.
+
+        Claude Code only reports them while it works, so this sends a one-word
+        prompt with no tools. It uses a little of the user's own plan, never an API key.
+        """
+        if binary is None:
+            return "Claude Code isn't installed."
+        folders = self.allowed_dirs()
+        if not folders:
+            return "Add a project folder first."
+        process = await asyncio.create_subprocess_exec(
+            str(binary),
+            "-p",
+            "Reply with just: ok",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--max-turns",
+            "1",
+            "--tools",
+            "",
+            cwd=str(folders[0]),
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=child_environment(),
+        )
+        try:
+            out, _ = await asyncio.wait_for(process.communicate(), timeout=60)
+        except TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+            await process.wait()
+            return "Claude Code took too long to answer."
+        parser = StreamParser()
+        found = False
+        for raw in out.decode("utf-8", errors="replace").splitlines():
+            for event in parser.feed(raw):
+                if isinstance(event, RateLimit):
+                    self._remember_rate(event)
+                    found = True
+        if not found:
+            return "Claude Code didn't report its limits."
+        if self._store is not None:
+            with contextlib.suppress(Exception):
+                await self._store.put_state(
+                    "usage", {"rates": self._rates, "last_run": self._last_run}
+                )
+        return ""
+
     # -- the tool -----------------------------------------------------------
+
+    def guide(self) -> str:
+        """The paragraph that tells the Deep Agent how to use this coding tool."""
+        return self._backend.guide()
 
     def as_tool(self) -> BaseTool:
         return StructuredTool.from_function(
             coroutine=self.run,
-            name="claude_code",
-            description=TOOL_DESCRIPTION,
-            args_schema=ClaudeCodeArgs,
+            name=self._backend.tool_name,
+            description=for_backend(TOOL_DESCRIPTION, self._name, self._backend.tool_name),
+            args_schema=args_schema_for(self._name),
         )
 
     async def run(
@@ -329,35 +533,47 @@ class ClaudeCodeToolkit:
         if not status.installed:
             return f"Not started. {status.detail}"
         if not status.signed_in:
-            return (
-                "Not started. Claude Code isn't signed in on this Mac. Ask the user to run "
-                "`claude auth login` once in Terminal (it opens a browser); then try again."
-            )
-        binary = self._locator(override=self._settings.claude_code_binary)
+            return f"Not started. {self._backend.sign_in_hint}"
+        binary = self._locator(override=self._opts.binary)
         if binary is None:  # pragma: no cover - status just proved it exists
-            return "Not started. Claude Code disappeared."
+            return f"Not started. {self._name} disappeared."
+
+        # Before anything is spent: e.g. ZCode must be on the user's Z.ai plan, not a custom key.
+        preflight = await self._backend.preflight(
+            binary, Path(self._settings.sani_data_dir or "/tmp"), self._settings
+        )
+        if preflight.refusal:
+            return f"Not started. {preflight.refusal}"
 
         requested = mode if mode in _ORDER else "edit"
-        ceiling = self._settings.claude_code_permission
+        ceiling = self._opts.permission
         effective: Permission = requested if _ORDER[requested] <= _ORDER[ceiling] else ceiling  # type: ignore[assignment]
         clamp_note = (
-            f" (limited to “{ceiling}” by the user's setting)" if effective != requested else ""
+            (
+                f" (limited to “{ceiling}” by Sani's own setting: Settings → Claude Code → "
+                "What a run may do; the user raises it there, not inside the coding tool)"
+            )
+            if effective != requested
+            else ""
         )
 
         conversation = context.conversation_id.get()
         session_id = ""
+        skey = session_key(self._backend, conversation)
         if self._store is not None and conversation and not new_session:
-            session_id = await self._store.get_session(conversation, str(project))
+            session_id = await self._store.get_session(skey, str(project))
         lock = self._locks.setdefault(str(project), asyncio.Lock())
         if lock.locked():
-            return "Not started. Claude Code is already working in that folder; wait for it."
+            return f"Not started. {self._name} is already working in that folder; wait for it."
         extra = self.attachments_dir()
         request = RunRequest(
             prompt=task.strip(),
             cwd=project,
             permission=effective,
             session_id=session_id or None,
-            max_turns=self._settings.claude_code_max_turns,
+            max_turns=self._opts.max_turns,
+            model=self._opts.model,
+            effort=self._opts.effort,
             attachments=files,
             extra_dirs=(extra,) if files and extra is not None and extra.is_dir() else (),
         )
@@ -365,7 +581,7 @@ class ClaudeCodeToolkit:
         runner = self._runner_factory(binary, version)
         watchdog = Watchdog(self._limits or WatchdogLimits(max_seconds=self._deadline()))
         cancel = asyncio.Event()
-        reporter = _Reporter(project, self._remember_rate)
+        reporter = _Reporter(project, self._remember_rate, self._backend)
         async with lock:
             if created:
                 await reporter.plain(f"Created the folder {project.name}", detail=str(project))
@@ -373,6 +589,7 @@ class ClaudeCodeToolkit:
                 purpose.strip() or f"Working in {project.name}",
                 request=task.strip(),
                 continuing=bool(session_id),
+                note=preflight.note,
             )
             try:
                 outcome = await runner.run(
@@ -383,13 +600,21 @@ class ClaudeCodeToolkit:
                 raise
             except OSError as problem:
                 await reporter.finish(None, error=str(problem))
-                return f"Claude Code could not be started: {problem}"
+                return f"{self._name} could not be started: {problem}"
             await reporter.finish(outcome)
         await self._after_run(conversation, project, outcome)
-        return self._summary(outcome, project, effective, clamp_note, bool(session_id))
+        return self._summary(
+            outcome,
+            project,
+            effective,
+            clamp_note,
+            bool(session_id),
+            self._name,
+            preflight.note,
+        )
 
     def _deadline(self) -> float:
-        return float(self._settings.claude_code_run_seconds)
+        return float(self._opts.run_seconds)
 
     async def _after_run(self, conversation: str, project: Path, outcome: RunOutcome) -> None:
         final = outcome.final
@@ -398,6 +623,7 @@ class ClaudeCodeToolkit:
             "session_id": outcome.session_id,
             "context_tokens": final.context_tokens if final else None,
             "context_window": final.context_window if final else None,
+            "model": final.model if final else "",
             "cost_usd": final.cost_usd if final else None,
             "turns": final.turns if final else 0,
             "at": time.time(),
@@ -406,7 +632,9 @@ class ClaudeCodeToolkit:
             return
         with contextlib.suppress(Exception):
             if conversation and outcome.session_id:
-                await self._store.set_session(conversation, str(project), outcome.session_id)
+                await self._store.set_session(
+                    session_key(self._backend, conversation), str(project), outcome.session_id
+                )
             await self._store.put_state("usage", {"rates": self._rates, "last_run": self._last_run})
 
     def _remember_rate(self, limit: RateLimit) -> None:
@@ -422,26 +650,34 @@ class ClaudeCodeToolkit:
 
     @staticmethod
     def _summary(
-        outcome: RunOutcome, project: Path, mode: str, clamp_note: str, resumed: bool
+        outcome: RunOutcome,
+        project: Path,
+        mode: str,
+        clamp_note: str,
+        resumed: bool,
+        name: str = "Claude Code",
+        model_note: str = "",
     ) -> str:
         lines: list[str] = []
         if outcome.cancelled:
-            lines.append("Claude Code was stopped because the user cancelled.")
+            lines.append(f"{name} was stopped because the user cancelled.")
         elif outcome.stopped_reason:
             lines.append(
-                f"Claude Code was stopped early because {outcome.stopped_reason}. "
+                f"{name} was stopped early because {outcome.stopped_reason}. "
                 "Do not simply retry: tell the user what happened, or make ONE changed attempt "
                 "with a narrower request."
             )
         elif outcome.ok:
-            lines.append("Claude Code finished.")
+            lines.append(f"{name} finished.")
         else:
             reason = outcome.error or (outcome.final.subtype if outcome.final else "")
-            lines.append(f"Claude Code did not finish successfully ({reason or 'unknown reason'}).")
+            lines.append(f"{name} did not finish successfully ({reason or 'unknown reason'}).")
         lines.append(
             f"Folder: {project} · mode: {mode}{clamp_note}"
             + (" · continued session" if resumed else "")
         )
+        if model_note:
+            lines.append(model_note)
         lines.append(
             f"Steps: {outcome.steps}"
             + (f" ({outcome.failed_steps} failed)" if outcome.failed_steps else "")
@@ -452,16 +688,24 @@ class ClaudeCodeToolkit:
             lines.append(f"Files changed: {shown}" + (f" and {more} more" if more > 0 else ""))
         if outcome.commands:
             lines.append("Commands: " + "; ".join(outcome.commands[:6]))
+        for note in outcome.notes:
+            lines.append("Check: " + note)
         final = outcome.final
         if final and final.denials:
             lines.append(
                 "Blocked tools (not allowed in this mode): " + ", ".join(sorted(set(final.denials)))
             )
+        if mode != "run":
+            lines.append(
+                f"Verify: this run could not run commands (mode \u201c{mode}\u201d), so anything "
+                f"{name} says it ran, tested, or printed is its own claim, not a result. Check "
+                "files directly, or ask the user to allow \u201cEdit files and run commands\u201d."
+            )
         text = outcome.text.strip()
         if text:
             if len(text) > _SUMMARY_LIMIT:
                 text = text[:_SUMMARY_LIMIT].rstrip() + "…"
-            lines.append("Claude Code said:\n" + text)
+            lines.append(f"{name} said:\n" + text)
         if final:
             used = f"{final.turns} turns"
             if final.cost_usd is not None:
@@ -483,7 +727,11 @@ class _Reporter:
     Every step carries the round's ``group`` so the UI can fold them together.
     """
 
-    def __init__(self, project: Path, on_rate: Callable[[RateLimit], None]) -> None:
+    def __init__(
+        self, project: Path, on_rate: Callable[[RateLimit], None], backend: Backend | None = None
+    ) -> None:
+        self._backend: Backend = backend or ClaudeBackend()
+        self._name = self._backend.name
         self._project = project
         self._on_rate = on_rate
         self._open: dict[str, tuple[ToolStart, float]] = {}
@@ -515,24 +763,31 @@ class _Reporter:
         with contextlib.suppress(Exception):
             await sink(AGENT_PROGRESS, {"message": label, "step": step})
 
-    async def start(self, title: str, *, request: str, continuing: bool) -> None:
+    async def start(
+        self, title: str, *, request: str, continuing: bool, note: str = ""
+    ) -> None:
         self._title = screen(title, limit=80)
         self._started = time.monotonic()
+        detail = " · ".join(
+            part
+            for part in (f"continuing the same {self._name} session" if continuing else "", note)
+            if part
+        )
         await self._send(
             {
                 "id": f"{self._group}:round",
                 "kind": "round",
                 "label": self._title,
                 "status": "running",
-                "tool": "claude_code",
-                "detail": "continuing the same Claude Code session" if continuing else "",
+                "tool": self._backend.tool_name,
+                "detail": screen(detail, limit=300),
             }
         )
         await self._send(
             {
                 "id": f"{self._group}:prompt",
                 "kind": "prompt",
-                "label": "Sani asked Claude Code",
+                "label": f"Sani asked {self._name}",
                 "status": "complete",
                 "detail": screen(request, limit=2500),
             }
@@ -548,6 +803,28 @@ class _Reporter:
                     "status": "info",
                 }
             )
+        if outcome is not None:
+            if outcome.files_changed:
+                shown = ", ".join(outcome.files_changed[:8])
+                more = len(outcome.files_changed) - 8
+                tail = f" and {more} more" if more > 0 else ""
+                await self._send(
+                    {
+                        "id": f"{self._group}:files",
+                        "kind": "note",
+                        "label": f"Files changed: {shown}{tail}",
+                        "status": "info",
+                    }
+                )
+            for index, line in enumerate(outcome.notes[:6]):
+                await self._send(
+                    {
+                        "id": f"{self._group}:check{index}",
+                        "kind": "note",
+                        "label": screen(line, limit=300),
+                        "status": "info",
+                    }
+                )
         reply = ""
         if outcome is not None:
             reply = outcome.text.strip()
@@ -558,7 +835,7 @@ class _Reporter:
                 {
                     "id": f"{self._group}:reply",
                     "kind": "reply",
-                    "label": "Claude Code replied",
+                    "label": f"{self._name} replied",
                     "status": "complete",
                     "detail": screen(reply, limit=1800),
                 }
@@ -570,7 +847,7 @@ class _Reporter:
                 "kind": "round",
                 "label": self._title,
                 "status": "complete" if ok else "failed" if outcome is not None else "failed",
-                "tool": "claude_code",
+                "tool": self._backend.tool_name,
                 "duration_ms": int((time.monotonic() - self._started) * 1000),
             }
         )
@@ -620,7 +897,7 @@ class _Reporter:
             await self._send(
                 {
                     "id": f"cc:retry-{self._counter}",
-                    "label": "Waiting for Claude to respond again",
+                    "label": f"Waiting for {self._name} to respond again",
                     "status": "info",
                 }
             )

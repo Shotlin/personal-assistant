@@ -29,6 +29,11 @@ export type RailEntry = { type: "step"; step: StepPart } | { type: "round"; roun
 
 const STRUCTURAL = new Set(["round", "prompt", "reply", "note"]);
 
+/** The coding tool behind a round, from the tool id the engine sends on the round header. */
+export function toolDisplayName(tool?: string): string {
+  return tool === "zcode" ? "ZCode" : "Claude Code";
+}
+
 /** Fold a flat step list into plain steps and Claude Code rounds, in order. */
 export function buildEntries(steps: StepPart[]): RailEntry[] {
   const entries: RailEntry[] = [];
@@ -108,18 +113,19 @@ export function RoundBlock({
 }) {
   const status = round.header?.status;
   const running = status === "running" || (status === undefined && !round.reply);
+  const tool = toolDisplayName(round.header?.tool);
   return (
-    <section aria-label={round.header?.label ?? "Claude Code"} className="flex flex-col gap-1.5 py-1">
+    <section aria-label={round.header?.label ?? tool} className="flex flex-col gap-1.5 py-1">
       <div className="flex min-h-7 items-center gap-2 text-sm">
         <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
           <HeaderGlyph status={status} />
         </span>
         <span className={cn("min-w-0 truncate font-medium", running ? "sani-shimmer" : "text-foreground")}>
-          {round.header?.label ?? "Claude Code"}
+          {round.header?.label ?? tool}
         </span>
         <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
           <SquareTerminal className="size-3" aria-hidden="true" />
-          Claude Code
+          {tool}
         </span>
         <span className="flex-1" />
         {round.header?.durationMs ? (
@@ -129,7 +135,7 @@ export function RoundBlock({
         ) : null}
       </div>
       <div className="ml-2 flex flex-col gap-2 border-l border-border pl-4">
-        {round.prompt?.detail ? <Quote label="Sani asked Claude Code" text={round.prompt.detail} /> : null}
+        {round.prompt?.detail ? <Quote label={`Sani asked ${tool}`} text={round.prompt.detail} /> : null}
         {round.steps.length > 0 ? (
           <div className="flex flex-col">{round.steps.map((step) => renderStep(step))}</div>
         ) : null}
@@ -139,7 +145,7 @@ export function RoundBlock({
             <span className="min-w-0">{note.label}</span>
           </div>
         ))}
-        {round.reply?.detail ? <Quote label="Claude Code replied" text={round.reply.detail} markdown /> : null}
+        {round.reply?.detail ? <Quote label={`${tool} replied`} text={round.reply.detail} markdown /> : null}
       </div>
     </section>
   );

@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { saveAttachment, type AgentDescriptor, type ClaudeCodeStatus, type UiState } from "@/lib/tauri";
+import { onDictationFinal, saveAttachment, type AgentDescriptor, type ClaudeCodeStatus, type UiState } from "@/lib/tauri";
 import {
   ACCEPT,
   MAX_ATTACHMENT_BYTES,
@@ -29,6 +29,8 @@ import {
   withAttachments,
 } from "@/chat/attachments";
 import { UsageMeter } from "./usage-meter";
+import { useDeepContext } from "@/chat/use-deep-context";
+import { useZCode } from "@/chat/use-zcode";
 
 const MAX_HEIGHT_PX = 220;
 
@@ -43,6 +45,10 @@ export interface ComposerProps {
   onMic: () => void;
   onStop: () => void;
   autoFocus?: boolean;
+  /** The mic was started from this box: words land here as a draft. */
+  dictating?: boolean;
+  /** Live speech-to-text while dictating. */
+  partial?: string;
   /** Claude Code usage facts, when the companion is on and reporting. */
   claudeCode?: ClaudeCodeStatus | null;
 }
@@ -57,8 +63,12 @@ export function Composer({
   onMic,
   onStop,
   autoFocus,
+  dictating = false,
+  partial = "",
   claudeCode = null,
 }: ComposerProps) {
+  const deepContext = useDeepContext();
+  const zcode = useZCode();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -76,6 +86,25 @@ export function Composer({
   const capturing = state === "listening" || state === "preparing" || state === "finalizing";
   const working = state === "working";
   const locked = working || capturing;
+  const dictationLive = dictating && capturing;
+  const shown = dictationLive && partial ? `${draft}${draft && !/\s$/.test(draft) ? " " : ""}${partial}` : draft;
+
+  // Finished dictation joins the draft; the user reads it, edits it, then sends.
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    void onDictationFinal((text) => {
+      setDraft((current) => `${current}${current && !/\s$/.test(current) ? " " : ""}${text}`);
+      requestAnimationFrame(() => textarea.current?.focus());
+    }).then((unlisten) => {
+      if (gone) unlisten();
+      else off = unlisten;
+    });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, []);
   const canSend = (draft.trim().length > 0 || files.length > 0) && !locked && !sending;
 
   useLayoutEffect(() => {
@@ -83,7 +112,7 @@ export function Composer({
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
-  }, [draft]);
+  }, [shown]);
 
   useEffect(() => {
     if (autoFocus) textarea.current?.focus();
@@ -194,10 +223,10 @@ export function Composer({
       <textarea
         ref={textarea}
         rows={1}
-        value={draft}
+        value={shown}
         disabled={locked}
         aria-label="Ask Sani something"
-        placeholder={capturing ? "Finish or cancel voice capture first" : "Ask Sani to do something…"}
+        placeholder={dictationLive ? "Listening…" : capturing ? "Finish or cancel voice capture first" : "Ask Sani to do something…"}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
@@ -264,10 +293,10 @@ export function Composer({
               </Tooltip>
             </>
           ) : null}
-          <UsageMeter status={claudeCode} />
         </div>
 
         <div className="flex items-center gap-1.5">
+          <UsageMeter status={claudeCode} deep={deepContext} zcode={zcode.status} />
           <Tooltip>
             <TooltipTrigger
               render={
@@ -277,17 +306,24 @@ export function Composer({
                   size="icon-sm"
                   onClick={onMic}
                   disabled={working}
-                  aria-label={capturing ? "Finish voice capture" : "Start voice"}
+                  aria-label={capturing ? "Stop dictation" : "Dictate"}
                   className={cn(
                     "rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground",
-                    capturing && "bg-secondary text-foreground",
+                    capturing &&
+                      "relative bg-blue-10 text-foreground shadow-[0_0_0_4px_var(--blue-a4)] hover:bg-blue-11 hover:text-foreground",
                   )}
                 />
               }
             >
-              <Mic className="size-4" />
+              {capturing ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-full bg-blue-10 opacity-40 motion-safe:animate-ping"
+                />
+              ) : null}
+              <Mic className={"relative size-4"} />
             </TooltipTrigger>
-            <TooltipContent>{capturing ? "Finish and send" : "Speak"}</TooltipContent>
+            <TooltipContent>{dictationLive ? "Done" : capturing ? "Finish and send" : "Dictate"}</TooltipContent>
           </Tooltip>
           {working ? (
             <Button

@@ -81,6 +81,26 @@ class SessionStore:
 
         await self._run(work)
 
+    async def forget_prefix(self, prefix: str) -> int:
+        """Drop every chat-to-session mapping whose key starts with ``prefix``."""
+
+        def work() -> int:
+            with closing(self._connect()) as conn, conn:
+                cursor = conn.execute(
+                    "DELETE FROM claude_code_sessions WHERE substr(conversation, 1, ?) = ?",
+                    (len(prefix), prefix),
+                )
+                return int(cursor.rowcount)
+
+        return int(await self._run(work))
+
+    async def delete_state(self, key: str) -> None:
+        def work() -> None:
+            with closing(self._connect()) as conn, conn:
+                conn.execute("DELETE FROM claude_code_state WHERE key=?", (key,))
+
+        await self._run(work)
+
     async def put_state(self, key: str, value: dict[str, Any]) -> None:
         def work() -> None:
             with closing(self._connect()) as conn, conn:

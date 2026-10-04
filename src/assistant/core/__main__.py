@@ -128,6 +128,8 @@ async def main() -> None:
             mission_provider=mission_provider,
             claude_code_provider=resources.claude_code.status_report,
             claude_code_actions=resources.claude_code.handle_action,
+            zcode_provider=resources.zcode.status_report,
+            zcode_actions=resources.zcode.handle_action,
         ).serve(reader, writer)
     finally:
         await resources.aclose()

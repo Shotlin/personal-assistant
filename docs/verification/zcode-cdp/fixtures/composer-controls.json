@@ -1,0 +1,12 @@
+{"captured":"2026-10-04","zcode":"3.14.4","note":"structure only; no message text",
+ "controls":{
+  "workspace":"composer-workspace-trigger (aria 'Choose workspace', aria-haspopup=menu)",
+  "input":"v4-composer-input (role=textbox, contenteditable)",
+  "attach":"chat-attachment-button",
+  "mode":"chat-mode-select-trigger (aria 'Switch mode'); items chat-mode-select-item-{plan(checkbox),build,edit,yolo} role=menuitemradio, aria-checked",
+  "computer_use":"v4-composer-cua-entry",
+  "balance":"chat-context-usage-trigger (aria \"Today's balance\")",
+  "model":"chat-model-select-trigger (aria = current model); items chat-model-select-item-<provider>:<plan-id>:<model> role=menuitemradio aria-checked, e.g. ...custom:account%3Azai-start-plan:GLM-5.3-Flash",
+  "reasoning":"chat-thought-level-select-trigger (role=combobox); items chat-thought-level-select-item-{low,high,max} role=option",
+  "send":"v4-composer-send (aria 'Send')"},
+ "modes":{"plan":"Plan mode (checkbox)","build":"Ask before changes","edit":"Edit automatically","yolo":"Full access"}}

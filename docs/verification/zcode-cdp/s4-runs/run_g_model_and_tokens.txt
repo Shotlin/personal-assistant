@@ -1,0 +1,17 @@
+  [running  ] round   Script run
+  [complete ] prompt  Sani asked ZCode
+  [running  ] step    Wrote s6-model.txt
+  [complete ] step    Wrote s6-model.txt
+  [complete ] reply   ZCode replied
+  [complete ] round   Script run
+ZCode finished.
+Folder: /Users/sayan/Documents/sani_test · mode: edit
+Model: GLM-5.3 (Start Plan, your Z.ai plan)
+Steps: 1
+Files changed: s6-model.txt
+Check: Tokens used: 51,300 (51,300 on GLM-5.3 (ZCode Start Plan)), from ZCode's own balance before and after. Anything else using the same plan at the same time is included.
+Verify: this run could not run commands (mode “edit”), so anything ZCode says it ran, tested, or printed is its own claim, not a result. Check files directly, or ask the user to allow “Edit files and run commands”.
+ZCode said:
+done
+Used: 1 turns
+Session: sess_<id>

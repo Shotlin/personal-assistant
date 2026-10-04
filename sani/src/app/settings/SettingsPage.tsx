@@ -26,6 +26,7 @@ import {
 import ComputerControlStatus from "../ComputerControlStatus";
 import DiagnosticsPage from "../DiagnosticsPage";
 import ClaudeCodeSettings from "./ClaudeCodeSettings";
+import ZCodeSettings from "./ZCodeSettings";
 import { PREVIEW_BUILD } from "../../dev/enabled";
 import OverlayLayoutEditor from "../OverlayLayoutEditor";
 import { useSettings } from "./SettingsContext";
@@ -34,6 +35,7 @@ export const SETTINGS_CATEGORIES = [
   "General",
   "Models",
   "Claude Code",
+  "ZCode",
   "Voice",
   "Computer control",
   "Appearance",
@@ -242,6 +244,7 @@ export default function SettingsPage({ initialCategory = "General" }: { initialC
           ) : null}
 
           {category === "Claude Code" ? <ClaudeCodeSettings /> : null}
+          {category === "ZCode" ? <ZCodeSettings /> : null}
 
           {category === "Voice" ? (
             <>

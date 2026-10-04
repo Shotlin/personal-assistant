@@ -1,0 +1,245 @@
+{
+  "as_of": 1791105401.7445261,
+  "refusal": "",
+  "contract": {
+    "version": "3.14.4",
+    "version_verified": true,
+    "ok": true,
+    "missing": [],
+    "checks": {
+      "sidebar": true,
+      "account": true,
+      "settings_button": true,
+      "workspace_list": true,
+      "composer_input": true,
+      "model_trigger": true,
+      "mode_trigger": true,
+      "reasoning_trigger": true,
+      "balance_trigger": true,
+      "send": true
+    }
+  },
+  "account": {
+    "name": "<masked: display name>",
+    "signed_in": true
+  },
+  "models": {
+    "models": [
+      {
+        "provider": "custom",
+        "plan_id": "account:zai-start-plan",
+        "model": "GLM-5.3-Flash",
+        "plan": "Start Plan",
+        "current": true
+      },
+      {
+        "provider": "custom",
+        "plan_id": "account:zai-start-plan",
+        "model": "GLM-5.3",
+        "plan": "Start Plan",
+        "current": false
+      }
+    ],
+    "current_model": "GLM-5.3-Flash",
+    "modes": [
+      {
+        "id": "plan",
+        "label": "Plan mode",
+        "current": false
+      },
+      {
+        "id": "build",
+        "label": "Ask before changes",
+        "current": false
+      },
+      {
+        "id": "edit",
+        "label": "Edit automatically",
+        "current": true
+      },
+      {
+        "id": "yolo",
+        "label": "Full access",
+        "current": false
+      }
+    ],
+    "reasoning": [
+      {
+        "id": "low",
+        "label": "Low",
+        "current": false
+      },
+      {
+        "id": "high",
+        "label": "High",
+        "current": false
+      },
+      {
+        "id": "max",
+        "label": "Max",
+        "current": true
+      }
+    ]
+  },
+  "balances": {
+    "items": [
+      {
+        "provider": "account:zai-start-plan",
+        "plan": "ZCode Trust Build",
+        "model": "GLM-5.3-Flash",
+        "remaining": 100000000,
+        "total": 100000000,
+        "percent": 100,
+        "reset": "21:30",
+        "expires": "Expires Oct 4, 21:30"
+      },
+      {
+        "provider": "account:zai-start-plan",
+        "plan": "ZCode Start Plan",
+        "model": "GLM-5.3",
+        "remaining": 3000000,
+        "total": 3000000,
+        "percent": 100,
+        "reset": "21:29",
+        "expires": "Expires Oct 4, 21:29"
+      },
+      {
+        "provider": "account:zai-start-plan",
+        "plan": "ZCode Start Plan",
+        "model": "GLM-5.3-Flash",
+        "remaining": 5000000,
+        "total": 5000000,
+        "percent": 100,
+        "reset": "21:29",
+        "expires": "Expires Oct 4, 21:29"
+      }
+    ],
+    "not_read": [
+      "Z.ai: Not subscribed, enabled after subscription"
+    ]
+  },
+  "sessions": {
+    "count": 17,
+    "projects": [
+      {
+        "path": "/Users/<user>/Documents/sani_test",
+        "name": "sani_test",
+        "tasks": [
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "1h"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "1h"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "1h"
+          }
+        ]
+      },
+      {
+        "path": "/Users/<user>/Documents/ShotVault",
+        "name": "ShotVault",
+        "tasks": [
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "20h"
+          }
+        ]
+      },
+      {
+        "path": "/Users/<user>/Documents/Raahi X Shotlin",
+        "name": "Raahi X Shotlin",
+        "tasks": [
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "2d"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "4d"
+          }
+        ]
+      },
+      {
+        "path": "/Users/<user>/Documents/FreshCuts X Shotlin",
+        "name": "FreshCuts X Shotlin",
+        "tasks": [
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "5d"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "6d"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "9d"
+          }
+        ]
+      },
+      {
+        "path": "/Users/<user>/Documents/personal-assistant",
+        "name": "personal-assistant",
+        "tasks": [
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "3d"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "5d"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "6d"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "8d"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "12d"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "13d"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "14d"
+          },
+          {
+            "id": "sess_<id>",
+            "title": "<title omitted>",
+            "age": "15d"
+          }
+        ]
+      }
+    ],
+    "complete": true
+  },
+  "port_closed": true,
+  "not_read": {},
+  "as_of_iso": "2026-10-04T14:46:41.744526"
+}

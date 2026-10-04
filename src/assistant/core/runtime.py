@@ -75,6 +75,15 @@ async def _driver_keepalive(connection: Any) -> None:
             )
 
 
+#: Output cap for the Deep Agent's model when a coding tool is bound (default is 2000).
+_CODING_MAX_TOKENS = 8000
+
+#: Tools bound for the coding companions; they are not computer-control tools.
+_NON_CUA_TOOLS = frozenset(
+    {"claude_code", "zcode", "zcode_choice", "zcode_save_balances", "zcode_save_account"}
+)
+
+
 @dataclass
 class SaniRuntime:
     """The built Deep Agent plus the handles needed to scope a run safely."""
@@ -91,6 +100,8 @@ class SaniRuntime:
     #: True when the `claude_code` tool is bound; the Deep entry then allows the
     #: longer run a coding task needs.
     claude_code_enabled: bool = False
+    #: True when the Deep Agent drives the ZCode desktop app (a long, step-heavy task).
+    zcode_app_enabled: bool = False
 
     @property
     def tool_names(self) -> list[str]:
@@ -101,7 +112,7 @@ class SaniRuntime:
     @classmethod
     @contextlib.asynccontextmanager
     async def open(
-        cls, settings: Settings, *, claude_code: Any | None = None
+        cls, settings: Settings, *, claude_code: Any | None = None, zcode: Any | None = None
     ) -> AsyncIterator[SaniRuntime]:
         stack = contextlib.AsyncExitStack()
         try:
@@ -120,8 +131,18 @@ class SaniRuntime:
                 wrap_chat_model,
             )
 
-            model = wrap_chat_model(build_chat_model(settings),
-                                    get_admission_controller())
+            model_settings = settings
+            coding_tools = (claude_code is not None and settings.claude_code_enabled) or (
+                zcode is not None and settings.zcode_cli_enabled
+            )
+            if coding_tools and settings.model_max_tokens < _CODING_MAX_TOKENS:
+                # Handing a coding tool a long request means re-typing it inside the tool
+                # call, and the model's reasoning counts toward the same output cap. At the
+                # default 2000 a 9 KB spec came back as an empty reply.
+                model_settings = settings.model_copy(
+                    update={"model_max_tokens": _CODING_MAX_TOKENS}
+                )
+            model = wrap_chat_model(build_chat_model(model_settings), get_admission_controller())
             connection: Any = await stack.enter_async_context(
                 open_cua_connection(settings) if settings.cua_enabled else _null_cua_connection()
             )
@@ -139,6 +160,22 @@ class SaniRuntime:
 
                 extra_tools = [*extra_tools, claude_code.as_tool()]
                 build_kwargs["system_prompt"] = SYSTEM_PROMPT + GUIDE
+            zcode_app = False
+            if zcode is not None and settings.zcode_cli_enabled:
+                if settings.zcode_mode == "app":
+                    if settings.cua_enabled:
+                        from assistant.coding_agents.zcode_app import APP_GUIDE, build_tools
+
+                        extra_tools = [*extra_tools, *build_tools(zcode)]
+                        build_kwargs["system_prompt"] = (
+                            build_kwargs.get("system_prompt", SYSTEM_PROMPT) + APP_GUIDE
+                        )
+                        zcode_app = True
+                else:
+                    extra_tools = [*extra_tools, zcode.as_tool()]
+                    build_kwargs["system_prompt"] = (
+                        build_kwargs.get("system_prompt", SYSTEM_PROMPT) + zcode.guide()
+                    )
             keepalive = asyncio.create_task(
                 _driver_keepalive(connection), name="sani-core-cua-keepalive"
             )
@@ -166,10 +203,9 @@ class SaniRuntime:
             desktop_sessions=desktop_sessions if settings.cua_enabled else None,
             artifact_dir=str(Path(settings.cua_artifact_dir).resolve()),
             cua_enabled=settings.cua_enabled,
-            cua_tools={
-                tool.name: tool for tool in extra_tools if tool.name != "claude_code"
-            },
+            cua_tools={tool.name: tool for tool in extra_tools if tool.name not in _NON_CUA_TOOLS},
             claude_code_enabled=bool(build_kwargs),
+            zcode_app_enabled=zcode_app,
         )
         await stack.aclose()
 
@@ -217,14 +253,10 @@ class SaniRuntime:
         permit to spend, so an action-shaped prompt through that entry can
         produce zero effects. Reads stay available for answers.
         """
-        if mission_guard is None and getattr(
-            self.settings, "jarvis_missions_enabled", False
-        ):
+        if mission_guard is None and getattr(self.settings, "jarvis_missions_enabled", False):
             from assistant.tools.policy import MUTATING_TOOL_NAMES
 
-            async def _no_mission_mutation(
-                tool: str, kwargs: dict[str, Any]
-            ) -> str | None:
+            async def _no_mission_mutation(tool: str, kwargs: dict[str, Any]) -> str | None:
                 if tool in MUTATING_TOOL_NAMES:
                     return (
                         f"Refused: APPROVAL_REQUIRED: {tool} would mutate the "

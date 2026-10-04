@@ -222,6 +222,11 @@ pub struct FullSettingsSnapshot {
     pub claude_code_enabled: bool,
     pub claude_code_dirs: Vec<String>,
     pub claude_code_permission: String,
+    pub claude_code_model: String,
+    pub claude_code_effort: String,
+    pub zcode_cli_enabled: bool,
+    pub zcode_mode: String,
+    pub zcode_effort: String,
 }
 
 fn full_settings_snapshot(app: &AppHandle) -> FullSettingsSnapshot {
@@ -263,6 +268,11 @@ fn full_settings_snapshot(app: &AppHandle) -> FullSettingsSnapshot {
         claude_code_enabled: s.claude_code_enabled,
         claude_code_dirs: s.claude_code_dirs,
         claude_code_permission: s.claude_code_permission,
+        claude_code_model: s.claude_code_model,
+        claude_code_effort: s.claude_code_effort,
+        zcode_cli_enabled: s.zcode_cli_enabled,
+        zcode_mode: s.zcode_mode,
+        zcode_effort: s.zcode_effort,
     }
 }
 
@@ -354,6 +364,11 @@ pub struct ClaudeCodePatch {
     pub enabled: Option<bool>,
     pub dirs: Option<Vec<String>>,
     pub permission: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub zcode_enabled: Option<bool>,
+    pub zcode_mode: Option<String>,
+    pub zcode_effort: Option<String>,
 }
 
 const CLAUDE_CODE_MAX_DIRS: usize = 12;
@@ -409,6 +424,30 @@ fn validate_claude_code_patch(patch: &ClaudeCodePatch) -> Result<Option<Vec<Stri
             return Err("Permission must be read, edit or run.".into());
         }
     }
+    if let Some(effort) = &patch.effort {
+        if !matches!(effort.as_str(), "" | "low" | "medium" | "high" | "xhigh" | "max") {
+            return Err("Effort must be low, medium, high, xhigh, max or default.".into());
+        }
+    }
+    if let Some(mode) = &patch.zcode_mode {
+        if !matches!(mode.as_str(), "cli" | "window") {
+            return Err("ZCode mode must be cli or window.".into());
+        }
+    }
+    if let Some(effort) = &patch.zcode_effort {
+        if !matches!(effort.as_str(), "" | "low" | "high" | "max") {
+            return Err("ZCode reasoning must be low, high, max or default.".into());
+        }
+    }
+    if let Some(model) = &patch.model {
+        let ok = model.len() <= 80
+            && model
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '[' | ']'));
+        if !ok {
+            return Err("That isn't a valid model name.".into());
+        }
+    }
     match &patch.dirs {
         Some(dirs) => {
             let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
@@ -441,6 +480,21 @@ pub async fn apply_claude_code_settings(
         }
         if let Some(permission) = patch.permission {
             s.claude_code_permission = permission;
+        }
+        if let Some(model) = patch.model {
+            s.claude_code_model = model;
+        }
+        if let Some(effort) = patch.effort {
+            s.claude_code_effort = effort;
+        }
+        if let Some(enabled) = patch.zcode_enabled {
+            s.zcode_cli_enabled = enabled;
+        }
+        if let Some(mode) = patch.zcode_mode {
+            s.zcode_mode = mode;
+        }
+        if let Some(effort) = patch.zcode_effort {
+            s.zcode_effort = effort;
         }
         settings::save(&app, &s)?;
     }
@@ -1269,5 +1323,33 @@ mod claude_code_tests {
             };
             assert!(validate_claude_code_patch(&patch).is_ok());
         }
+    }
+
+    #[test]
+    fn zcode_mode_and_reasoning_only_accept_what_the_core_understands() {
+        for ok in ["cli", "window"] {
+            let patch = ClaudeCodePatch {
+                zcode_mode: Some(ok.into()),
+                ..Default::default()
+            };
+            assert!(validate_claude_code_patch(&patch).is_ok());
+        }
+        let bad_mode = ClaudeCodePatch {
+            zcode_mode: Some("app; rm -rf /".into()),
+            ..Default::default()
+        };
+        assert!(validate_claude_code_patch(&bad_mode).is_err());
+        for ok in ["", "low", "high", "max"] {
+            let patch = ClaudeCodePatch {
+                zcode_effort: Some(ok.into()),
+                ..Default::default()
+            };
+            assert!(validate_claude_code_patch(&patch).is_ok());
+        }
+        let bad_effort = ClaudeCodePatch {
+            zcode_effort: Some("xhigh".into()),
+            ..Default::default()
+        };
+        assert!(validate_claude_code_patch(&bad_effort).is_err());
     }
 }

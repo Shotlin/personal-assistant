@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Check, Copy, ExternalLink, FolderPlus, Lock, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, Copy, ExternalLink, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ChoiceMenu } from "@/components/ui/choice-menu";
@@ -18,13 +18,25 @@ import {
 import { StatusDot } from "@/components/status-dot";
 import { claudeHealth } from "@/chat/claude-health";
 import { useClaudeCode } from "@/chat/use-claude-code";
-import { openSignInLink, pickFolder, type ClaudeCodePermission } from "@/lib/tauri";
+import { openSignInLink, type ClaudeCodeStatus } from "@/lib/tauri";
+import { ProjectFolders, RunLimitRow } from "./ProjectFolders";
 import { useSettings } from "./SettingsContext";
 
-const PERMISSIONS: Array<{ value: ClaudeCodePermission; label: string }> = [
-  { value: "read", label: "Look only" },
-  { value: "edit", label: "Edit files" },
-  { value: "run", label: "Edit files and run commands" },
+const MODELS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Claude Code's default" },
+  { value: "haiku", label: "Haiku — fastest, lightest" },
+  { value: "sonnet", label: "Sonnet — balanced" },
+  { value: "opus", label: "Opus — strongest" },
+  { value: "fable", label: "Fable" },
+];
+
+const EFFORTS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Default" },
+  { value: "low", label: "Low — quickest, fewest tokens" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "Extra high" },
+  { value: "max", label: "Max — most thinking" },
 ];
 
 function CopyCommand({ command }: { command: string }) {
@@ -54,10 +66,98 @@ function CopyCommand({ command }: { command: string }) {
   );
 }
 
-/** Folder names read better as "name · parent". */
-function folderParts(path: string): { name: string; parent: string } {
-  const parts = path.split("/").filter(Boolean);
-  return { name: parts[parts.length - 1] ?? path, parent: "/" + parts.slice(0, -1).join("/") };
+const LIMITS: Array<{ keys: string[]; label: string }> = [
+  { keys: ["five_hour"], label: "5-hour session" },
+  { keys: ["seven_day", "seven_day_opus"], label: "Weekly" },
+];
+
+function resetLabel(epochSeconds: number | null | undefined, weekly: boolean): string {
+  if (!epochSeconds) return "";
+  const date = new Date(epochSeconds * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return weekly ? `${date.toLocaleDateString([], { weekday: "short" })} ${time}` : time;
+}
+
+/** How much of the 5-hour session and weekly limit is left, as Claude Code last reported it. */
+let autoChecked = false;
+
+function UsageLimits({
+  status,
+  onCheck,
+}: {
+  status: ClaudeCodeStatus | null;
+  onCheck: () => Promise<void>;
+}) {
+  const [checking, setChecking] = useState(false);
+  const check = async () => {
+    setChecking(true);
+    try {
+      await onCheck();
+    } finally {
+      setChecking(false);
+    }
+  };
+  const empty = !status || Object.keys(status.usage.rates).length === 0;
+  // With nothing known yet, ask once per app session so the bars show real figures.
+  useEffect(() => {
+    if (empty && status && !autoChecked) {
+      autoChecked = true;
+      void check();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empty, Boolean(status)]);
+  const rates = status?.usage.rates ?? {};
+  const now = Date.now() / 1000;
+  const rows = LIMITS.map(({ keys, label }) => {
+    const rate = keys.map((key) => rates[key]).find((entry) => entry && entry.used_percent != null);
+    return { label, weekly: keys[0] !== "five_hour", rate };
+  });
+  const any = rows.some((row) => row.rate);
+  return (
+    <div className="mt-3 space-y-2.5 border-t border-border pt-3" aria-label="Claude usage limits">
+      {rows.map(({ label, weekly, rate }) => {
+        const over = rate?.resets_at != null && rate.resets_at < now;
+        const used = rate && !over ? Math.min(100, Math.round(rate.used_percent ?? 0)) : null;
+        const reset = resetLabel(rate?.resets_at, weekly);
+        return (
+          <div key={label}>
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="font-medium text-foreground">{label}</span>
+              <span className="text-muted-foreground tabular-nums">
+                {used !== null
+                  ? `${100 - used}% left · ${used}% used${reset ? ` · resets ${reset}` : ""}`
+                  : over
+                    ? "Window has reset"
+                    : "—"}
+              </span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-secondary">
+              <div
+                className={`h-full rounded-full ${used !== null && used >= 90 ? "bg-amber-9" : "bg-blue-10"}`}
+                style={{ width: `${used ?? 0}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          {checking
+            ? "Asking Claude Code…"
+            : any
+              ? "As Claude Code last reported."
+              : "Not reported yet."}
+        </p>
+        <Button size="xs" variant="ghost" disabled={checking} onClick={() => void check()}>
+          {checking ? "Checking…" : "Check now"}
+        </Button>
+      </div>
+      <p className="text-[11px] text-muted-foreground/80">
+        Checking sends one tiny request on your own Claude plan.
+      </p>
+    </div>
+  );
 }
 
 function ClaudeAccount({ code }: { code: ReturnType<typeof useClaudeCode> }) {
@@ -78,9 +178,24 @@ function ClaudeAccount({ code }: { code: ReturnType<typeof useClaudeCode> }) {
           <div className="font-medium text-foreground">{health.title}</div>
           <div className="truncate text-xs text-muted-foreground">
             {signedIn && health.tone !== "busy"
-              ? `Claude Code ${claude?.version ?? ""} · ${claude?.auth_method === "claude.ai" ? "your Claude account" : claude?.auth_method}`
+              ? `Claude Code ${claude?.version ?? ""}`
               : health.detail}
           </div>
+          {signedIn && health.tone !== "busy" && (claude?.email || claude?.name) ? (
+            <div className="mt-1.5 flex min-w-0 items-center gap-2 text-sm text-foreground">
+              <span className="min-w-0 truncate">
+                {claude.name ? <span className="font-medium">{claude.name}</span> : null}
+                {claude.name && claude.email ? <span className="text-muted-foreground"> · </span> : null}
+                {claude.email ? <span className="text-muted-foreground">{claude.email}</span> : null}
+              </span>
+              {claude.plan ? (
+                <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-xs font-medium capitalize text-foreground">
+                  {claude.plan}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {signedIn && health.tone !== "busy" ? <UsageLimits status={status} onCheck={() => act("usage")} /> : null}
         </div>
         {claude?.installed && !signedIn && !waiting ? (
           <Button size="sm" onClick={() => void act("login")}>
@@ -178,25 +293,13 @@ function ClaudeAccount({ code }: { code: ReturnType<typeof useClaudeCode> }) {
 }
 
 export default function ClaudeCodeSettings() {
-  const { snapshot, saveClaudeCode, error } = useSettings();
+  const { snapshot, saveClaudeCode } = useSettings();
   const code = useClaudeCode(15_000);
   const { status } = code;
-  const [pickError, setPickError] = useState("");
   if (!snapshot) return null;
 
   const claude = status?.claude;
   const ready = Boolean(claude?.installed && claude.signed_in);
-
-  const addFolder = async () => {
-    setPickError("");
-    try {
-      const chosen = await pickFolder();
-      if (!chosen) return;
-      await saveClaudeCode({ dirs: [...snapshot.claude_code_dirs, chosen] });
-    } catch (reason) {
-      setPickError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
 
   return (
     <>
@@ -209,52 +312,35 @@ export default function ClaudeCodeSettings() {
             onCheckedChange={(checked) => void saveClaudeCode({ enabled: checked })}
           />
         </SettingsRow>
-        <SettingsRow label="What a run may do">
+        <RunLimitRow />
+        <SettingsRow
+          label="Model for coding"
+          state={
+            snapshot.claude_code_model
+              ? undefined
+              : code.status?.usage.last_run.model
+                ? `Last run used ${code.status.usage.last_run.model}`
+                : "Whatever Claude Code picks"
+          }
+        >
           <ChoiceMenu
-            label="What a run may do"
-            value={snapshot.claude_code_permission}
-            choices={PERMISSIONS}
-            onChange={(value) => void saveClaudeCode({ permission: value as ClaudeCodePermission })}
+            label="Model for coding"
+            value={snapshot.claude_code_model}
+            choices={MODELS}
+            onChange={(value) => void saveClaudeCode({ model: value })}
+          />
+        </SettingsRow>
+        <SettingsRow label="How hard it thinks" state="Lower uses fewer tokens on your plan">
+          <ChoiceMenu
+            label="How hard it thinks"
+            value={snapshot.claude_code_effort}
+            choices={EFFORTS}
+            onChange={(value) => void saveClaudeCode({ effort: value })}
           />
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Project folders">
-        {snapshot.claude_code_dirs.length === 0 ? (
-          <SettingsRow label="No folders yet" state="Sani only works inside folders you add" />
-        ) : (
-          snapshot.claude_code_dirs.map((dir) => {
-            const { name, parent } = folderParts(dir);
-            return (
-              <SettingsRow key={dir} label={name} state={parent}>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={`Remove ${name}`}
-                  className="text-muted-foreground"
-                  onClick={() =>
-                    void saveClaudeCode({ dirs: snapshot.claude_code_dirs.filter((item) => item !== dir) })
-                  }
-                >
-                  <X className="size-4" />
-                </Button>
-              </SettingsRow>
-            );
-          })
-        )}
-        <SettingsRow label="Add a project folder">
-          <Button size="sm" variant="outline" onClick={() => void addFolder()}>
-            <FolderPlus className="size-3.5" aria-hidden="true" />
-            Choose folder
-          </Button>
-        </SettingsRow>
-      </SettingsGroup>
-
-      {pickError || error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
-          {pickError || error}
-        </p>
-      ) : null}
+      <ProjectFolders />
       <p className="flex items-start gap-2 text-xs text-muted-foreground">
         <Lock className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
         <span>

@@ -147,6 +147,26 @@ pub struct Settings {
     pub claude_code_dirs: Vec<String>,
     #[serde(default = "default_claude_code_permission")]
     pub claude_code_permission: String,
+    /// Model alias/name and effort for coding runs. Empty = Claude Code's default.
+    #[serde(default)]
+    pub claude_code_model: String,
+    #[serde(default)]
+    pub claude_code_effort: String,
+    /// ZCode companion (Z.ai): the same idea as Claude Code, off by default. It shares
+    /// `claude_code_dirs` and `claude_code_permission`.
+    #[serde(default)]
+    pub zcode_cli_enabled: bool,
+    /// How Sani uses ZCode: "cli" (default) or "window" (the real ZCode app, through its own
+    /// debug port, after the user turns ZCode control on).
+    #[serde(default = "default_zcode_mode")]
+    pub zcode_mode: String,
+    /// ZCode's reasoning level for window runs: "", "low", "high" or "max".
+    #[serde(default)]
+    pub zcode_effort: String,
+}
+
+fn default_zcode_mode() -> String {
+    "cli".into()
 }
 
 fn default_claude_code_permission() -> String {

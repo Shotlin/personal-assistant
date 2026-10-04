@@ -1,0 +1,6 @@
+{"captured":"2026-10-04","path":"Settings (task-settings-button) -> Model settings (settings-section-nav-modelProvider) -> provider list",
+ "provider_nav_testids":["model-provider-nav-item-preset:account:zai-start-plan","model-provider-nav-item-coding-plan:account:zai-start-plan","model-provider-nav-item-custom:new-provider"],
+ "z.ai_page":"Coding Plan card: 'Not subscribed' (+Subscribe/Unlink)",
+ "start_plan_page":{"plans":[{"name":"ZCode Trust Build","expires":"Oct 4 21:30","models":[{"GLM-5.3-Flash":"100,000,000 / 100,000,000, 100%, 21:30"}]},{"name":"ZCode Start Plan","expires":"Oct 4 21:29","models":[{"GLM-5.3":"3,000,000 / 3,000,000, 100%, 21:29"},{"GLM-5.3-Flash":"5,000,000 / 5,000,000, 100%, 21:29"}]}]},
+ "composer_popover":"3 entries: model name, percent, reset time (no plan name, no token counts)",
+ "account_menu":"login-trigger -> menu: Language, App theme, Interface mode, Interface zoom, Usage stats, Upgrade, Refer a friend, Disconnect. Shows DISPLAY NAME only (masked here), no email."}

@@ -455,3 +455,34 @@ def test_args_resume_fork_and_old_versions(tmp_path: Path) -> None:
     forked = build_args(RunRequest(prompt="x", cwd=tmp_path, session_id="abc", fork=True))
     assert "--fork-session" in forked
     assert os.fspath(tmp_path)  # keep the fixture used
+
+
+def test_parser_reads_real_unified_windows() -> None:
+    parser = StreamParser()
+    events = parser.feed(
+        line(
+            type="rate_limit_event",
+            rate_limit_info={
+                "status": "allowed",
+                "rateLimitType": "five_hour",
+                "unifiedWindows": {
+                    "five_hour": {"utilization": 0.07, "resetsAt": 100},
+                    "seven_day": {"utilization": 0.27, "resetsAt": 200},
+                },
+            },
+        )
+    )
+    assert [(e.kind, round(e.used_percent or 0)) for e in events if isinstance(e, RateLimit)] == [
+        ("five_hour", 7),
+        ("seven_day", 27),
+    ]
+
+
+def test_build_args_pass_model_and_effort() -> None:
+    from assistant.claude_code.runner import RunRequest, build_args
+
+    args = build_args(RunRequest(prompt="x", cwd=Path("."), model="haiku", effort="low"))
+    assert args[args.index("--model") + 1] == "haiku"
+    assert args[args.index("--effort") + 1] == "low"
+    plain = build_args(RunRequest(prompt="x", cwd=Path(".")))
+    assert "--model" not in plain and "--effort" not in plain

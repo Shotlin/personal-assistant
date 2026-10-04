@@ -16,7 +16,7 @@ import signal
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from assistant.claude_code.events import (
     AssistantText,
@@ -26,10 +26,12 @@ from assistant.claude_code.events import (
     ToolEnd,
     ToolStart,
 )
-from assistant.claude_code.locate import child_environment
-from assistant.claude_code.parser import StreamParser
 from assistant.claude_code.redact import screen
 from assistant.claude_code.watchdog import Watchdog
+
+if TYPE_CHECKING:
+    from assistant.coding_agents.backend import Backend
+    from assistant.settings import Settings
 
 Permission = Literal["read", "edit", "run"]
 
@@ -64,6 +66,8 @@ class RunRequest:
     fork: bool = False
     max_turns: int = 30
     model: str = ""
+    #: low | medium | high | xhigh | max; empty = Claude Code's default.
+    effort: str = ""
     #: Image/file paths the model should look at.
     attachments: tuple[Path, ...] = ()
     #: Extra folders Claude Code may read (where the attachments live).
@@ -85,6 +89,8 @@ class RunOutcome:
     files_changed: list[str] = field(default_factory=list)
     commands: list[str] = field(default_factory=list)
     exit_code: int | None = None
+    #: Plain-words checks the supervisor made (e.g. what the disk says versus what was claimed).
+    notes: list[str] = field(default_factory=list)
 
 
 def build_args(request: RunRequest, *, version: tuple[int, int, int] | None = None) -> list[str]:
@@ -118,6 +124,8 @@ def build_args(request: RunRequest, *, version: tuple[int, int, int] | None = No
             args += ["--fork-session"]
     if request.model:
         args += ["--model", request.model]
+    if request.effort:
+        args += ["--effort", request.effort]
     for folder in request.extra_dirs:
         args += ["--add-dir", str(folder)]
     return args
@@ -148,6 +156,19 @@ async def _terminate(process: asyncio.subprocess.Process, *, grace: float) -> No
             continue
 
 
+class Runner(Protocol):
+    """Anything that can carry out one supervised run (the CLI runner, ZCode's window)."""
+
+    async def run(
+        self,
+        request: RunRequest,
+        *,
+        on_event: EventCallback,
+        watchdog: Watchdog,
+        cancel: asyncio.Event,
+    ) -> RunOutcome: ...
+
+
 class ClaudeRunner:
     def __init__(
         self,
@@ -156,7 +177,15 @@ class ClaudeRunner:
         version: tuple[int, int, int] | None = None,
         tick_seconds: float = 1.0,
         grace_seconds: float = 8.0,
+        backend: Backend | None = None,
+        settings: Settings | None = None,
     ) -> None:
+        if backend is None:
+            from assistant.coding_agents.claude import ClaudeBackend
+
+            backend = ClaudeBackend()
+        self._backend = backend
+        self._settings = settings
         self._binary = binary
         self._version = version
         self._tick = tick_seconds
@@ -171,21 +200,23 @@ class ClaudeRunner:
         cancel: asyncio.Event,
     ) -> RunOutcome:
         outcome = RunOutcome(session_id=request.session_id or "")
-        args = build_args(request, version=self._version)
+        backend = self._backend
+        args = backend.build_args(request, self._version)
+        stdin_prompt = backend.prompt_on_stdin
         process = await asyncio.create_subprocess_exec(
-            str(self._binary),
+            *backend.command(self._binary),
             *args,
             cwd=str(request.cwd),
-            stdin=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.PIPE if stdin_prompt else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=child_environment(),
+            env=backend.environment(self._settings),
             start_new_session=True,
             limit=_STREAM_LIMIT,
         )
-        assert process.stdin is not None and process.stdout is not None  # noqa: S101
+        assert process.stdout is not None  # noqa: S101
         stderr_task = asyncio.create_task(self._drain(process.stderr))
-        parser = StreamParser(str(request.cwd))
+        parser = backend.make_parser(str(request.cwd))
         pending: dict[str, ToolStart] = {}
         assistant_text: list[str] = []
         stopping = False
@@ -200,9 +231,10 @@ class ClaudeRunner:
             await _terminate(process, grace=self._grace)
 
         try:
-            process.stdin.write(build_prompt(request).encode("utf-8"))
-            await process.stdin.drain()
-            process.stdin.close()
+            if stdin_prompt and process.stdin is not None:
+                process.stdin.write(build_prompt(request).encode("utf-8"))
+                await process.stdin.drain()
+                process.stdin.close()
             while True:
                 if cancel.is_set() and not stopping:
                     await stop(cancelled=True)
@@ -237,8 +269,10 @@ class ClaudeRunner:
         if outcome.final is not None:
             outcome.ok = outcome.final.ok and not outcome.stopped_reason and not outcome.cancelled
             outcome.session_id = outcome.final.session_id or outcome.session_id
+        elif backend.final_from_exit and process.returncode == 0:
+            outcome.ok = not outcome.stopped_reason and not outcome.cancelled
         elif not outcome.stopped_reason and not outcome.cancelled:
-            message = stderr_text.strip() or "Claude Code ended without a result."
+            message = stderr_text.strip() or f"{backend.name} ended without a result."
             outcome.error = screen(message, limit=600)
         return outcome
 

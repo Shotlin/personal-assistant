@@ -469,6 +469,22 @@ impl SaniCoreConfig {
             "CLAUDE_CODE_PERMISSION".to_string(),
             settings.claude_code_permission.clone(),
         ));
+        if !settings.claude_code_model.is_empty() {
+            env.push(("CLAUDE_CODE_MODEL".to_string(), settings.claude_code_model.clone()));
+        }
+        if !settings.claude_code_effort.is_empty() {
+            env.push(("CLAUDE_CODE_EFFORT".to_string(), settings.claude_code_effort.clone()));
+        }
+        if settings.zcode_cli_enabled {
+            env.push(("ZCODE_CLI_ENABLED".to_string(), "1".to_string()));
+            env.push(("ZCODE_MODE".to_string(), settings.zcode_mode.clone()));
+            if !settings.zcode_effort.is_empty() {
+                env.push((
+                    "ZCODE_CLI_EFFORT".to_string(),
+                    settings.zcode_effort.clone(),
+                ));
+            }
+        }
         // Credentials go to the child's environment only -- never argv, never
         // the log. Only the variable name is ever written out.
         let openrouter = crate::settings::secret_read(crate::onboarding::OPENROUTER_KEY_SERVICE);
@@ -2088,6 +2104,18 @@ pub async fn claude_code_status_cmd(app: AppHandle) -> Result<Value, String> {
     route_mission_request(&app, "claude_code.status", json!({})).await
 }
 
+/// Is ZCode installed and signed in, its plans and models, and the saved choice (read-only).
+#[tauri::command]
+pub async fn zcode_status_cmd(app: AppHandle) -> Result<Value, String> {
+    route_mission_request(&app, "zcode.status", json!({})).await
+}
+
+/// How full the Deep Agent's own context window is for one conversation.
+#[tauri::command]
+pub async fn deep_context_cmd(app: AppHandle, conversation_id: String) -> Result<Value, String> {
+    route_mission_request(&app, "deep.context", json!({ "conversation_id": conversation_id })).await
+}
+
 /// Sign in or out of the user's Claude Code, and answer a sign-in code. Only a
 /// fixed set of actions is accepted; the code is passed through to Claude Code
 /// and never stored or logged here.
@@ -2105,12 +2133,64 @@ pub async fn claude_code_auth_cmd(
     route_mission_request(&app, method, params).await
 }
 
+/// Sign in or out of ZCode, or remember the plan and model the user picked. Only a fixed set
+/// of actions is accepted; nothing secret passes through here.
+#[tauri::command]
+pub async fn zcode_auth_cmd(
+    app: AppHandle,
+    action: String,
+    provider: Option<String>,
+    model: Option<String>,
+    enabled: Option<bool>,
+) -> Result<Value, String> {
+    let method = zcode_auth_method(&action)?;
+    if action == "control" {
+        // Turning ZCode control on/off is the user's explicit yes (the window shows a dialog).
+        let on = enabled.ok_or("Say whether ZCode control should be on or off.")?;
+        return route_mission_request(&app, method, json!({ "enabled": on, "confirm": true }))
+            .await;
+    }
+    let params = match (provider, model) {
+        (Some(provider), Some(model)) if action == "select" => {
+            json!({ "provider": provider, "model": model })
+        }
+        // The window asks "close and reopen ZCode now?" before it calls this.
+        _ if action == "read" => json!({ "confirm": true }),
+        _ => json!({}),
+    };
+    route_mission_request(&app, method, params).await
+}
+
+/// Open the ZCode app (the user's own sign-in lives there; Sani never types credentials).
+#[tauri::command]
+pub fn open_zcode_cmd() -> Result<(), String> {
+    std::process::Command::new("/usr/bin/open")
+        .args(["-a", "ZCode"])
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+}
+
+fn zcode_auth_method(action: &str) -> Result<&'static str, String> {
+    match action {
+        "login" => Ok("zcode.login_start"),
+        "cancel" => Ok("zcode.login_cancel"),
+        "logout" => Ok("zcode.logout"),
+        "select" => Ok("zcode.select"),
+        "read" => Ok("zcode.read"),
+        "control" => Ok("zcode.control"),
+        "ack_change" => Ok("zcode.ack_change"),
+        _ => Err("unknown ZCode action".into()),
+    }
+}
+
 fn claude_code_auth_method(action: &str) -> Result<&'static str, String> {
     match action {
         "login" => Ok("claude_code.login_start"),
         "code" => Ok("claude_code.login_code"),
         "cancel" => Ok("claude_code.login_cancel"),
         "logout" => Ok("claude_code.logout"),
+        "usage" => Ok("claude_code.usage_refresh"),
         _ => Err("unknown Claude Code action".into()),
     }
 }
@@ -2130,7 +2210,9 @@ pub fn open_sign_in_link_cmd(url: String) -> Result<(), String> {
 }
 
 fn is_sign_in_url(url: &str) -> bool {
-    (url.starts_with("https://claude.com/") || url.starts_with("https://claude.ai/"))
+    (url.starts_with("https://claude.com/")
+        || url.starts_with("https://claude.ai/")
+        || url.starts_with("https://chat.z.ai/"))
         && !url.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
@@ -2453,6 +2535,22 @@ mod tests {
         assert!(!ok("file:///etc/passwd"));
         assert!(!ok("https://claude.com/a b"));
         assert!(!ok("https://claude.com/a\nb"));
+    }
+
+    #[test]
+    fn only_known_zcode_actions_map_to_core_methods() {
+        use super::zcode_auth_method as m;
+        assert_eq!(m("login").unwrap(), "zcode.login_start");
+        assert_eq!(m("select").unwrap(), "zcode.select");
+        assert_eq!(m("logout").unwrap(), "zcode.logout");
+        assert_eq!(m("read").unwrap(), "zcode.read");
+        assert_eq!(m("control").unwrap(), "zcode.control");
+        assert_eq!(m("ack_change").unwrap(), "zcode.ack_change");
+        assert!(m("read; rm -rf /").is_err());
+        assert!(m("mission.purge").is_err());
+        assert!(m("code").is_err());
+        assert!(super::is_sign_in_url("https://chat.z.ai/api/oauth/authorize?x=1"));
+        assert!(!super::is_sign_in_url("https://chat.z.ai.evil.example/"));
     }
 
     #[test]

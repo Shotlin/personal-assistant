@@ -74,6 +74,11 @@ const settings = {
   claude_code_enabled: true,
   claude_code_dirs: ["/Users/you/Projects/shop-app"],
   claude_code_permission: "edit",
+  claude_code_model: "",
+  claude_code_effort: "",
+  zcode_cli_enabled: true,
+  zcode_mode: "window",
+  zcode_effort: "",
 };
 
 let contextPercent = 47;
@@ -89,6 +94,10 @@ const claudeStatus = (signedIn: boolean) => ({
     signed_in: signedIn,
     auth_method: signedIn ? "claude.ai" : "none",
     detail: signedIn ? "" : "Not signed in. Run `claude auth login` once in Terminal.",
+    name: signedIn ? "Alex Morgan" : "",
+    email: signedIn ? "alex@example.com" : "",
+    plan: signedIn ? "pro" : "",
+    org: "",
   },
   usage: {
     rates: {
@@ -97,6 +106,136 @@ const claudeStatus = (signedIn: boolean) => ({
     },
     last_run: { context_tokens: contextPercent * 2000, context_window: 200000, turns: 6 },
     context_percent: contextPercent,
+  },
+});
+
+let zcodeSignedIn = true;
+let zcodeLogin = { state: "idle", url: "", message: "" };
+let zcodeSelection: { provider?: string; model?: string } = {};
+let zcodeControl = new URLSearchParams(window.location.search).get("control") !== "off";
+// ?change=switched shows the account-change banner; ?change=signed_out the red state.
+let zcodeChange: string | null = new URLSearchParams(window.location.search).get("change");
+// Preview of the window read: "idle" = never read, "reading" for a few seconds after a press, then "done".
+let zcodeRead: "never" | "reading" | "done" =
+  new URLSearchParams(window.location.search).get("zcode") === "never" ? "never" : "done";
+const zcodeJob = () => ({
+  state: zcodeRead === "reading" ? "reading" : zcodeRead === "done" ? "done" : "idle",
+  message: "",
+  started_at: null,
+  finished_at: null,
+  port_closed: zcodeRead === "done" ? true : null,
+});
+const zcodeWindowRead = () => {
+  if (zcodeRead === "never") return { job: zcodeJob() };
+  const at = Date.now() / 1000 - 600;
+  return {
+    contract: { ok: true, version: "3.14.4", version_verified: true, missing: [], as_of: at },
+    models: {
+      as_of: at,
+      current_model: "GLM-5.3-Flash",
+      models: [
+        { provider: "custom", plan_id: "account:zai-start-plan", plan: "Start Plan", model: "GLM-5.3-Flash", current: true },
+        { provider: "custom", plan_id: "account:zai-start-plan", plan: "Start Plan", model: "GLM-5.3", current: false },
+      ],
+      modes: [
+        { id: "plan", label: "Plan mode", current: false },
+        { id: "build", label: "Ask before changes", current: false },
+        { id: "edit", label: "Edit automatically", current: true },
+        { id: "yolo", label: "Full access", current: false },
+      ],
+      reasoning: [
+        { id: "low", label: "Low", current: false },
+        { id: "high", label: "High", current: false },
+        { id: "max", label: "Max", current: true },
+      ],
+    },
+    sessions: {
+      as_of: at,
+      count: 6,
+      complete: true,
+      projects: [
+        { path: "/Users/you/Documents/sani_test", name: "sani_test", tasks: [{ id: "sess_1", title: "Create a file hello.py that prints hello", age: "1h" }] },
+        { path: "/Users/you/Documents/ShotVault", name: "ShotVault", tasks: [{ id: "sess_2", title: "ShotVault Go Media Storage & Delivery System", age: "20h" }] },
+        { path: "/Users/you/Documents/personal-assistant", name: "personal-assistant", tasks: [
+          { id: "sess_3", title: "Jarvis Phase 1 Full Implementation", age: "6d" },
+          { id: "sess_4", title: "Untitled session", age: "8d" },
+          { id: "sess_5", title: "VELO — Short Build Prompt", age: "12d" },
+          { id: "sess_6", title: "Phase 1 corrective-completion", age: "5d" },
+        ] },
+      ],
+    },
+    last_run: {
+      at: Date.now() / 1000 - 300,
+      seconds: 28.6,
+      ok: true,
+      project: "sani_test",
+      model: "GLM-5.3",
+      plan: "Start Plan",
+      session_id: "sess_demo",
+      stopped_reason: "",
+      cancelled: false,
+      error: "",
+      steps: [{ label: "Wrote s6-model.txt", status: "complete" }],
+      files_changed: ["s6-model.txt"],
+      notes: ["Tokens used: 51,300 (51,300 on GLM-5.3 (ZCode Start Plan)), from ZCode's own balance before and after."],
+      tokens_used: 51300,
+    },
+    job: zcodeJob(),
+  };
+};
+const zcodeModels = (...ids: string[]) =>
+  ids.map((id) => ({
+    id,
+    context_window: id === "GLM-5-Turbo" ? 200000 : 1000000,
+    max_output: id === "GLM-5-Turbo" ? 64000 : 128000,
+  }));
+const zcodeStatus = () => ({
+  enabled: settings.zcode_cli_enabled,
+  permission: settings.claude_code_permission,
+  folders: settings.claude_code_dirs,
+  backend: "zcode",
+  zcode: {
+    installed: true,
+    path: "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs",
+    version: "0.16.9",
+    signed_in: zcodeSignedIn,
+    auth_method: zcodeSignedIn ? "z.ai" : "",
+    detail: zcodeSignedIn ? "" : "Not signed in. Run `zcode login` once in Terminal.",
+  },
+  login: zcodeLogin,
+  usage: { rates: {}, last_run: {}, context_percent: null },
+  selection: zcodeSelection,
+  account: zcodeRead === "never" ? null : { name: "Alex Morgan", email: "", as_of: Date.now() / 1000 - 600 },
+  balances:
+    zcodeRead === "never"
+      ? null
+      : {
+          as_of: Date.now() / 1000 - 600,
+          items: [
+            { provider: "account:zai-start-plan", plan: "ZCode Trust Build", model: "GLM-5.3-Flash", remaining: 100000000, total: 100000000, percent: 100, reset: "21:30", expires: "Expires Oct 4, 21:30" },
+            { provider: "account:zai-start-plan", plan: "ZCode Start Plan", model: "GLM-5.3", remaining: 3000000, total: 3000000, percent: 100, reset: "21:29", expires: "Expires Oct 4, 21:29" },
+            { provider: "account:zai-start-plan", plan: "ZCode Start Plan", model: "GLM-5.3-Flash", remaining: 3800000, total: 5000000, percent: 76, reset: "21:29", expires: "Expires Oct 4, 21:29" },
+          ],
+        },
+  cdp: zcodeWindowRead(),
+  control: { enabled: zcodeControl, open: false },
+  account_change: {
+    change:
+      zcodeChange === "switched"
+        ? { kind: "switched", from: "Alex Morgan", to: "Sam Rivera", plans_added: ["Pro Plan"], plans_removed: ["ZCode Trust Build"], at: Date.now() / 1000 - 40, source: "window" }
+        : zcodeChange === "signed_out"
+          ? { kind: "signed_out", from: "Alex Morgan", to: "", plans_added: [], plans_removed: [], at: Date.now() / 1000 - 40, source: "window" }
+          : null,
+    stale: false,
+  },
+  extra: {
+    app_signed_in: zcodeSignedIn,
+    zcode_default: { provider: "account:zai-start-plan", model: "GLM-5.3-Flash" },
+    catalog: [
+      { id: "account:zai-start-plan", name: "Start Plan", family: "zai-family", family_name: "Z.ai", models: zcodeModels("GLM-5.3-Flash", "GLM-5.2", "GLM-5-Turbo") },
+      { id: "account:zai-individual-coding-plan", name: "Z.AI Individual Coding Plan", family: "zai-family", family_name: "Z.ai", models: zcodeModels("GLM-5.3", "GLM-5.3-Flash", "GLM-5.2", "GLM-5-Turbo") },
+      { id: "account:bigmodel-start-plan", name: "Start Plan", family: "bigmodel-family", family_name: "BigModel (China)", models: zcodeModels("GLM-5.3-Flash", "GLM-5.2") },
+    ],
   },
 });
 
@@ -570,7 +709,37 @@ export function install(scenario: string): void {
       else simulateTurn(text);
       return undefined;
     },
+    deep_context_cmd: () => ({ known: true, tokens: 18400, window: 128000, percent: 14, estimated: false, model: "z-ai/glm-5.3-flash" }),
     claude_code_status_cmd: () => ({ ...claudeStatus(signedIn), login }),
+    zcode_status_cmd: () => zcodeStatus(),
+    open_zcode_cmd: () => undefined,
+    zcode_auth_cmd: (args) => {
+      const action = String(args.action);
+      if (action === "login") {
+        zcodeLogin = { state: "waiting", url: "https://chat.z.ai/api/oauth/authorize?x=1", message: "Finish signing in in your browser." };
+        window.setTimeout(() => {
+          zcodeSignedIn = true;
+          zcodeLogin = { state: "succeeded", url: "", message: "Signed in." };
+        }, 2500);
+      } else if (action === "cancel") {
+        zcodeLogin = { state: "cancelled", url: "", message: "Sign-in cancelled." };
+      } else if (action === "logout") {
+        zcodeSignedIn = false;
+        zcodeLogin = { state: "idle", url: "", message: "" };
+      } else if (action === "select") {
+        zcodeSelection = { provider: String(args.provider), model: String(args.model) };
+      } else if (action === "control") {
+        zcodeControl = args.enabled === true;
+      } else if (action === "ack_change") {
+        zcodeChange = null;
+      } else if (action === "read") {
+        zcodeRead = "reading";
+        window.setTimeout(() => {
+          zcodeRead = "done";
+        }, 4000);
+      }
+      return zcodeStatus();
+    },
     claude_code_auth_cmd: (args) => {
       const action = String(args.action);
       if (action === "login") {
@@ -606,8 +775,13 @@ export function install(scenario: string): void {
     apply_claude_code_settings: (args) => {
       const patch = (args.patch ?? {}) as Json;
       if (typeof patch.enabled === "boolean") settings.claude_code_enabled = patch.enabled;
+      if (typeof patch.zcode_enabled === "boolean") settings.zcode_cli_enabled = patch.zcode_enabled;
       if (Array.isArray(patch.dirs)) settings.claude_code_dirs = patch.dirs as string[];
       if (typeof patch.permission === "string") settings.claude_code_permission = patch.permission;
+      if (typeof patch.model === "string") settings.claude_code_model = patch.model;
+      if (typeof patch.effort === "string") settings.claude_code_effort = patch.effort;
+      if (typeof patch.zcode_mode === "string") settings.zcode_mode = patch.zcode_mode;
+      if (typeof patch.zcode_effort === "string") settings.zcode_effort = patch.zcode_effort;
       emit("settings://changed", settings);
       return settings;
     },
@@ -623,7 +797,14 @@ export function install(scenario: string): void {
       window.setTimeout(() => emit("sani://partial", "open chrome and search for the weather in"), 400);
       return undefined;
     },
+    start_dictation_cmd: () => {
+      setState("listening");
+      window.setTimeout(() => emit("sani://partial", "open chrome and"), 400);
+      window.setTimeout(() => emit("sani://partial", "open chrome and search for the weather"), 1000);
+      return undefined;
+    },
     stop_listening_cmd: () => {
+      if (uiState === "listening") emit("sani://dictation-final", "open chrome and search for the weather");
       setState("idle");
       return undefined;
     },

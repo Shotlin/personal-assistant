@@ -171,6 +171,31 @@ user's OWN Claude Code, the way a person would. Product rules:
   and `modelUsage.contextWindow` arrive under `-p`, and whether `/context` and
   `/compact` work there. The usage chips show only what Claude Code reports.
 
+## ZCode window mode (added 2026-10-04) — `ZCODE_MODE=window`, needs "ZCode control" on
+
+`src/assistant/coding_agents/zcode_cdp/` + `zcode_window.py` let the Deep Agent use the user's REAL
+ZCode app (their own Z.ai sign-in and Start Plan) through the app's own debug port. Plan:
+`docs/zcode-cdp-integration-plan-2026-10-04.md`; evidence for every session:
+`docs/verification/zcode-cdp/` (S1 discovery … S4 runs, S5-S7 sync/usage/handover).
+
+- Same toolkit as the CLI backends (folders, run limit, sessions, chat steps): the window is
+  a `Runner` (`zcode_cdp/runner.py`), the stream is the page's conversation rows (`rows.py`).
+- The debug port has no password: random, 127.0.0.1 only, owner verified, opened only with the user's
+  standing "ZCode control" yes (`zcode.control`, stored in `sani.db`), closed after 10 idle minutes,
+  on turning control off, and when the core exits. A ZCode that will not quit is never force-killed.
+- Fail closed: contract checks (`contract.py`) and the verified-version list gate every click; an
+  unverified ZCode version is read-only. Never click on a guess. Never read/store/decrypt ZCode tokens
+  (the sync signal uses credential NAMES and file time only).
+- ZCode is always set to "Ask before changes"; Sani answers cards with Allow/Deny only (`policy.py`),
+  never "Always allow"/"Full access". Known limit: ZCode runs commands it judges safe WITHOUT a
+  card; Sani stops the run when such a call finishes and the limit forbids it.
+- Results are checked against the disk (`verify.py`); tokens used = balance before/after or "unknown".
+- Account/plan changes (`sync.py`): data is dropped and re-read, task links unlinked, banner shown.
+- Selectors live in `pages.py`/`driver.py`/`rows.py` only. When ZCode updates, re-map and add the new
+  version to `VERIFIED_VERSIONS` (contract.py) after a real run.
+- Real runs: `scripts/zcode_read.py` (read-only), `scripts/zcode_run.py` (a task). Scratch project in
+  ZCode: `sani_test`.
+
 ## UI (Sani main window)
 
 Light only. Rules in `sani/DESIGN.md`; tokens in `sani/src/styles/app.css`

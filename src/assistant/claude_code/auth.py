@@ -14,13 +14,15 @@ import asyncio
 import contextlib
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from assistant.claude_code.locate import child_environment
+if TYPE_CHECKING:
+    from assistant.coding_agents.backend import Backend
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
-_URL = re.compile(r"https://claude\.(?:com|ai)/\S+")
 _CODE = re.compile(r"[A-Za-z0-9._~#:/+=-]{6,600}")
 _LOGIN_TIMEOUT_SECONDS = 300.0
 
@@ -44,7 +46,19 @@ class LoginView:
 class LoginSession:
     """At most one sign-in at a time."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        backend: Backend | None = None,
+        on_success: Callable[[str], Awaitable[None]] | None = None,
+    ) -> None:
+        if backend is None:
+            from assistant.coding_agents.claude import ClaudeBackend
+
+            backend = ClaudeBackend()
+        self._backend = backend
+        #: Called with what the login command printed once it succeeded (for the account label).
+        self._on_success = on_success
+        self._url = re.compile(backend.login_url_pattern)
         self._process: asyncio.subprocess.Process | None = None
         self._reader: asyncio.Task[None] | None = None
         self._view = LoginView()
@@ -67,18 +81,16 @@ class LoginSession:
         self._view = LoginView(WAITING, "", "Opening your browser…")
         try:
             self._process = await asyncio.create_subprocess_exec(
-                str(binary),
-                "auth",
-                "login",
-                "--claudeai",
+                *self._backend.command(binary),
+                *self._backend.login_args(),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
-                env=child_environment(),
+                env=self._backend.environment(),
                 start_new_session=True,
             )
         except OSError as problem:
-            self._view = LoginView(FAILED, "", f"Couldn't start Claude Code: {problem}")
+            self._view = LoginView(FAILED, "", f"Couldn't start {self._backend.name}: {problem}")
             return self._view
         self._reader = asyncio.create_task(self._watch(self._process))
         return self._view
@@ -115,7 +127,7 @@ class LoginSession:
                     self._buffer = (self._buffer + _ANSI.sub("", chunk.decode("utf-8", "replace")))[
                         -4000:
                     ]
-                    match = _URL.search(self._buffer)
+                    match = self._url.search(self._buffer)
                     if match and self._view.state == WAITING and not self._view.url:
                         self._view = LoginView(
                             WAITING, match.group(0), "Finish signing in in your browser."
@@ -128,6 +140,9 @@ class LoginSession:
         if self._view.state == CANCELLED:
             return
         if code == 0:
+            if self._on_success is not None:
+                with contextlib.suppress(Exception):
+                    await self._on_success(self._buffer)
             self._view = LoginView(SUCCEEDED, "", "Signed in.")
         else:
             self._view = LoginView(FAILED, "", "Sign-in didn't complete. Try again.")
@@ -149,16 +164,19 @@ class LoginSession:
                 await reader
 
 
-async def sign_out(binary: Path) -> tuple[bool, str]:
-    """Sign out the Claude Code Sani uses. True when it exited cleanly."""
+async def sign_out(binary: Path, backend: Backend | None = None) -> tuple[bool, str]:
+    """Sign out the coding CLI Sani uses. True when it exited cleanly."""
+    if backend is None:
+        from assistant.coding_agents.claude import ClaudeBackend
+
+        backend = ClaudeBackend()
     process = await asyncio.create_subprocess_exec(
-        str(binary),
-        "auth",
-        "logout",
+        *backend.command(binary),
+        *backend.logout_args(),
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
-        env=child_environment(),
+        env=backend.environment(),
     )
     try:
         await asyncio.wait_for(process.communicate(), timeout=20)

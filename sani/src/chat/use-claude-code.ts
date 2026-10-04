@@ -89,7 +89,7 @@ export function useClaudeCode(pollMs = 30_000) {
     return detach;
   }, [pollMs]);
 
-  const act = useCallback(async (action: "login" | "code" | "cancel" | "logout", code?: string) => {
+  const act = useCallback(async (action: "login" | "code" | "cancel" | "logout" | "usage", code?: string) => {
     useStore.getState().setError("");
     try {
       const next = await claudeCodeAuth(action, code);

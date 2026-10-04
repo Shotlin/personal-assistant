@@ -64,6 +64,22 @@ _CLAUDE_CODE_ACTIONS = frozenset(
         "claude_code.login_code",
         "claude_code.login_cancel",
         "claude_code.logout",
+        "claude_code.usage_refresh",
+    }
+)
+
+
+#: The same controls for ZCode.
+_ZCODE_ACTIONS = frozenset(
+    {
+        "zcode.login_start",
+        "zcode.login_cancel",
+        "zcode.logout",
+        "zcode.status",
+        "zcode.select",
+        "zcode.read",
+        "zcode.control",
+        "zcode.ack_change",
     }
 )
 
@@ -72,6 +88,7 @@ def _now_ms() -> int:
     import time
 
     return int(time.time() * 1000)
+
 
 #: Wall-clock ceiling for one run. Deliberately below the Tauri host's own
 #: read deadline: whichever side gives up must be the one that can say why,
@@ -159,6 +176,8 @@ class SaniCoreApp:
         run_wall_clock_seconds: float = RUN_WALL_CLOCK_SECONDS,
         mission_provider: Callable[[], Awaitable[Any]] | None = None,
         claude_code_provider: Callable[[], Awaitable[dict[str, Any]]] | None = None,
+        zcode_provider: Callable[[], Awaitable[dict[str, Any]]] | None = None,
+        zcode_actions: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
         claude_code_actions: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
         | None = None,
     ) -> None:
@@ -175,6 +194,8 @@ class SaniCoreApp:
         self._mission_provider = mission_provider
         # Claude Code companion status: installed, signed in, folders, usage.
         self._claude_code_provider = claude_code_provider
+        self._zcode_provider = zcode_provider
+        self._zcode_actions = zcode_actions
         self._claude_code_actions = claude_code_actions
 
     async def _missions(self) -> Any:
@@ -223,8 +244,14 @@ class SaniCoreApp:
             return self._handle_run_cancel
         if method == "system.status":
             return self._handle_system_status
+        if method == "deep.context":
+            return self._handle_deep_context
         if method == "claude_code.status":
             return self._handle_claude_code_status
+        if method == "zcode.status":
+            return self._handle_zcode_status
+        if method in _ZCODE_ACTIONS:
+            return self._handle_zcode_action
         if method in _CLAUDE_CODE_ACTIONS:
             return self._handle_claude_code_action
         if method in _MISSION_METHODS:
@@ -240,6 +267,13 @@ class SaniCoreApp:
         result = await self._status_provider()
         await session.send(response_from_request(request, result).to_frame())
 
+    async def _handle_deep_context(self, session: _Session, request: Request) -> None:
+        from assistant.core import context_meter
+
+        conversation = str(request.params.get("conversation_id") or "")
+        result = await asyncio.to_thread(context_meter.snapshot, conversation)
+        await session.send(response_from_request(request, result).to_frame())
+
     async def _handle_claude_code_status(self, session: _Session, request: Request) -> None:
         if self._claude_code_provider is None:
             await session.send(
@@ -247,6 +281,22 @@ class SaniCoreApp:
             )
             return
         result = await self._claude_code_provider()
+        await session.send(response_from_request(request, result).to_frame())
+
+    async def _handle_zcode_status(self, session: _Session, request: Request) -> None:
+        if self._zcode_provider is None:
+            await session.send(
+                error_from_request(request, "zcode status is not available").to_frame()
+            )
+            return
+        result = await self._zcode_provider()
+        await session.send(response_from_request(request, result).to_frame())
+
+    async def _handle_zcode_action(self, session: _Session, request: Request) -> None:
+        if self._zcode_actions is None:
+            await session.send(error_from_request(request, "not available").to_frame())
+            return
+        result = await self._zcode_actions(request.method, request.params)
         await session.send(response_from_request(request, result).to_frame())
 
     async def _handle_claude_code_action(self, session: _Session, request: Request) -> None:
@@ -459,9 +509,7 @@ class SaniCoreApp:
             )
             return
         report = await service.purge_mission_derivatives(mission_id)
-        await session.send(
-            response_from_request(request, report).to_frame()
-        )
+        await session.send(response_from_request(request, report).to_frame())
 
     async def _handle_mission_retention_hold(self, session: _Session, request: Request) -> None:
         """Owner-controlled durable hold/release (D16)."""
@@ -471,30 +519,38 @@ class SaniCoreApp:
         owner_id = params.get("owner_id")
         held = params.get("held")
         reason = params.get("reason", "owner retention control")
-        if (not isinstance(mission_id, str) or not mission_id or
-                not isinstance(owner_id, str) or not owner_id or
-                not isinstance(held, bool) or not isinstance(reason, str)):
-            await session.send(error_from_request(
-                request, "mission.retention_hold requires mission_id, owner_id, held, and reason"
-            ).to_frame())
+        if (
+            not isinstance(mission_id, str)
+            or not mission_id
+            or not isinstance(owner_id, str)
+            or not owner_id
+            or not isinstance(held, bool)
+            or not isinstance(reason, str)
+        ):
+            await session.send(
+                error_from_request(
+                    request,
+                    "mission.retention_hold requires mission_id, owner_id, held, and reason",
+                ).to_frame()
+            )
             return
         record = await service.get(mission_id)
         if record is None or record.owner_id != owner_id:
-            await session.send(error_from_request(
-                request, "mission.retention_hold refused: mission/owner identity mismatch"
-            ).to_frame())
+            await session.send(
+                error_from_request(
+                    request, "mission.retention_hold refused: mission/owner identity mismatch"
+                ).to_frame()
+            )
             return
         if held:
             await service.store.set_retention_hold(mission_id, reason=reason[:400])
         else:
             await service.store.release_retention_hold(mission_id)
-        await session.send(response_from_request(
-            request, {"mission_id": mission_id, "held": held}
-        ).to_frame())
+        await session.send(
+            response_from_request(request, {"mission_id": mission_id, "held": held}).to_frame()
+        )
 
-    async def _handle_mission_driver_cleanup_ack(
-        self, session: _Session, request: Request
-    ) -> None:
+    async def _handle_mission_driver_cleanup_ack(self, session: _Session, request: Request) -> None:
         """D19: relay one identity-bound host-driver cleanup acknowledgement.
 
         The sidecar never accepts an unscoped "released" assertion: it must
@@ -506,26 +562,41 @@ class SaniCoreApp:
         owner_id = params.get("owner_id")
         fence = params.get("fence")
         operation_id = params.get("operation_id")
-        if not all(isinstance(value, str) and value for value in (
-            mission_id, owner_id, fence, operation_id,
-        )):
-            await session.send(error_from_request(
-                request,
-                "mission.driver_cleanup_ack requires mission_id, owner_id, fence, and operation_id",
-            ).to_frame())
+        if not all(
+            isinstance(value, str) and value
+            for value in (
+                mission_id,
+                owner_id,
+                fence,
+                operation_id,
+            )
+        ):
+            await session.send(
+                error_from_request(
+                    request,
+                    "mission.driver_cleanup_ack requires mission_id, owner_id, fence, "
+                    "and operation_id",
+                ).to_frame()
+            )
             return
         record = await service.get(mission_id)
         if record is None or record.owner_id != owner_id:
-            await session.send(error_from_request(
-                request, "mission.driver_cleanup_ack refused: mission/owner identity mismatch"
-            ).to_frame())
+            await session.send(
+                error_from_request(
+                    request, "mission.driver_cleanup_ack refused: mission/owner identity mismatch"
+                ).to_frame()
+            )
             return
         acknowledged = await service.acknowledge_driver_cleanup(
-            mission_id=mission_id, fence=fence, operation_id=operation_id,
+            mission_id=mission_id,
+            fence=fence,
+            operation_id=operation_id,
         )
-        await session.send(response_from_request(
-            request, {"mission_id": mission_id, "acknowledged": acknowledged}
-        ).to_frame())
+        await session.send(
+            response_from_request(
+                request, {"mission_id": mission_id, "acknowledged": acknowledged}
+            ).to_frame()
+        )
 
     async def _handle_mission_events(self, session: _Session, request: Request) -> None:
         service = await self._missions()
@@ -560,9 +631,7 @@ class SaniCoreApp:
     async def _execute_run(self, session: _Session, run: _Run, text: str) -> None:
         async def send_event(kind: str, data: dict[str, Any]) -> None:
             await session.send(
-                Event(
-                    run_id=run.run_id, agent_id=run.agent_id, kind=kind, data=data
-                ).to_frame()
+                Event(run_id=run.run_id, agent_id=run.agent_id, kind=kind, data=data).to_frame()
             )
 
         # Ownership is announced by the loop, not the agent: this is the frame

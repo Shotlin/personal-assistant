@@ -1,0 +1,6 @@
+{"captured":"2026-10-04","timeline":"v4-timeline (inside v4-session-pane-workspace-main)",
+ "pane_attrs":["data-session-id=sess_<uuid>","data-projection-seq=<int, increments on change>","data-running-subagent-ids"],
+ "timeline_attrs":["data-row-count","data-total-row-count","data-following","data-loading-older"],
+ "dom_rows":"v4-row-<n> with data-row-id; tool blocks: chat-tool-call-block-tool_<id> with data-tool-call-id, data-tool-name, data-status (seen: completed)",
+ "react_props_on_timeline_ancestor(2 levels up from v4-timeline)":{"sessionPhase":"completedSuccess (seen)","sessionKey":"sess_<uuid>","rows":"array of {rowId,turnId,entityId,productTurnId,visibility,createdAt,createdAtSeq,kind,assistantResponseId,toolCallId,toolName,status,inputText,input,output,display,startedAt,endedAt}","row_kinds":["turnHeader","userInput","reasoning","assistantText","toolCall","timelineMarker"]},
+ "other_testids":["git-action-trigger (aria 'Commit or push')","chat-summary-panel","conversation-share-trigger","v4-turn-navigator-item-*"]}

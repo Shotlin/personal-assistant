@@ -46,6 +46,10 @@ function MainContents() {
             setCategory("Claude Code");
             setSection("settings");
           }}
+          onOpenZCode={() => {
+            setCategory("ZCode");
+            setSection("settings");
+          }}
         />
         <main className="min-w-0 flex-1">
           {section === "chat" ? <ChatPage /> : section === "control" ? <ComputerControlPage /> : <SettingsPage initialCategory={category} />}

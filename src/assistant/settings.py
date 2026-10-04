@@ -6,6 +6,8 @@ application serves any traffic (Phase 1 spec, Task 1 acceptance).
 
 from __future__ import annotations
 
+import re
+
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -133,9 +135,29 @@ class Settings(BaseSettings):
     claude_code_dirs: str = ""
     # The most a run may be allowed to do: read | edit | run (edit files and run commands).
     claude_code_permission: str = "edit"
+    # Which model and how hard it thinks for coding runs. Empty = Claude Code's own default.
+    claude_code_model: str = ""
+    claude_code_effort: str = ""
     claude_code_max_turns: int = 30
     # One Claude Code call. Kept under the Deep deadline and the 13 minute core ceiling.
     claude_code_run_seconds: int = 600
+
+    # ZCode (Z.ai) companion: the same idea, driving the ZCode CLI that ships inside the
+    # ZCode app under the user's own sign-in. Default off. It reuses claude_code_dirs and
+    # claude_code_permission (one list of folders, one ceiling).
+    zcode_cli_enabled: bool = False
+    zcode_cli_binary: str = ""
+    zcode_cli_model: str = ""
+    # ZCode's reasoning level for window runs: low | high | max (empty = leave it as it is).
+    zcode_cli_effort: str = ""
+    zcode_cli_run_seconds: int = 600
+    # "app" drives the ZCode desktop app with computer control (the only way to reach the
+    # user's Start Plan); "cli" runs `zcode -p` (only sees providers the CLI can); "window"
+    # drives the real ZCode app through its own debug port (needs "ZCode control" turned on once).
+    zcode_mode: str = "cli"
+    # Which providers ZCode runs may use. "zai" (default) refuses to run unless ZCode would use a
+    # Z.ai plan account; "any" also allows custom providers (someone else's key and billing).
+    zcode_allowed_providers: str = "zai"
 
     # Jarvis Phase 1 (docs/astra/jarvis-next-2026-09-27-58dac9c, file 03 §11).
     # Both capabilities ship default-off: the host turns them on only for an
@@ -193,12 +215,37 @@ class Settings(BaseSettings):
                 f"CLAUDE_CODE_PERMISSION must be one of [read, edit, run], "
                 f"got {self.claude_code_permission!r}"
             )
+        if self.claude_code_effort not in {"", "low", "medium", "high", "xhigh", "max"}:
+            errors.append(
+                f"CLAUDE_CODE_EFFORT must be one of [low, medium, high, xhigh, max] or empty, "
+                f"got {self.claude_code_effort!r}"
+            )
+        model = self.claude_code_model
+        if model and not re.fullmatch(r"[A-Za-z0-9._\-\[\]]{1,80}", model):
+            errors.append("CLAUDE_CODE_MODEL must be an alias or a model name")
         if not 1 <= self.claude_code_max_turns <= 200:
             errors.append(f"CLAUDE_CODE_MAX_TURNS must be 1-200, got {self.claude_code_max_turns}")
         if not 30 <= self.claude_code_run_seconds <= 720:
             errors.append(
                 f"CLAUDE_CODE_RUN_SECONDS must be 30-720, got {self.claude_code_run_seconds}"
             )
+        if self.zcode_mode not in {"app", "cli", "window"}:
+            errors.append(f"ZCODE_MODE must be 'app', 'cli' or 'window', got {self.zcode_mode!r}")
+        if self.zcode_allowed_providers not in {"zai", "any"}:
+            errors.append(
+                "ZCODE_ALLOWED_PROVIDERS must be 'zai' or 'any', "
+                f"got {self.zcode_allowed_providers!r}"
+            )
+        if self.zcode_cli_effort not in {"", "low", "high", "max"}:
+            errors.append(
+                f"ZCODE_CLI_EFFORT must be low, high or max, got {self.zcode_cli_effort!r}"
+            )
+        if not 30 <= self.zcode_cli_run_seconds <= 720:
+            errors.append(f"ZCODE_CLI_RUN_SECONDS must be 30-720, got {self.zcode_cli_run_seconds}")
+        if self.zcode_cli_model and not re.fullmatch(
+            r"[A-Za-z0-9._\-\[\]]{1,80}", self.zcode_cli_model
+        ):
+            errors.append("ZCODE_CLI_MODEL must be a model name")
 
         if self.memory_backend not in {"postgres", "sqlite"}:
             errors.append(
@@ -215,8 +262,7 @@ class Settings(BaseSettings):
         if self.velo_jev_enabled:
             if self.velo_provider not in {"openrouter", "typesafe"}:
                 errors.append(
-                    f"VELO_PROVIDER must be 'openrouter' or 'typesafe', "
-                    f"got {self.velo_provider!r}"
+                    f"VELO_PROVIDER must be 'openrouter' or 'typesafe', got {self.velo_provider!r}"
                 )
             elif self.velo_provider == "openrouter" and not self.openrouter_api_key:
                 errors.append("VELO_PROVIDER=openrouter requires OPENROUTER_API_KEY")

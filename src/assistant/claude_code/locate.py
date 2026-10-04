@@ -123,6 +123,11 @@ class ClaudeStatus:
     signed_in: bool = False
     auth_method: str = ""
     detail: str = ""
+    # Who is signed in, for display only: name, email, plan. No tokens, ever.
+    name: str = ""
+    email: str = ""
+    plan: str = ""
+    org: str = ""
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -132,6 +137,10 @@ class ClaudeStatus:
             "signed_in": self.signed_in,
             "auth_method": self.auth_method,
             "detail": self.detail,
+            "name": self.name,
+            "email": self.email,
+            "plan": self.plan,
+            "org": self.org,
         }
 
 
@@ -154,6 +163,18 @@ async def _run_quiet(binary: Path, *args: str, timeout: float) -> tuple[int, str
     return process.returncode or 0, out.decode("utf-8", errors="replace")
 
 
+def _display_name(config_dir: str) -> str:
+    """The profile name Claude Code stored for the signed-in account (name fields only)."""
+    home = Path.home()
+    base = Path(config_dir).expanduser() if config_dir else home / ".claude"
+    candidate = home / ".claude.json" if base == home / ".claude" else base / ".claude.json"
+    try:
+        account = json.loads(candidate.read_text(encoding="utf-8")).get("oauthAccount") or {}
+        return str(account.get("fullName") or account.get("displayName") or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
 async def read_status(binary: Path | None) -> ClaudeStatus:
     """Version and sign-in state. Never starts a model call."""
     if binary is None:
@@ -168,11 +189,17 @@ async def read_status(binary: Path | None) -> ClaudeStatus:
     code, out = await _run_quiet(binary, "auth", "status", timeout=15)
     signed_in = False
     method = ""
+    name = email = plan = org = ""
     if code == 0:
         try:
             data = json.loads(out)
             signed_in = bool(data.get("loggedIn"))
             method = str(data.get("authMethod") or "")
+            email = str(data.get("email") or "")
+            plan = str(data.get("subscriptionType") or "")
+            org = str(data.get("orgName") or "")
+            if signed_in:
+                name = _display_name(str(data.get("configDirectory") or ""))
         except (json.JSONDecodeError, AttributeError):
             signed_in = False
     detail = "" if signed_in else "Not signed in. Run `claude auth login` once in Terminal."
@@ -183,4 +210,8 @@ async def read_status(binary: Path | None) -> ClaudeStatus:
         signed_in=signed_in,
         auth_method=method,
         detail=detail,
+        name=name,
+        email=email if signed_in else "",
+        plan=plan if signed_in else "",
+        org=org if signed_in else "",
     )

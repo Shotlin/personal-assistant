@@ -52,6 +52,12 @@ def _result_text(content: Any) -> str:
     return ""
 
 
+def _fraction_to_percent(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return value * 100.0 if value <= 1.0 else value
+
+
 class StreamParser:
     """Stateful: it remembers tool names so a result can be matched to its call."""
 
@@ -183,11 +189,28 @@ class StreamParser:
         info = message.get("rate_limit_info")
         if not isinstance(info, dict):
             info = message
+        windows = info.get("unifiedWindows")
+        if isinstance(windows, dict) and windows:
+            # Real Claude Code reports every window (5-hour, weekly) together.
+            events: list[ClaudeEvent] = []
+            for kind, window in windows.items():
+                if not isinstance(window, dict):
+                    continue
+                events.append(
+                    RateLimit(
+                        kind=str(kind),
+                        status=str(info.get("status") or ""),
+                        resets_at=_as_float(window.get("resetsAt")),
+                        used_percent=_fraction_to_percent(_as_float(window.get("utilization"))),
+                    )
+                )
+            if events:
+                return events
         used = _as_float(info.get("utilization"))
         if used is None:
             used = _as_float(info.get("used_percentage"))
-        elif used <= 1.0:
-            used = used * 100.0
+        else:
+            used = _fraction_to_percent(used)
         return [
             RateLimit(
                 kind=str(info.get("rateLimitType") or info.get("type") or ""),
@@ -202,8 +225,10 @@ class StreamParser:
         raw_usage = message.get("usage")
         usage: dict[str, Any] = raw_usage if isinstance(raw_usage, dict) else {}
         window: int | None = None
+        model_name = ""
         model_usage = message.get("modelUsage")
         if isinstance(model_usage, dict):
+            model_name = next((str(name) for name in model_usage), "")
             windows = [
                 _as_int(entry.get("contextWindow"))
                 for entry in model_usage.values()
@@ -227,6 +252,7 @@ class StreamParser:
             duration_ms=_as_int(message.get("duration_ms")) or 0,
             context_tokens=self._context_tokens,
             context_window=window,
+            model=model_name,
             denials=denials,
             usage=dict(usage),
         )
