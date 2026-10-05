@@ -96,16 +96,31 @@ def compare(before: Snapshot, after: Snapshot, *, complete: bool = True) -> Disk
     return change
 
 
-def reconcile(change: DiskChange, claimed: list[str]) -> list[str]:
-    """Plain-words differences between what changed on disk and what ZCode's steps claimed."""
+def reconcile(
+    change: DiskChange, claimed: list[str], present: dict[str, int] | None = None
+) -> list[str]:
+    """Plain-words differences between what changed on disk and what ZCode's steps claimed.
+
+    ``present`` maps every file now on disk (that matters) to its size. A file ZCode reported
+    writing that exists but did not change was simply written again with the same content; one
+    that does not exist is a real discrepancy.
+    """
     notes: list[str] = []
     on_disk = set(change.changed)
-    missing = [path for path in claimed if path not in on_disk]
+    here = present or {}
+    rewritten = [p for p in claimed if p not in on_disk and p in here]
+    missing = [p for p in claimed if p not in on_disk and p not in here]
     if missing:
         notes.append(
             "ZCode reported editing "
             + ", ".join(missing[:6])
-            + " but the file is unchanged on disk."
+            + " but the file does not exist on disk."
+        )
+    if rewritten:
+        notes.append(
+            "ZCode wrote "
+            + ", ".join(rewritten[:6])
+            + " again with the same content it already had (the files exist and are fine)."
         )
     unexplained = [path for path in change.changed if path not in set(claimed)]
     if unexplained and change.complete:
@@ -117,3 +132,9 @@ def reconcile(change: DiskChange, claimed: list[str]) -> list[str]:
     if not change.complete:
         notes.append("The folder was too large to check fully, so file changes may be missed.")
     return notes
+
+
+def describe_present(paths: list[str], sizes: dict[str, int]) -> str:
+    """ "On disk now: a (5,727 bytes), ...": proof the Deep Agent can read instead of guessing."""
+    shown = [f"{p} ({sizes[p]:,} bytes)" for p in paths if p in sizes][:12]
+    return "Verified on disk now: " + ", ".join(shown) + "." if shown else ""

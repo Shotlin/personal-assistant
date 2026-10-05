@@ -662,9 +662,25 @@ export function install(scenario: string): void {
     });
   };
 
+  // Scenario `missed`: the window "missed" a whole run (as when minimized). The host's saved
+  // history shows it working for a few seconds and then finished, with no live events at all.
+  const missedStart = Date.now();
+  const missedDone = () => Date.now() - missedStart > 9000;
+  const missedMessages = () => [
+    { id: "mu1", role: "user", text: "Build the Brew Club site with ZCode", created_at: missedStart, run_id: null },
+    ...(missedDone()
+      ? [{ id: "ma1", role: "assistant", text: "Done. ZCode wrote 3 files in brew-site (checked on disk).", created_at: missedStart + 9000, run_id: "rm1", agent_id: "deep", agent_name: "Deep Agent" }]
+      : []),
+  ];
+  const missedActivity = () => [
+    { sequence: 1, run_id: "rm1", event_type: "progress", timestamp: missedStart + 500, label: "Build the site", status: missedDone() ? "complete" : "running", tool: "zcode", step_id: "round", kind: "round", group: "g1" },
+    { sequence: 2, run_id: "rm1", event_type: "progress", timestamp: missedStart + 1500, label: "Wrote brew-site/index.html", status: "complete", tool: "Write", step_id: "s1", group: "g1" },
+    { sequence: 3, run_id: "rm1", event_type: "progress", timestamp: missedStart + 3500, label: "Wrote brew-site/style.css", status: "complete", tool: "Write", step_id: "s2", group: "g1" },
+  ];
+
   const handlers: Record<string, (args: Json) => unknown> = {
     get_state: () => ({
-      state: uiState,
+      state: scenario === "missed" ? (missedDone() ? "idle" : "working") : uiState,
       stt_ready: true,
       stt_model: "base-en",
       partial: "",
@@ -687,12 +703,19 @@ export function install(scenario: string): void {
     ],
     list_conversations: () => (scenario === "empty" ? [] : conversations),
     get_messages: (args) =>
-      scenario === "empty" || args.conversationId !== "c1"
+      scenario === "missed"
+        ? missedMessages()
+        : scenario === "empty" || args.conversationId !== "c1"
         ? []
         : scenario === "approval"
           ? [...historyMessages.slice(0, 1), { ...historyMessages[1], mission_id: "mis-1" }]
           : historyMessages,
-    get_run_activity: (args) => (args.conversationId === "c1" && scenario !== "empty" ? historyActivity : []),
+    get_run_activity: (args) =>
+      scenario === "missed"
+        ? missedActivity()
+        : args.conversationId === "c1" && scenario !== "empty"
+          ? historyActivity
+          : [],
     mission_get_cmd: () => approvalMission,
     computer_control_snapshot: () => control,
     recent_run_timing: () => [

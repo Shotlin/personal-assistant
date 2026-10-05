@@ -84,6 +84,18 @@ Postgres (`memory/postgres.py`, `runtime/runs.py`, `DATABASE_URL`) is a
 dev-only compatibility backend for them; the shipping backend is SQLite
 (`MEMORY_BACKEND=sqlite` + `SANI_DATA_DIR`).
 
+## Voice service (Shubh, WhatsApp calls) — approved exception, `voice-service/` only
+
+Owner-approved 2026-10-05: the separate `voice-service/` program (Node, not part of the Sani desktop path yet) also sends
+data to Sarvam (listening `saaras:v4`, thinking `sarvam-105b*`, speaking `bulbul:v3`, one `SARVAM_API_KEY` in
+`voice-service/.env`) and to WhatsApp (unofficial `baileys-caller`, SPARE number only, only the owner's own number is
+called). The "only OpenRouter leaves the machine" rule still holds for everything else. Rules: no keys in logs/chat/memory;
+memory writes pass `voice-service/src/secrets.mts` (same policy as `memory/policy.py`); transcripts and recordings stay on
+the Mac (`voice-service/var/`, git-ignored), kept 30 days; summaries and open items in `var/voice.db`; a digest is mirrored to
+`/memories/voice-calls.md`. Owner decisions: Shubh may contact other people only after the owner approves each message by voice;
+deploy/publish, spending money, messaging/calling others and deleting ALWAYS need his spoken yes. Plan and handoff:
+`docs/voice-agent-plan-2026-10-05.md`, `docs/voice-agent-handoff-2026-10-05.md`.
+
 ## Jarvis Phase 1 (missions) — default off
 
 `src/assistant/missions/` adds durable mission ownership ABOVE the existing

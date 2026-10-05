@@ -29,6 +29,11 @@ interface ChatState {
   setActiveConversation: (id: string) => void;
   /** Replace everything with persisted history (+ optional run activity). */
   loadHistory: (messages: ChatMessage[], activity?: ActivityEvent[]) => void;
+  /**
+   * A run is still going but this window missed some of it (it was hidden, minimized or on
+   * another page): add the persisted messages and finished steps it never saw, keep the live turn.
+   */
+  resumeLive: (messages: ChatMessage[], activity: ActivityEvent[]) => void;
   addMessage: (message: ChatMessage) => void;
   startAgent: (start: AgentStart) => void;
   applyChunk: (chunk: AgentChunk) => void;
@@ -161,6 +166,49 @@ export const useChatStore = create<ChatState>((set) => ({
     pendingActivity.clear();
     set({ items });
   },
+
+  resumeLive: (messages, activity) =>
+    set((state) => {
+      let items = state.items;
+      // Messages the window never received (persisted by the host), in their order.
+      for (const message of messages) {
+        if (!items.some((item) => item.id === message.id)) items = [...items, itemFromMessage(message)];
+      }
+      const finishedRuns = new Set(
+        messages.filter((m) => m.role === "assistant" && m.run_id).map((m) => m.run_id as string),
+      );
+      const liveRun = [...activity].reverse().find((event) => !finishedRuns.has(event.run_id))?.run_id;
+      if (!liveRun) return { items };
+      let live = items.findIndex((item) => item.role === "assistant" && item.runId === liveRun);
+      if (live < 0) {
+        // The turn's start was missed: rebuild it from the last user message.
+        const lastUser = [...messages].reverse().find((m) => m.role === "user");
+        if (!lastUser) return { items };
+        const now = Date.now();
+        items = [
+          ...items,
+          {
+            id: turnKey(lastUser.id),
+            role: "assistant",
+            createdAt: now,
+            startedAt: now,
+            parts: [],
+            agentId: null,
+            agentName: null,
+            runId: liveRun,
+            status: "streaming",
+          },
+        ];
+        live = items.length - 1;
+      }
+      let parts = items[live].parts;
+      for (const event of activity) {
+        if (event.run_id === liveRun) parts = upsertStep(parts, stepFromActivity(event));
+      }
+      const next = items.slice();
+      next[live] = { ...next[live], parts };
+      return { items: next };
+    }),
 
   addMessage: (message) =>
     set((state) =>

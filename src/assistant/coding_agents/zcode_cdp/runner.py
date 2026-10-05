@@ -49,6 +49,40 @@ class Control(Protocol):
 _FILE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 
 
+def task_text(request: RunRequest, project: Path, root: Path) -> str:
+    """The request with Sani's rules in front, so ZCode does not plan something it will be denied.
+
+    ZCode's model otherwise reaches for a shell command to make a folder, is refused at the
+    "edit" limit, and gives up. Telling it the rules first costs a few tokens and avoids that.
+    """
+    lines = ["Rules for this task (they are enforced; follow them exactly):"]
+    if project != root:
+        relative = project.relative_to(root)
+        lines.append(
+            f"- Work only inside the folder {relative}/ of your project (create it if it is "
+            f"missing). Use paths like {relative}/index.html."
+        )
+    else:
+        lines.append(f"- Work only inside {project}.")
+    if request.permission == "run":
+        lines.append(
+            "- You may run shell commands inside that folder. Never use sudo or git push, and "
+            "never delete anything outside it."
+        )
+    elif request.permission == "edit":
+        lines.append(
+            "- Do not run shell commands. Create and change files with your file tools only; the "
+            "Write tool creates missing folders by itself."
+        )
+    else:
+        lines.append("- Only read and search. Change nothing.")
+    lines.append(
+        "- Do not ask questions. If something is unclear, choose sensibly and say what you chose "
+        "in your final answer."
+    )
+    return "\n".join(lines) + "\n\nTask:\n" + request.prompt
+
+
 class ZCodeWindowRunner:
     def __init__(
         self,
@@ -140,7 +174,8 @@ class ZCodeWindowRunner:
         if not await driver.wait_until_idle(max_wait=self._idle_wait):
             outcome.error = "You are using ZCode right now, so Sani did not take over its window."
             return
-        name = await driver.workspace_name(str(project))
+        name, root_text = await driver.workspace_for(str(project))
+        root = Path(root_text)
         before, before_complete = await asyncio.to_thread(verify.snapshot, project)
 
         before_balances = await self._balances(driver)
@@ -162,7 +197,7 @@ class ZCodeWindowRunner:
             return
         model_line.update(model=info["model"], plan=info["plan"] or info["plan_id"])
         tracker = RowTracker(cwd=str(project), last_row=baseline)
-        await driver.send(request.prompt, baseline=baseline)
+        await driver.send(task_text(request, project, root), baseline=baseline)
         watchdog.touch()
 
         stopped_at: float | None = None
@@ -206,7 +241,11 @@ class ZCodeWindowRunner:
                     # cannot prevent that; it can stop the run and say so.
                     unasked = tracker.ran_unasked.pop(0)
                     verdict = policy.decide(
-                        unasked.tool, unasked.input, ceiling=request.permission, project=project
+                        unasked.tool,
+                        unasked.input,
+                        ceiling=request.permission,
+                        project=project,
+                        base=root,
                     )
                     if not verdict.allow:
                         note = (
@@ -228,7 +267,11 @@ class ZCodeWindowRunner:
                         last_answered, last_answer_at = waiting, loop.time()
                         verdicts = [
                             policy.decide(
-                                item.tool, item.input, ceiling=request.permission, project=project
+                                item.tool,
+                                item.input,
+                                ceiling=request.permission,
+                                project=project,
+                                base=root,
                             )
                             for item in pending
                         ]
@@ -275,7 +318,11 @@ class ZCodeWindowRunner:
         after, after_complete = await asyncio.to_thread(verify.snapshot, project)
         change = verify.compare(before, after, complete=before_complete and after_complete)
         outcome.files_changed = change.changed
-        outcome.notes.extend(verify.reconcile(change, tracker.claimed_files))
+        sizes = {path: meta[0] for path, meta in after.items()}
+        outcome.notes.extend(verify.reconcile(change, tracker.claimed_files, sizes))
+        proof = verify.describe_present(sorted({*change.changed, *tracker.claimed_files}), sizes)
+        if proof:
+            outcome.notes.append(proof)
         if resumed:
             outcome.notes.append("Continued the earlier ZCode task.")
         bash_calls = [c for c, s in tracker.opened.items() if s.name == "Bash"]

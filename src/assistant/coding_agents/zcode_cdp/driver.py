@@ -141,19 +141,29 @@ class WindowDriver:
 
     # -- doing -------------------------------------------------------------------------
 
-    async def workspace_name(self, project_path: str) -> str:
-        """ZCode's name for the project at this path; refuses names that are not unique."""
+    async def workspace_for(self, project_path: str) -> tuple[str, str]:
+        """``(ZCode's name for the project, its folder)`` that contains this path.
+
+        A folder inside a ZCode project maps to that project (the run is then limited to the
+        subfolder by Sani). Refuses names that are not unique.
+        """
         listed = [dict(w) for w in await self._w.evaluate(JS_WORKSPACES) or []]
-        wanted = [w for w in listed if w["path"] == project_path]
-        if not wanted:
+        holders = [
+            w
+            for w in listed
+            if project_path == w["path"]
+            or project_path.startswith(str(w["path"]).rstrip("/") + "/")
+        ]
+        if not holders:
             raise CdpError(
-                "That folder is not a project in ZCode yet. Add it in the ZCode app "
+                "That folder is not inside a ZCode project yet. Add its project in the ZCode app "
                 "(Open folder); Sani cannot use the folder chooser."
             )
-        name = str(wanted[0]["name"])
+        holder = max(holders, key=lambda w: len(str(w["path"])))
+        name = str(holder["name"])
         if sum(1 for w in listed if w["name"] == name) != 1:
             raise CdpError(f"Two ZCode projects are both called “{name}”; Sani will not guess.")
-        return name
+        return name, str(holder["path"])
 
     async def new_task(self, project_name: str) -> None:
         await self._click(NEW_TASK)

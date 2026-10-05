@@ -1,7 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useChatEvents } from "@/chat/events";
+import { reconcileChat, useChatEvents } from "@/chat/events";
 import { Sidebar, type Section } from "./shell/Sidebar";
 import ChatPage from "./pages/ChatPage";
 import SettingsPage, { SETTINGS_CATEGORIES, type SettingsCategory } from "./settings/SettingsPage";
@@ -32,6 +32,10 @@ function MainContents() {
   const [category, setCategory] = useState<SettingsCategory>(initialCategory);
   const openSettings = useCallback(() => setSection("settings"), []);
   useChatEvents(openSettings);
+  // Coming back to the chat from another page: show what the host saved while we were away.
+  useEffect(() => {
+    if (section === "chat") void reconcileChat();
+  }, [section]);
 
   return (
     <TooltipProvider delay={300}>

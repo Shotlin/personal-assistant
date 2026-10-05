@@ -27,6 +27,7 @@ async def main() -> int:
     parser.add_argument("--mode", default="edit", choices=["read", "edit", "run"])
     parser.add_argument("--conversation", default="script-chat")
     parser.add_argument("--new-session", action="store_true")
+    parser.add_argument("--create-folder", action="store_true")
     parser.add_argument("--cancel-after", type=float, default=0.0)
     parser.add_argument("--enable-control", action="store_true")
     parser.add_argument("--disable-control", action="store_true")
@@ -66,6 +67,7 @@ async def main() -> int:
             project_dir=str(Path(args.dir).expanduser()),
             mode=args.mode,
             new_session=args.new_session,
+            create_folder=args.create_folder,
             purpose="Script run",
         )
     )

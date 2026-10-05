@@ -1,0 +1,4 @@
+node_modules/
+var/
+vendor/baileys-caller/node_modules/
+.env

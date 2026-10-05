@@ -1,0 +1,45 @@
+{
+  "name": "sani-voice-service",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Sani voice calls over WhatsApp (experimental). Step 1: ring the owner's phone.",
+  "scripts": {
+    "ring": "tsx examples/ring.mts",
+    "listen": "tsx --env-file=.env examples/listen.mts",
+    "offline": "tsx --env-file=.env examples/offline-turn.mts",
+    "talk": "tsx --env-file=.env examples/talk.mts",
+    "talk:ishita": "SANI_VOICE=ishita tsx --env-file=.env examples/talk.mts",
+    "replay": "tsx --env-file=.env examples/replay.mts",
+    "chat-test": "tsx --env-file=.env examples/offline-chat.mts",
+    "audition": "tsx --env-file=.env examples/audition.mts",
+    "tune": "tsx --env-file=.env examples/tune.mts",
+    "turn-test": "tsx --env-file=.env examples/turn-test.mts",
+    "natural": "tsx --env-file=.env examples/natural.mts",
+    "natural-play": "tsx examples/play-natural.mts",
+    "judge-test": "tsx --env-file=.env examples/judge-test.mts",
+    "route-test": "tsx --env-file=.env examples/route-test.mts",
+    "hangup-test": "tsx --env-file=.env examples/hangup-test.mts",
+    "board-test": "tsx --env-file=.env examples/board-test.mts",
+    "phase1-test": "tsx --env-file=.env examples/phase1-test.mts",
+    "memory-test": "tsx --env-file=.env examples/memory-test.mts",
+    "phase3-test": "tsx --env-file=.env examples/phase3-test.mts",
+    "phase4-test": "tsx --env-file=.env examples/phase4-test.mts",
+    "dryrun": "tsx --env-file=.env examples/dryrun.mts",
+    "live-regress": "tsx --env-file=.env examples/live-regress.mts",
+    "session-test": "tsx examples/session-test.mts",
+    "flex-test": "tsx --env-file=.env examples/flex-test.mts",
+    "callback": "tsx --env-file=.env examples/callback.mts",
+    "recap-test": "tsx --env-file=.env examples/recap-test.mts",
+    "end-test": "tsx --env-file=.env examples/offline-end.mts"
+  },
+  "dependencies": {
+    "@types/ws": "^8.18.2",
+    "@whiskeysockets/baileys": "^7.0.0-rc11",
+    "baileys-caller": "file:./vendor/baileys-caller",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}
