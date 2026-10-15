@@ -6,6 +6,24 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "sani", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "motion-os-opslin",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/sayan/Documents/motion-os/player/serve.mjs", "/Users/sayan/Documents/Project_opslin/launch-video", "--port", "4321", "--no-open"],
+      "port": 4321
+    },
+    {
+      "name": "opslin-dashboard",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "/Users/sayan/Documents/Project_opslin/opslin-dashboard", "run", "dev", "--", "--port", "3100"],
+      "port": 3100
+    },
+    {
+      "name": "motion-os-example",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/sayan/Documents/motion-os/player/serve.mjs", "/Users/sayan/Documents/motion-os/examples/qbot-tag", "--port", "4322", "--no-open"],
+      "port": 4322
     }
   ]
 }
